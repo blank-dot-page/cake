@@ -1,5 +1,5 @@
 import type { StateCommand } from "@codemirror/state";
-import type { BlockExtension, Extension } from "./cake/extensions/types";
+import type { BlockExtension, Extension } from "./cake/extensions/overlay-types";
 
 export interface EditorSelectionRange {
   anchor: number;

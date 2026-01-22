@@ -1,6 +1,6 @@
-# Cake v3
+# 🍰 Cake
 
-Standalone Cake v3 editor + engine with Vitest unit and browser tests.
+Standalone Cake editor + engine with Vitest unit and browser tests.
 
 ## Development
 
@@ -20,5 +20,5 @@ npm run demo
 ## Library usage
 
 ```tsx
-import { CakeEditorV3, defaultEditorSettings } from "@blankdotpage/cake";
+import { CakeEditor, defaultEditorSettings } from "@blankdotpage/cake";
 ```

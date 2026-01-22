@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
-import { CakeEditorV3, defaultEditorSettings } from "@blankdotpage/cake";
+import { CakeEditor, defaultEditorSettings } from "@blankdotpage/cake";
 
 export default function App() {
   const [value, setValue] = useState<string>(
-    "# Cake v3 Demo\n\nTry **bold**, *italic*, ~~strike~~, and [links](https://example.com).",
+    "# Cake Demo\n\nTry **bold**, *italic*, ~~strike~~, and [links](https://example.com).",
   );
 
   const settings = useMemo(
@@ -14,11 +14,11 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>Cake v3 Demo</h1>
+        <h1>Cake Demo</h1>
         <p>Cmd+B / Cmd+I / Cmd+Shift+X / Cmd+Shift+U</p>
       </header>
       <div className="editor">
-        <CakeEditorV3
+        <CakeEditor
           initialValue={value}
           value={value}
           onChange={setValue}
