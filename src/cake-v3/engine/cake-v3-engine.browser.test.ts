@@ -1,9 +1,14 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CakeV3Engine } from "./cake-v3-engine";
 import { createTestHarness, type TestHarness } from "../test/harness";
 import { linkExtension } from "../extensions/link/link";
 import { listExtension } from "../extensions/list/list";
 import type { CakeExtensionV3 } from "../core/runtime";
+
+const isMac =
+  typeof navigator !== "undefined" &&
+  typeof navigator.platform === "string" &&
+  navigator.platform.toLowerCase().includes("mac");
 
 type EngineSelection = {
   start: number;
@@ -1060,7 +1065,8 @@ describe("CakeV3Engine (browser)", () => {
       bubbles: true,
       cancelable: true,
       key: "z",
-      metaKey: true,
+      metaKey: isMac,
+      ctrlKey: !isMac,
     });
     container.dispatchEvent(undoKeydown);
 
@@ -1138,7 +1144,8 @@ describe("CakeV3Engine (browser)", () => {
       bubbles: true,
       cancelable: true,
       key: "z",
-      metaKey: true,
+      metaKey: isMac,
+      ctrlKey: !isMac,
     });
     container.dispatchEvent(undoKeydown);
 
@@ -1420,10 +1427,22 @@ describe("CakeV3Engine (browser)", () => {
 
 describe("CakeV3Engine Cmd+Backspace then backspace", () => {
   let harness: TestHarness | null = null;
+  const originalPlatform = navigator.platform;
+
+  beforeEach(() => {
+    Object.defineProperty(navigator, "platform", {
+      value: "MacIntel",
+      configurable: true,
+    });
+  });
 
   afterEach(() => {
     harness?.destroy();
     harness = null;
+    Object.defineProperty(navigator, "platform", {
+      value: originalPlatform,
+      configurable: true,
+    });
   });
 
   it("Cmd+Backspace deletes line content, then backspace merges with previous line", async () => {

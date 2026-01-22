@@ -216,6 +216,11 @@ describe("heading extension typing behavior (harness)", () => {
     expect(headingLine.classList.contains("is-heading-1")).toBe(true);
 
     // Cmd+Backspace should delete the line content (not the heading marker)
+    const originalPlatform = navigator.platform;
+    Object.defineProperty(navigator, "platform", {
+      value: "MacIntel",
+      configurable: true,
+    });
     const cursorEnd = h.selection.end;
     h.engine.setSelection({
       start: cursorEnd,
@@ -239,6 +244,10 @@ describe("heading extension typing behavior (harness)", () => {
     const line = h.getLine(0) as HTMLElement;
     expect(line.classList.contains("is-heading")).toBe(false);
     expect(line.dataset.headingPlaceholder).toBeUndefined();
+    Object.defineProperty(navigator, "platform", {
+      value: originalPlatform,
+      configurable: true,
+    });
     h.destroy();
   });
 });

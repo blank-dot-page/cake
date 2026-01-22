@@ -3,6 +3,14 @@ import { CakeV3Engine } from "../../engine/cake-v3-engine";
 import { bundledExtensions } from "../index";
 import { createTestHarness, type TestHarness } from "../../test/harness";
 
+const mod =
+  typeof navigator !== "undefined" &&
+  typeof navigator.platform === "string" &&
+  navigator.platform.toLowerCase().includes("mac")
+    ? { meta: true }
+    : { ctrl: true };
+const modShift = { ...mod, shift: true };
+
 describe("list extension DOM rendering", () => {
   let container: HTMLDivElement;
   let engine: CakeV3Engine;
@@ -228,6 +236,11 @@ describe("list extension Enter key behavior", () => {
   });
 
   test("Cmd+Backspace at end of bold numbered list deletes the last line without leaving stray markers", async () => {
+    const originalPlatform = navigator.platform;
+    Object.defineProperty(navigator, "platform", {
+      value: "MacIntel",
+      configurable: true,
+    });
     harness = createTestHarness(
       "1. **adsdsaasdsaddadsadsadsa**\n2. **asddasads**",
     );
@@ -244,6 +257,11 @@ describe("list extension Enter key behavior", () => {
     await harness.pressKey("Backspace", { meta: true });
 
     expect(harness.engine.getValue()).toBe("1. **adsdsaasdsaddadsadsadsa**");
+
+    Object.defineProperty(navigator, "platform", {
+      value: originalPlatform,
+      configurable: true,
+    });
   });
 
   test("Backspace repeatedly at end of bold numbered list does not drop the list item prefix", async () => {
@@ -662,7 +680,7 @@ describe("typing dash with selection to create list", () => {
     );
 
     // Undo should restore original
-    await harness.pressKey("z", { meta: true });
+    await harness.pressKey("z", mod);
 
     expect(harness.engine.getValue()).toBe(original);
   });
@@ -686,7 +704,7 @@ describe("typing dash with selection to create list", () => {
     expect(harness.engine.getValue()).toBe("- hello world");
 
     // Undo should restore original (the typed text, not empty)
-    await harness.pressKey("z", { meta: true });
+    await harness.pressKey("z", mod);
 
     expect(harness.engine.getValue()).toBe("hello world");
   });
@@ -841,7 +859,7 @@ describe("keyboard shortcuts for list toggle", () => {
     harness.engine.setSelection({ start: 0, end: 11, affinity: "forward" });
 
     // Cmd+Shift+8 should toggle bullet list
-    await harness.pressKey("8", { meta: true, shift: true });
+    await harness.pressKey("8", modShift);
 
     expect(harness.engine.getValue()).toBe("- hello world");
   });
@@ -853,7 +871,7 @@ describe("keyboard shortcuts for list toggle", () => {
     harness.engine.setSelection({ start: 0, end: 13, affinity: "forward" });
 
     // Cmd+Shift+8 should toggle bullet list off
-    await harness.pressKey("8", { meta: true, shift: true });
+    await harness.pressKey("8", modShift);
 
     expect(harness.engine.getValue()).toBe("hello world");
   });
@@ -865,7 +883,7 @@ describe("keyboard shortcuts for list toggle", () => {
     harness.engine.setSelection({ start: 0, end: 11, affinity: "forward" });
 
     // Cmd+Shift+7 should toggle numbered list
-    await harness.pressKey("7", { meta: true, shift: true });
+    await harness.pressKey("7", modShift);
 
     expect(harness.engine.getValue()).toBe("1. hello world");
   });
@@ -877,7 +895,7 @@ describe("keyboard shortcuts for list toggle", () => {
     harness.engine.setSelection({ start: 0, end: 14, affinity: "forward" });
 
     // Cmd+Shift+7 should toggle numbered list off
-    await harness.pressKey("7", { meta: true, shift: true });
+    await harness.pressKey("7", modShift);
 
     expect(harness.engine.getValue()).toBe("hello world");
   });
@@ -888,7 +906,7 @@ describe("keyboard shortcuts for list toggle", () => {
     await harness.focus();
     harness.engine.setSelection({ start: 0, end: 23, affinity: "forward" });
 
-    await harness.pressKey("8", { meta: true, shift: true });
+    await harness.pressKey("8", modShift);
 
     expect(harness.engine.getValue()).toBe("- item one\n- item two");
   });
@@ -899,7 +917,7 @@ describe("keyboard shortcuts for list toggle", () => {
     await harness.focus();
     harness.engine.setSelection({ start: 0, end: 21, affinity: "forward" });
 
-    await harness.pressKey("7", { meta: true, shift: true });
+    await harness.pressKey("7", modShift);
 
     expect(harness.engine.getValue()).toBe("1. item one\n2. item two");
   });
@@ -910,7 +928,7 @@ describe("keyboard shortcuts for list toggle", () => {
     await harness.focus();
     harness.engine.setSelection({ start: 0, end: 28, affinity: "forward" });
 
-    await harness.pressKey("8", { meta: true, shift: true });
+    await harness.pressKey("8", modShift);
 
     expect(harness.engine.getValue()).toBe(
       "- line one\n- line two\n- line three",
@@ -923,7 +941,7 @@ describe("keyboard shortcuts for list toggle", () => {
     await harness.focus();
     harness.engine.setSelection({ start: 0, end: 28, affinity: "forward" });
 
-    await harness.pressKey("7", { meta: true, shift: true });
+    await harness.pressKey("7", modShift);
 
     expect(harness.engine.getValue()).toBe(
       "1. line one\n2. line two\n3. line three",
