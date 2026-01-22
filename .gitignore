@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.vitest-screenshots/
+.vite/
+coverage/
+playwright-report/
+*.log
+.DS_Store
