@@ -6,7 +6,7 @@ export default defineConfig({
   build: {
     lib: {
       entry: "src/index.ts",
-      name: "Cake",
+      formats: ["es", "cjs"],
       fileName: (format) => (format === "cjs" ? "index.cjs" : "index.js"),
     },
     rollupOptions: {
