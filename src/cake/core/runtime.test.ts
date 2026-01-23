@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createRuntime } from "./runtime";
+import { createRuntime, type RuntimeState } from "./runtime";
+import type { Doc } from "./types";
 
 const cases = [
   "",
@@ -115,5 +116,36 @@ describe("createRuntime([])", () => {
     });
     const result = runtime.applyEdit({ type: "delete-backward" }, state);
     expect(result.source).toBe("[hello](http://localhost:3000/)\nother text");
+  });
+
+  it("toggle-inline bold splits on '\\n' within a single paragraph text run", async () => {
+    const { bundledExtensions } = await import("../extensions");
+    const runtime = createRuntime(bundledExtensions);
+
+    const doc: Doc = {
+      type: "doc",
+      blocks: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "hello\nworld" }],
+        },
+      ],
+    };
+    const serialized = runtime.serialize(doc);
+    expect(serialized.source).toBe("hello\nworld");
+
+    const state: RuntimeState = {
+      source: serialized.source,
+      map: serialized.map,
+      doc,
+      runtime,
+      selection: { start: 0, end: 11, affinity: "forward" },
+    };
+
+    const result = runtime.applyEdit(
+      { type: "toggle-inline", marker: "**" },
+      state,
+    );
+    expect(result.source).toBe("**hello**\n**world**");
   });
 });

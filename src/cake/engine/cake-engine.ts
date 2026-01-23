@@ -1068,6 +1068,16 @@ export class CakeEngine {
     const mac = isMacPlatform();
     const cmdOrCtrl = mac ? event.metaKey : event.ctrlKey;
 
+    if (cmdOrCtrl && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      const end = this.state.map.cursorLength;
+      this.applySelectionUpdate(
+        { start: 0, end, affinity: "forward" },
+        "keyboard",
+      );
+      return;
+    }
+
     if (cmdOrCtrl && event.key.toLowerCase() === "z") {
       event.preventDefault();
       if (event.shiftKey) {

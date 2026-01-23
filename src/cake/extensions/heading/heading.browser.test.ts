@@ -189,6 +189,13 @@ describe("heading extension DOM rendering", () => {
 });
 
 describe("heading extension typing behavior (harness)", () => {
+  const mod =
+    typeof navigator !== "undefined" &&
+    typeof navigator.platform === "string" &&
+    navigator.platform.toLowerCase().includes("mac")
+      ? { meta: true }
+      : { ctrl: true };
+
   test("empty doc: typing '# ' renders an empty heading with placeholder", async () => {
     const h = createTestHarness("");
     await h.focus();
@@ -248,6 +255,51 @@ describe("heading extension typing behavior (harness)", () => {
       value: originalPlatform,
       configurable: true,
     });
+    h.destroy();
+  });
+
+  test("Cmd+A then Backspace deletes a document containing a heading", async () => {
+    const h = createTestHarness("# Cake Demo\nhello");
+    await h.focus();
+
+    await h.pressKey("a", mod);
+    await h.pressBackspace();
+
+    expect(h.engine.getValue()).toBe("");
+    expect(h.getLineCount()).toBe(1);
+    expect(h.getLine(0).textContent ?? "").toBe("");
+    h.destroy();
+  });
+
+  test("Backspace at start of paragraph after heading merges text into heading", async () => {
+    const h = createTestHarness("# Cake Demo\nhello");
+    await h.focus();
+
+    // Click at start of "hello" then backspace should delete the newline and
+    // move the paragraph text into the heading.
+    await h.clickAt(0, 1);
+    await h.pressBackspace();
+
+    expect(h.engine.getValue()).toBe("# Cake Demohello");
+    expect(h.getLineCount()).toBe(1);
+    expect(h.getLine(0).textContent ?? "").toBe("Cake Demohello");
+    expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
+    h.destroy();
+  });
+
+  test("Backspace at start of empty paragraph after heading removes the empty line and moves caret into heading", async () => {
+    const h = createTestHarness("# Cake Demo\n");
+    await h.focus();
+
+    // Click into the empty second line (can't use clickAt on empty line).
+    const lineRect = h.getLineRect(1);
+    await h.clickAtCoords(lineRect.left + 5, lineRect.top + lineRect.height / 2);
+    await h.pressBackspace();
+
+    expect(h.engine.getValue()).toBe("# Cake Demo");
+    expect(h.getLineCount()).toBe(1);
+    expect(h.getLine(0).textContent ?? "").toBe("Cake Demo");
+    expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
     h.destroy();
   });
 });
