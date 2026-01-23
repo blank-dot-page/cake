@@ -1084,6 +1084,20 @@ export class CakeEngine {
       return;
     }
 
+    // On macOS, Cmd+Enter does not reliably dispatch a beforeinput
+    // insertParagraph/insertLineBreak event (at least in our test harness).
+    // Treat Cmd/Ctrl+Enter as an explicit line-break insert.
+    if (cmdOrCtrl && event.key === "Enter") {
+      event.preventDefault();
+      this.keydownHandledBeforeInput = true;
+      this.applyEdit({ type: "insert-line-break" });
+      // Reset the flag after any synchronous beforeinput events have been processed
+      queueMicrotask(() => {
+        this.keydownHandledBeforeInput = false;
+      });
+      return;
+    }
+
     const isLineModifier = mac && event.metaKey;
     const isWordModifier = mac ? event.altKey : event.ctrlKey;
 

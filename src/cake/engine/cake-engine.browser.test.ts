@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { userEvent } from "vitest/browser";
 import { CakeEngine } from "./cake-engine";
 import { createTestHarness, type TestHarness } from "../test/harness";
 import { linkExtension } from "../extensions/link/link";
@@ -74,6 +75,29 @@ describe("CakeEngine (browser)", () => {
     expect(h.engine.getValue()).toBe("**a**b");
 
     h.destroy();
+  });
+
+  it("Cmd+Enter inserts a line break", async () => {
+    const originalPlatform = navigator.platform;
+    Object.defineProperty(navigator, "platform", {
+      value: "MacIntel",
+      configurable: true,
+    });
+
+    const h = createTestHarness("hello");
+    await h.clickRightOf(4, 0);
+    await h.focus();
+
+    // Reported bug: Cmd+Enter does not insert a line break.
+    await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+
+    expect(h.engine.getValue()).toBe("hello\n");
+
+    h.destroy();
+    Object.defineProperty(navigator, "platform", {
+      value: originalPlatform,
+      configurable: true,
+    });
   });
 
   it("does not show placeholder when doc has only wrapped text (e.g. **bold**)", () => {
