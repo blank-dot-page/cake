@@ -283,27 +283,31 @@ export function moveSelectionVertically(params: {
       hit.cursorOffset >= targetLineStart &&
       hit.cursorOffset <= targetLineEnd
     ) {
+      const normalizedAffinity: Affinity =
+        targetLineLayout.lineLength === 0 ? "forward" : hit.affinity;
       const nextSelection: Selection =
         anchor === focus
           ? {
               start: hit.cursorOffset,
               end: hit.cursorOffset,
-              affinity: hit.affinity,
+              affinity: normalizedAffinity,
             }
-          : { start: anchor, end: hit.cursorOffset, affinity: hit.affinity };
+          : { start: anchor, end: hit.cursorOffset, affinity: normalizedAffinity };
       return { selection: nextSelection, goalX };
     }
   }
 
   const rowHit = rowXToOffset({ row: targetRow, x: goalX });
   const nextPos = targetLineStart + rowHit.offsetInLine;
+  const normalizedAffinity: Affinity =
+    targetLineLayout.lineLength === 0 ? "forward" : rowHit.affinity;
   const nextSelection: Selection =
     anchor === focus
-      ? { start: nextPos, end: nextPos, affinity: rowHit.affinity }
+      ? { start: nextPos, end: nextPos, affinity: normalizedAffinity }
       : {
           start: anchor,
           end: nextPos,
-          affinity: rowHit.affinity,
+          affinity: normalizedAffinity,
         };
 
   return { selection: nextSelection, goalX };
