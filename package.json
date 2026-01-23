@@ -18,6 +18,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc -p tsconfig.build.json",
+    "build:demo": "npm run build && npm --workspace demo run build",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
     "typecheck": "tsc -p tsconfig.json --noEmit",
