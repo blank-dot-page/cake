@@ -133,11 +133,45 @@ function handleMultilineInsertInHeading(
   };
 }
 
+function shouldExitHeadingOnLineBreak(state: RuntimeState): boolean {
+  const { source, selection, map } = state;
+
+  if (selection.start !== selection.end) {
+    return false;
+  }
+
+  const cursorPos = selection.start;
+  const sourcePos = map.cursorToSource(cursorPos, "forward");
+
+  const lineStart = findLineStartInSource(source, sourcePos);
+  let lineEnd = source.indexOf("\n", lineStart);
+  if (lineEnd === -1) {
+    lineEnd = source.length;
+  }
+
+  const lineContent = source.slice(lineStart, lineEnd);
+  const match = lineContent.match(HEADING_PATTERN);
+  if (!match) {
+    return false;
+  }
+
+  const marker = match[0];
+  const contentStart = lineStart + marker.length;
+  return sourcePos >= contentStart && sourcePos <= lineEnd;
+}
+
 export const headingExtension: CakeExtension = {
   name: "heading",
-  onEdit(command: EditCommand, state: RuntimeState): EditResult | null {
+  onEdit(command: EditCommand, state: RuntimeState): EditResult | EditCommand | null {
     if (command.type === "delete-backward") {
       return handleDeleteBackward(state);
+    }
+
+    if (command.type === "insert-line-break") {
+      if (shouldExitHeadingOnLineBreak(state)) {
+        return { type: "exit-block-wrapper" };
+      }
+      return null;
     }
 
     if (command.type === "insert") {

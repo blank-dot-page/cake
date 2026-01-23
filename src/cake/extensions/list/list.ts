@@ -935,7 +935,7 @@ function handleInsertListMarkerWithSelection(
 function handleMarkerSwitch(
   state: RuntimeState,
   insertedChar: string,
-): EditResult | null {
+): EditResult | EditCommand | null {
   const { source, selection } = state;
 
   // If there's a selection, try to convert lines to list
@@ -947,7 +947,7 @@ function handleMarkerSwitch(
       startLine !== endLine &&
       (insertedChar === "-" || insertedChar === "*" || insertedChar === "+")
     ) {
-      return handleToggleList(state, true);
+      return { type: "toggle-bullet-list" };
     }
     return handleInsertListMarkerWithSelection(state, insertedChar);
   }
@@ -1042,7 +1042,10 @@ export const listExtension: CakeExtension = {
       command: { type: "toggle-numbered-list" },
     },
   ],
-  onEdit(command: EditCommand, state: RuntimeState): EditResult | null {
+  onEdit(
+    command: EditCommand,
+    state: RuntimeState,
+  ): EditResult | EditCommand | null {
     if (command.type === "insert-line-break") {
       return handleInsertLineBreak(state);
     }

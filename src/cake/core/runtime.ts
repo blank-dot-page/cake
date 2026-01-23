@@ -20,6 +20,7 @@ export type SerializeInlineResult = { source: string; map: CursorSourceMap };
 export type EditCommand =
   | { type: "insert"; text: string }
   | { type: "insert-line-break" }
+  | { type: "exit-block-wrapper" }
   | { type: "delete-backward" }
   | { type: "delete-forward" }
   | { type: "indent" }
@@ -88,7 +89,10 @@ export type CakeExtension = {
   ) => SerializeInlineResult | null;
   normalizeBlock?: (block: Block) => Block | null;
   normalizeInline?: (inline: Inline) => Inline | null;
-  onEdit?: (command: EditCommand, state: RuntimeState) => EditResult | null;
+  onEdit?: (
+    command: EditCommand,
+    state: RuntimeState,
+  ) => EditResult | EditCommand | null;
   onPasteText?: (text: string, state: RuntimeState) => EditCommand | null;
   keybindings?: KeyBinding[];
   renderInline?: (
@@ -392,13 +396,32 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
   }
 
   function applyEdit(command: EditCommand, state: RuntimeState): RuntimeState {
-    for (const extension of extensions) {
-      if (!extension.onEdit) {
-        continue;
+    // Extensions can either:
+    // - fully handle the edit by returning {source, selection}, or
+    // - delegate by returning another EditCommand, which will be applied by the
+    //   runtime after re-running extension middleware.
+    //
+    // This keeps editing logic composable while still allowing escape hatches.
+    // If an extension delegates in a loop, this will loop as well.
+    while (true) {
+      let delegated = false;
+      for (const extension of extensions) {
+        if (!extension.onEdit) {
+          continue;
+        }
+        const result = extension.onEdit(command, state);
+        if (!result) {
+          continue;
+        }
+        if ("source" in result) {
+          return createState(result.source, result.selection);
+        }
+        command = result;
+        delegated = true;
+        break;
       }
-      const result = extension.onEdit(command, state);
-      if (result) {
-        return createState(result.source, result.selection);
+      if (!delegated) {
+        break;
       }
     }
 
@@ -407,7 +430,8 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
       command.type === "insert" ||
       command.type === "delete-backward" ||
       command.type === "delete-forward" ||
-      command.type === "insert-line-break"
+      command.type === "insert-line-break" ||
+      command.type === "exit-block-wrapper"
     ) {
       const structural = applyStructuralEdit(command, state.doc, selection);
       if (!structural) {
@@ -548,6 +572,7 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     command:
       | { type: "insert"; text: string }
       | { type: "insert-line-break" }
+      | { type: "exit-block-wrapper" }
       | { type: "delete-backward" }
       | { type: "delete-forward" },
     doc: Doc,
@@ -599,6 +624,8 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
         ? command.text
         : command.type === "insert-line-break"
           ? "\n"
+          : command.type === "exit-block-wrapper"
+            ? "\n"
           : "";
 
     const range =
@@ -646,6 +673,20 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     if (!startBlock || !endBlock) {
       return null;
     }
+
+    const getNearestWrapperAtPath = (
+      rootBlocks: Block[],
+      leafPath: number[],
+    ): { block: Block & { type: "block-wrapper" }; path: number[] } | null => {
+      for (let depth = leafPath.length - 1; depth >= 1; depth -= 1) {
+        const prefix = leafPath.slice(0, depth);
+        const block = getBlockAtPath(rootBlocks, prefix);
+        if (block && block.type === "block-wrapper") {
+          return { block, path: prefix };
+        }
+      }
+      return null;
+    };
 
     // Atomic block handling (generic: works for any block-atom kind).
     //
@@ -767,6 +808,71 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
       endIndex === startIndex ? startRuns : paragraphToRuns(endBlock);
     const [beforeRuns] = splitRunsAt(startRuns, startLoc.offsetInLine);
     const [, afterRuns] = splitRunsAt(endRuns, endLoc.offsetInLine);
+
+    // Generic "exit block-wrapper" behavior:
+    // Split the nearest enclosing wrapper's single paragraph into:
+    // - wrapper paragraph: content before the caret
+    // - new paragraph after the wrapper: content after the caret
+    //
+    // This is useful for wrapper kinds that conceptually should not span
+    // multiple lines (e.g. headings), while keeping the core syntax-agnostic.
+    if (
+      command.type === "exit-block-wrapper" &&
+      effectiveRange.start === effectiveRange.end &&
+      startLoc.lineIndex === endLoc.lineIndex
+    ) {
+      const wrapperInfo = getNearestWrapperAtPath(doc.blocks, startLine.path);
+      if (
+        wrapperInfo &&
+        wrapperInfo.block.blocks.length === 1 &&
+        wrapperInfo.block.blocks[0]?.type === "paragraph"
+      ) {
+        const wrapperParentPath = wrapperInfo.path.slice(0, -1);
+        const wrapperIndexInParent =
+          wrapperInfo.path[wrapperInfo.path.length - 1] ?? 0;
+        const wrapperParentBlocks = getBlocksAtPath(doc.blocks, wrapperParentPath);
+
+        const nextWrapper: Block = {
+          ...wrapperInfo.block,
+          blocks: [
+            {
+              type: "paragraph",
+              content: runsToInlines(normalizeRuns(beforeRuns)),
+            },
+          ],
+        };
+        const nextParagraph: Block = {
+          type: "paragraph",
+          content: runsToInlines(normalizeRuns(afterRuns)),
+        };
+
+        const nextParentBlocks = [
+          ...wrapperParentBlocks.slice(0, wrapperIndexInParent),
+          nextWrapper,
+          nextParagraph,
+          ...wrapperParentBlocks.slice(wrapperIndexInParent + 1),
+        ];
+
+        const nextDoc: Doc = {
+          ...doc,
+          blocks: updateBlocksAtPath(doc.blocks, wrapperParentPath, () => nextParentBlocks),
+        };
+
+        const nextLines = flattenDocToLines(nextDoc);
+        const lineStarts = getLineStartOffsets(nextLines);
+        const insertedPath = [...wrapperParentPath, wrapperIndexInParent + 1];
+        const insertedLineIndex = nextLines.findIndex((line) =>
+          pathsEqual(line.path, insertedPath),
+        );
+        const nextCursor =
+          insertedLineIndex >= 0 ? (lineStarts[insertedLineIndex] ?? 0) : 0;
+        return {
+          doc: nextDoc,
+          nextCursor,
+          nextAffinity: "forward",
+        };
+      }
+    }
 
     const hasSelectedText = effectiveRange.start !== effectiveRange.end;
     const baseMarks = hasSelectedText
