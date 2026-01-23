@@ -1,10 +1,17 @@
 import { useMemo, useState } from "react";
 import { CakeEditor, defaultEditorSettings } from "@blankdotpage/cake";
 
+type SelectionDebug = {
+  start: number;
+  end: number;
+  affinity: "forward" | "backward";
+};
+
 export default function App() {
   const [value, setValue] = useState<string>(
     "# Cake Demo\n\nTry **bold**, *italic*, ~~strike~~, and [links](https://example.com).",
   );
+  const [selection, setSelection] = useState<SelectionDebug | null>(null);
 
   const settings = useMemo(
     () => ({ ...defaultEditorSettings, spellCheckEnabled: true }),
@@ -17,22 +24,44 @@ export default function App() {
         <h1>Cake Demo</h1>
         <p>Cmd+B / Cmd+I / Cmd+Shift+X / Cmd+Shift+U</p>
       </header>
-      <div className="editor">
-        <CakeEditor
-          initialValue={value}
-          value={value}
-          onChange={setValue}
-          settings={settings}
-          placeholder="Start typing..."
-          pageId={null}
-          canUploadImage={() => false}
-          style={{ minHeight: 240, padding: 16 }}
-        />
-      </div>
-      <footer>
-        <h2>Markdown</h2>
-        <pre>{value}</pre>
-      </footer>
+      <main className="content">
+        <section className="editor">
+          <CakeEditor
+            initialValue={value}
+            value={value}
+            onChange={setValue}
+          onSelectionChange={(start, end, affinity) => {
+              setSelection({ start, end, affinity: affinity ?? "forward" });
+            }}
+            settings={settings}
+            placeholder="Start typing..."
+            pageId={null}
+            canUploadImage={() => false}
+            style={{ height: "100%", padding: 24 }}
+          />
+        </section>
+        <aside className="sidebar">
+          <section className="panel">
+            <h2>Selection</h2>
+            <pre className="panelPre">
+              {JSON.stringify(
+                selection
+                  ? {
+                      ...selection,
+                      length: Math.abs(selection.end - selection.start),
+                    }
+                  : null,
+                null,
+                2,
+              )}
+            </pre>
+          </section>
+          <section className="panel">
+            <h2>Markdown</h2>
+            <pre className="panelPre">{value}</pre>
+          </section>
+        </aside>
+      </main>
     </div>
   );
 }

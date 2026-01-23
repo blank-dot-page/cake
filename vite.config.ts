@@ -8,7 +8,6 @@ export default defineConfig({
       entry: "src/index.ts",
       formats: ["es", "cjs"],
       fileName: (format) => (format === "cjs" ? "index.cjs" : "index.js"),
-      formats: ["es", "cjs"],
     },
     rollupOptions: {
       external: [
