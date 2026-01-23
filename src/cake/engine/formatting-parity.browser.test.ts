@@ -26,6 +26,7 @@ const mod =
     ? { meta: true }
     : { ctrl: true };
 const strikeMod = { ...mod, shift: true };
+const linkShortcut = { ...mod, shift: true };
 
 describe("Cake formatting parity (browser)", () => {
   afterEach(() => {
@@ -45,6 +46,121 @@ describe("Cake formatting parity (browser)", () => {
     await h.pressKey("b", mod);
     await h.typeText("x");
     expect(h.engine.getValue()).toBe("**text**x");
+    h.destroy();
+  });
+
+  it("Cmd+B then typing, then Cmd+I then typing applies bold then bold+italic", async () => {
+    const h = createTestHarness("");
+
+    await h.focus();
+    await h.pressKey("b", mod);
+    await h.typeText("bold");
+
+    expect(h.engine.getValue()).toBe("**bold**");
+    expect(h.getLine(0).textContent ?? "").toBe("bold");
+    expect(h.getLine(0).querySelector("strong")?.textContent ?? "").toBe("bold");
+    expect(h.getLine(0).querySelector("em")).toBeNull();
+
+    await h.pressKey("i", mod);
+    await h.typeText("italics");
+
+    expect(h.engine.getValue()).toBe("**bold*italics***");
+    const line = h.getLine(0);
+    expect(line.textContent ?? "").toBe("bolditalics");
+    const strong = line.querySelector("strong");
+    expect(strong).not.toBeNull();
+    expect(strong?.textContent ?? "").toBe("bolditalics");
+    const italic = strong?.querySelector("em");
+    expect(italic).not.toBeNull();
+    expect(italic?.textContent ?? "").toBe("italics");
+    h.destroy();
+  });
+
+  it("Cmd+B then Cmd+I then Cmd+I off preserves bold-only typing after italic span", async () => {
+    const h = createTestHarness("");
+
+    await h.focus();
+    await h.pressKey("b", mod);
+    await h.typeText("bold");
+    await h.pressKey("i", mod);
+    await h.typeText("italics");
+    await h.pressKey("i", mod);
+    await h.typeText("plain");
+
+    expect(h.engine.getValue()).toBe("**bold*italics*plain**");
+    const line = h.getLine(0);
+    expect(line.textContent ?? "").toBe("bolditalicsplain");
+    const strong = line.querySelector("strong");
+    expect(strong).not.toBeNull();
+    expect(strong?.textContent ?? "").toBe("bolditalicsplain");
+    const italic = strong?.querySelector("em");
+    expect(italic).not.toBeNull();
+    expect(italic?.textContent ?? "").toBe("italics");
+    h.destroy();
+  });
+
+  it("Cmd+B on selected link text wraps the label in bold", async () => {
+    const h = createTestHarness("[link](url)");
+
+    await h.focus();
+    await h.doubleClick(1, 0);
+    await tick();
+    await h.pressKey("b", mod);
+
+    expect(h.engine.getValue()).toBe("[**link**](url)");
+    const line = h.getLine(0);
+    const anchor = line.querySelector("a.cake-link");
+    expect(anchor).not.toBeNull();
+    expect(anchor?.textContent ?? "").toBe("link");
+    const strong = anchor?.querySelector("strong");
+    expect(strong).not.toBeNull();
+    expect(strong?.textContent ?? "").toBe("link");
+    expect(anchor?.querySelector("em")).toBeNull();
+    h.destroy();
+  });
+
+  it("Cmd+B then Cmd+I on selected link text wraps the label in bold+italic", async () => {
+    const h = createTestHarness("[link](url)");
+
+    await h.focus();
+    await h.doubleClick(1, 0);
+    await tick();
+    await h.pressKey("b", mod);
+    await h.pressKey("i", mod);
+
+    expect(h.engine.getValue()).toBe("[***link***](url)");
+    const line = h.getLine(0);
+    const anchor = line.querySelector("a.cake-link");
+    expect(anchor).not.toBeNull();
+    expect(anchor?.textContent ?? "").toBe("link");
+    const strong = anchor?.querySelector("strong");
+    expect(strong).not.toBeNull();
+    const italic = strong?.querySelector("em");
+    expect(italic).not.toBeNull();
+    expect(italic?.textContent ?? "").toBe("link");
+    h.destroy();
+  });
+
+  it("Cmd+B then Cmd+Shift+U wraps bold selection in a link label", async () => {
+    const h = createTestHarness({
+      value: "bold",
+      renderOverlays: true,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    await h.focus();
+    await h.doubleClick(1, 0);
+    await tick();
+    await h.pressKey("b", mod);
+    await h.pressKey("u", linkShortcut);
+
+    expect(h.engine.getValue()).toBe("**[bold]()**");
+    const line = h.getLine(0);
+    const strong = line.querySelector("strong");
+    expect(strong).not.toBeNull();
+    const anchor = strong?.querySelector("a.cake-link");
+    expect(anchor).not.toBeNull();
+    expect(anchor?.textContent ?? "").toBe("bold");
     h.destroy();
   });
 

@@ -44,9 +44,16 @@ export const boldExtension: CakeExtension = {
       return null;
     }
 
-    const close = source.indexOf("**", start + 2);
+    let close = source.indexOf("**", start + 2);
     if (close === -1 || close >= end) {
       return null;
+    }
+    if (
+      source.slice(close, close + 3) === "***" &&
+      close + 1 < end &&
+      countSingleAsterisks(source, start + 2, close) % 2 === 1
+    ) {
+      close += 1;
     }
 
     const children = context.parseInline(source, start + 2, close);
@@ -98,3 +105,19 @@ export const boldExtension: CakeExtension = {
     return element;
   },
 };
+
+function countSingleAsterisks(source: string, start: number, end: number) {
+  let count = 0;
+  for (let i = start; i < end; i += 1) {
+    if (source[i] !== "*") {
+      continue;
+    }
+    const prev = i > start ? source[i - 1] : "";
+    const next = i + 1 < end ? source[i + 1] : "";
+    if (prev === "*" || next === "*") {
+      continue;
+    }
+    count += 1;
+  }
+  return count;
+}

@@ -1443,6 +1443,34 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
         ) {
           const exiting = around.left.slice(around.right.length);
           if (exiting.some((mark) => mark.kind === markerKind)) {
+            if (exiting.length > 1) {
+              const placeholder = "\u200B";
+              const insertAtForward = map.cursorToSource(caret, "forward");
+              const insertAtBackward = map.cursorToSource(caret, "backward");
+              const between = source.slice(insertAtBackward, insertAtForward);
+              const markerIndex = between.indexOf(marker);
+              if (markerIndex !== -1) {
+                const insertAt = insertAtBackward + markerIndex + markerLen;
+                const nextSource =
+                  source.slice(0, insertAt) +
+                  placeholder +
+                  source.slice(insertAt);
+                const next = createState(nextSource);
+                const placeholderStart = insertAt;
+                const startCursor = next.map.sourceToCursor(
+                  placeholderStart,
+                  "forward",
+                );
+                return {
+                  ...next,
+                  selection: {
+                    start: startCursor.cursorOffset,
+                    end: startCursor.cursorOffset,
+                    affinity: "forward",
+                  },
+                };
+              }
+            }
             return {
               ...state,
               selection: {
@@ -1515,16 +1543,31 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     const selectedText = source.slice(from, to);
 
     const markerLen = marker.length;
+    const markerKind = toggleMarkerToKind.get(marker) ?? null;
+    const commonMarks = markerKind
+      ? commonMarksAcrossSelection(
+          flattenDocToLines(state.doc),
+          cursorStart,
+          cursorEnd,
+          state.doc,
+        )
+      : [];
+    const hasCommonMark =
+      markerKind !== null && commonMarks.some((mark) => mark.kind === markerKind);
+    const canUnwrap = markerKind ? hasCommonMark : true;
     const isSelectionWrappedByAdjacentMarkers =
       markerLen > 0 &&
       from >= markerLen &&
       source.slice(from - markerLen, from) === marker &&
       source.slice(to, to + markerLen) === marker;
+    const isWrappedBySelectionText =
+      selectedText.startsWith(marker) &&
+      selectedText.endsWith(marker) &&
+      selectedText.length >= markerLen * 2;
     const isWrapped =
-      isSelectionWrappedByAdjacentMarkers ||
-      (selectedText.startsWith(marker) &&
-        selectedText.endsWith(marker) &&
-        selectedText.length >= markerLen * 2);
+      canUnwrap &&
+      (isSelectionWrappedByAdjacentMarkers ||
+        (markerKind ? isWrappedBySelectionText : isWrappedBySelectionText));
 
     let newSource: string;
 
