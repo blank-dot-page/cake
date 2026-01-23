@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import { userEvent } from "vitest/browser";
 import { CakeEngine } from "../../engine/cake-engine";
 import { bundledExtensions } from "../index";
 import { createTestHarness, type TestHarness } from "../../test/harness";
@@ -645,6 +646,75 @@ describe("typing dash with selection to create list", () => {
     // Should create bullet list for all lines
     expect(harness.engine.getValue()).toBe(
       "- line one\n- line two\n- line three",
+    );
+  });
+
+  test("typing multiple lines then selectAll and dash creates bullet list for each line", async () => {
+    harness = createTestHarness("");
+
+    await harness.focus();
+
+    // Type multiple lines using real keystrokes via vitest/browser userEvent
+    await userEvent.type(harness.contentRoot, "first line");
+    await userEvent.keyboard("{Enter}");
+    await userEvent.type(harness.contentRoot, "second line");
+    await userEvent.keyboard("{Enter}");
+    await userEvent.type(harness.contentRoot, "third line");
+
+    console.log("Value after typing:", JSON.stringify(harness.engine.getValue()));
+
+    // Select all using real Cmd+A
+    await userEvent.keyboard("{Meta>}a{/Meta}");
+
+    console.log("Selection after Cmd+A:", harness.selection);
+
+    // Type dash using real keystroke
+    await userEvent.keyboard("-");
+
+    console.log("Value after typing dash:", harness.engine.getValue());
+
+    // Check that lines are now list items
+    const listCount = harness.container.querySelectorAll(
+      ".cake-line.is-list",
+    ).length;
+    expect(listCount).toBe(3);
+
+    // Also verify the value
+    expect(harness.engine.getValue()).toBe(
+      "- first line\n- second line\n- third line",
+    );
+  });
+
+  test("typing dash with partial multi-line selection creates bullet list", async () => {
+    // This test replicates the real bug: when selection doesn't perfectly align
+    // with line boundaries (e.g., user selects from middle of first line to middle of last)
+    harness = createTestHarness("first line\nsecond line\nthird line");
+
+    await harness.focus();
+
+    // Simulate partial selection - starting from character 2 of first line
+    // to character 8 of last line (not aligned with line boundaries)
+    // "first line\nsecond line\nthird line"
+    //   ^-- start at 2 ("rst line\nsecond line\nthird li")
+    //                                            ^-- end at 31
+    harness.engine.setSelection({ start: 2, end: 31, affinity: "forward" });
+
+    console.log("Source:", JSON.stringify(harness.engine.getValue()));
+    console.log("Selection:", harness.selection);
+
+    // Type dash using real keystroke
+    await userEvent.keyboard("-");
+
+    console.log("Value after typing dash:", harness.engine.getValue());
+
+    // Should convert ALL THREE lines to list items, not just replace selection
+    const listCount = harness.container.querySelectorAll(
+      ".cake-line.is-list",
+    ).length;
+    expect(listCount).toBe(3);
+
+    expect(harness.engine.getValue()).toBe(
+      "- first line\n- second line\n- third line",
     );
   });
 

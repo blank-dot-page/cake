@@ -1289,6 +1289,28 @@ export class CakeEngine {
       });
       return;
     }
+
+    // Fallback for printable characters with selection.
+    // Some environments may not dispatch beforeinput when typing a character
+    // with a selection. Dispatch a generic insert command so extensions can handle it.
+    if (
+      event.key.length === 1 &&
+      !cmdOrCtrl &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey
+    ) {
+      const { selection } = this.state;
+      if (selection.start !== selection.end) {
+        event.preventDefault();
+        this.keydownHandledBeforeInput = true;
+        this.applyEdit({ type: "insert", text: event.key });
+        queueMicrotask(() => {
+          this.keydownHandledBeforeInput = false;
+        });
+        return;
+      }
+    }
   }
 
   private resolveExtensionKeybinding(event: KeyboardEvent): EditCommand | null {

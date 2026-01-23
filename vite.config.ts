@@ -8,6 +8,7 @@ export default defineConfig({
       entry: "src/index.ts",
       name: "Cake",
       fileName: (format) => (format === "cjs" ? "index.cjs" : "index.js"),
+      formats: ["es", "cjs"],
     },
     rollupOptions: {
       external: [
@@ -18,5 +19,6 @@ export default defineConfig({
         "turndown",
       ],
     },
+    minify: false,
   },
 });

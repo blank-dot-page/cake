@@ -940,6 +940,15 @@ function handleMarkerSwitch(
 
   // If there's a selection, try to convert lines to list
   if (selection.start !== selection.end) {
+    // For multi-line selections, use toggle-bullet-list behavior (like Cmd+Shift+8)
+    // which doesn't require exact line boundary alignment
+    const { startLine, endLine } = getSelectionLineRange(source, selection);
+    if (
+      startLine !== endLine &&
+      (insertedChar === "-" || insertedChar === "*" || insertedChar === "+")
+    ) {
+      return handleToggleList(state, true);
+    }
     return handleInsertListMarkerWithSelection(state, insertedChar);
   }
 
