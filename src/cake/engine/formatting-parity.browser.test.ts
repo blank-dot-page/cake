@@ -379,6 +379,76 @@ describe("Cake formatting parity (browser)", () => {
     h.destroy();
   });
 
+  it("Cmd+A then Cmd+B on multiline selection renders bold without markers and keeps selection", async () => {
+    const h = createTestHarness("");
+
+    await h.focus();
+    await h.typeText("line 1");
+    await h.pressEnter();
+    await h.typeText("line 2");
+    await tick();
+
+    await h.pressKey("a", mod);
+    await tick();
+    expect(Math.min(h.selection.start, h.selection.end)).toBe(0);
+    expect(Math.max(h.selection.start, h.selection.end)).toBe(13);
+
+    await h.pressKey("b", mod);
+    await tick();
+
+    expect(h.getLine(0).textContent ?? "").toBe("line 1");
+    expect(h.getLine(0).textContent ?? "").not.toContain("*");
+    expect(h.getLine(0).querySelector("strong")?.textContent ?? "").toBe(
+      "line 1",
+    );
+
+    expect(h.getLine(1).textContent ?? "").toBe("line 2");
+    expect(h.getLine(1).textContent ?? "").not.toContain("*");
+    expect(h.getLine(1).querySelector("strong")?.textContent ?? "").toBe(
+      "line 2",
+    );
+
+    expect(Math.min(h.selection.start, h.selection.end)).toBe(0);
+    expect(Math.max(h.selection.start, h.selection.end)).toBe(13);
+
+    h.destroy();
+  });
+
+  it("Cmd+B on a keyboard-selected multiline range does not surface literal ** markers", async () => {
+    const h = createTestHarness("");
+
+    await h.focus();
+    await h.typeText("hello");
+    await h.pressEnter();
+    await h.typeText("world");
+    await tick();
+
+    await h.clickAt(0, 0);
+    for (let i = 0; i < 11; i += 1) {
+      await h.pressKey("ArrowRight", { shift: true });
+    }
+    await tick();
+
+    await h.pressKey("b", mod);
+    await tick();
+
+    expect(h.engine.getValue()).toBe("**hello**\n**world**");
+
+    expect(h.getLine(0).textContent ?? "").toBe("hello");
+    expect(h.getLine(0).textContent ?? "").not.toContain("*");
+    expect(h.getLine(0).querySelector("strong")?.textContent ?? "").toBe(
+      "hello",
+    );
+
+    expect(h.getLine(1).textContent ?? "").toBe("world");
+    expect(h.getLine(1).textContent ?? "").not.toContain("*");
+    expect(h.getLine(1).querySelector("strong")?.textContent ?? "").toBe(
+      "world",
+    );
+
+    h.destroy();
+  });
+
   it("Cmd+B then Cmd+I then typing produces combined emphasis", async () => {
     const h = createTestHarness("");
 

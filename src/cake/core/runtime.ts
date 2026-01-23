@@ -411,6 +411,71 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     ) {
       const structural = applyStructuralEdit(command, state.doc, selection);
       if (!structural) {
+        // Structural edits can refuse to operate across certain doc-tree
+        // boundaries (e.g. headings are represented as block-wrappers, so a
+        // backspace at the start of the following paragraph crosses parents).
+        //
+        // When that happens, fall back to deleting in source space so
+        // Backspace/Delete still behave reasonably, then reparse.
+        if (
+          command.type === "delete-backward" ||
+          command.type === "delete-forward"
+        ) {
+          const cursorLength = state.map.cursorLength;
+          const cursorStart = Math.max(
+            0,
+            Math.min(cursorLength, Math.min(selection.start, selection.end)),
+          );
+          const cursorEnd = Math.max(
+            0,
+            Math.min(cursorLength, Math.max(selection.start, selection.end)),
+          );
+
+          if (cursorStart === cursorEnd) {
+            if (command.type === "delete-backward" && cursorStart === 0) {
+              return state;
+            }
+            if (
+              command.type === "delete-forward" &&
+              cursorStart === cursorLength
+            ) {
+              return state;
+            }
+          }
+
+          const range =
+            cursorStart === cursorEnd
+              ? command.type === "delete-backward"
+                ? { start: cursorStart - 1, end: cursorStart }
+                : { start: cursorStart, end: cursorStart + 1 }
+              : { start: cursorStart, end: cursorEnd };
+
+          const fullDocDelete = range.start === 0 && range.end === cursorLength;
+          const from = fullDocDelete
+            ? 0
+            : state.map.cursorToSource(range.start, "backward");
+          const to = fullDocDelete
+            ? state.source.length
+            : state.map.cursorToSource(range.end, "forward");
+          const fromClamped = Math.max(0, Math.min(from, state.source.length));
+          const toClamped = Math.max(
+            fromClamped,
+            Math.min(to, state.source.length),
+          );
+
+          const nextSource =
+            state.source.slice(0, fromClamped) + state.source.slice(toClamped);
+          const next = createState(nextSource);
+          const caretCursor = next.map.sourceToCursor(fromClamped, "forward");
+          return {
+            ...next,
+            selection: {
+              start: caretCursor.cursorOffset,
+              end: caretCursor.cursorOffset,
+              affinity: caretCursor.affinity,
+            },
+          };
+        }
         return state;
       }
 
@@ -1544,9 +1609,10 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
 
     const markerLen = marker.length;
     const markerKind = toggleMarkerToKind.get(marker) ?? null;
+    const linesForSelection = flattenDocToLines(state.doc);
     const commonMarks = markerKind
       ? commonMarksAcrossSelection(
-          flattenDocToLines(state.doc),
+          linesForSelection,
           cursorStart,
           cursorEnd,
           state.doc,
@@ -1555,6 +1621,125 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     const hasCommonMark =
       markerKind !== null && commonMarks.some((mark) => mark.kind === markerKind);
     const canUnwrap = markerKind ? hasCommonMark : true;
+
+    const startLoc = resolveCursorToLine(linesForSelection, cursorStart);
+    const endLoc = resolveCursorToLine(linesForSelection, cursorEnd);
+
+    if (
+      markerKind &&
+      (startLoc.lineIndex !== endLoc.lineIndex || selectedText.includes("\n"))
+    ) {
+      const edits: Array<{ from: number; to: number; insert: string }> = [];
+
+      const segments = (() => {
+        if (!selectedText.includes("\n")) {
+          const lineOffsets = getLineStartOffsets(linesForSelection);
+          const byCursorLines: Array<{ from: number; to: number }> = [];
+
+          for (
+            let lineIndex = startLoc.lineIndex;
+            lineIndex <= endLoc.lineIndex;
+            lineIndex += 1
+          ) {
+            const line = linesForSelection[lineIndex];
+            if (!line) {
+              continue;
+            }
+            const lineStart = lineOffsets[lineIndex] ?? 0;
+            const startInLine =
+              lineIndex === startLoc.lineIndex ? startLoc.offsetInLine : 0;
+            const endInLine =
+              lineIndex === endLoc.lineIndex
+                ? endLoc.offsetInLine
+                : line.cursorLength;
+            if (startInLine === endInLine) {
+              continue;
+            }
+            const segmentStartCursor = lineStart + startInLine;
+            const segmentEndCursor = lineStart + endInLine;
+            const segmentFrom = map.cursorToSource(segmentStartCursor, "forward");
+            const segmentTo = map.cursorToSource(segmentEndCursor, "backward");
+            if (segmentFrom === segmentTo) {
+              continue;
+            }
+            byCursorLines.push({ from: segmentFrom, to: segmentTo });
+          }
+
+          return byCursorLines;
+        }
+
+        const byNewlines: Array<{ from: number; to: number }> = [];
+        let sliceOffset = 0;
+        while (sliceOffset <= selectedText.length) {
+          const newlineIndex = selectedText.indexOf("\n", sliceOffset);
+          const segmentEndOffset =
+            newlineIndex === -1 ? selectedText.length : newlineIndex;
+          const segmentFrom = from + sliceOffset;
+          const segmentTo = from + segmentEndOffset;
+          if (segmentFrom !== segmentTo) {
+            byNewlines.push({ from: segmentFrom, to: segmentTo });
+          }
+          if (newlineIndex === -1) {
+            break;
+          }
+          sliceOffset = newlineIndex + 1;
+        }
+        return byNewlines;
+      })();
+
+      for (const segment of segments) {
+        const segmentFrom = segment.from;
+        const segmentTo = segment.to;
+
+        if (canUnwrap) {
+          if (
+            segmentFrom >= markerLen &&
+            source.slice(segmentFrom - markerLen, segmentFrom) === marker
+          ) {
+            edits.push({
+              from: segmentFrom - markerLen,
+              to: segmentFrom,
+              insert: "",
+            });
+          }
+          if (source.slice(segmentTo, segmentTo + markerLen) === marker) {
+            edits.push({
+              from: segmentTo,
+              to: segmentTo + markerLen,
+              insert: "",
+            });
+          }
+        } else {
+          edits.push({ from: segmentFrom, to: segmentFrom, insert: marker });
+          edits.push({ from: segmentTo, to: segmentTo, insert: marker });
+        }
+      }
+
+      if (edits.length === 0) {
+        return state;
+      }
+
+      edits.sort((a, b) => b.from - a.from);
+      let newSource = source;
+      for (const edit of edits) {
+        newSource =
+          newSource.slice(0, edit.from) +
+          edit.insert +
+          newSource.slice(edit.to);
+      }
+
+      const next = createState(newSource);
+
+      return {
+        ...next,
+        selection: {
+          start: cursorStart,
+          end: cursorEnd,
+          affinity: selection.affinity ?? "forward",
+        },
+      };
+    }
+
     const isSelectionWrappedByAdjacentMarkers =
       markerLen > 0 &&
       from >= markerLen &&
