@@ -952,8 +952,7 @@ export class CakeEngine {
       return;
     }
 
-    // For single clicks (detail=1), use the pending hit from pointerdown
-    // for accurate positioning with emoji/variable-width characters.
+    // For single clicks (detail=1), selection was already applied in pointerdown.
     // Skip if user just created a selection via drag (mouse moved since pointer down)
     if (event.detail === 1 && !this.hasMovedSincePointerDown) {
       // For shift+click, let the browser handle selection extension
@@ -981,28 +980,13 @@ export class CakeEngine {
         return;
       }
 
-      // Use pending hit from pointerdown, or do fresh hit test as fallback
-      const hit =
-        this.pendingClickHit ??
-        this.hitTestFromClientPoint(event.clientX, event.clientY);
+      // Selection was already applied in pointerdown, just clear the suppress flag
+      // Use setTimeout to delay clearing so any pending selectionchange events are ignored
+      // (selectionchange can fire asynchronously after DOM selection changes)
       this.pendingClickHit = null;
-
-      if (hit) {
-        const newSelection: Selection = {
-          start: hit.cursorOffset,
-          end: hit.cursorOffset,
-          affinity: hit.affinity,
-        };
-        this.state = this.runtime.updateSelection(this.state, newSelection, {
-          kind: "dom",
-        });
-        this.applySelection(this.state.selection);
-        this.onSelectionChange?.(this.state.selection);
-        this.scheduleOverlayUpdate();
-      }
-
-      // Clear the suppress flag we set in pointerdown (after applying selection)
-      this.suppressSelectionChange = false;
+      setTimeout(() => {
+        this.suppressSelectionChange = false;
+      }, 0);
       return;
     }
     // Clear pending hit for non-single-click events
@@ -3078,6 +3062,7 @@ export class CakeEngine {
     overlay.style.zIndex = "2";
     const caret = document.createElement("div");
     caret.className = "cake-caret";
+    caret.style.position = "absolute";
     caret.style.display = "none";
     overlay.append(caret);
     this.overlayRoot = overlay;
@@ -3447,19 +3432,28 @@ export class CakeEngine {
       }
     }
 
-    // For regular clicks with collapsed selection (no shift key), capture the hit
-    // immediately so we can use accurate hit testing in the click handler.
+    // For regular clicks with collapsed selection (no shift key), apply the selection
+    // immediately on pointerdown for better responsiveness. Don't wait for click event.
     // Don't capture when shift is held - that's extend-selection behavior.
     if (selection.start === selection.end && !event.shiftKey) {
-      // Suppress selectionchange until click handler runs, preventing the browser's
-      // native selection from overwriting our programmatically set selection.
-      // This is important for:
-      // - Single clicks: accurate cursor positioning with variable-width chars
-      // - Multi-clicks: preventing native selection (which includes newlines) from winning
+      // Suppress selectionchange to prevent the browser's native selection from
+      // overwriting our programmatically set selection.
       this.suppressSelectionChange = true;
       const hit = this.hitTestFromClientPoint(event.clientX, event.clientY);
       if (hit) {
         this.pendingClickHit = hit;
+        // Apply selection immediately on pointerdown for responsiveness
+        const newSelection: Selection = {
+          start: hit.cursorOffset,
+          end: hit.cursorOffset,
+          affinity: hit.affinity,
+        };
+        this.state = this.runtime.updateSelection(this.state, newSelection, {
+          kind: "dom",
+        });
+        this.applySelection(this.state.selection);
+        this.onSelectionChange?.(this.state.selection);
+        this.scheduleOverlayUpdate();
       }
       return;
     }
@@ -3622,12 +3616,9 @@ export class CakeEngine {
 
   private handlePointerUp(event: PointerEvent) {
     this.blockTrustedTextDrag = false;
-    // Clear pending click hit if pointer up happens without click
-    // (e.g., if user drags or releases outside the element)
-    if (this.pendingClickHit) {
-      this.pendingClickHit = null;
-      this.suppressSelectionChange = false;
-    }
+    // Don't clear pendingClickHit here - let the click handler do it.
+    // The click event fires after pointerup, and we need to keep
+    // suppressSelectionChange=true until click completes.
 
     if (this.selectionDragState) {
       if (event.pointerId !== this.selectionDragState.pointerId) {

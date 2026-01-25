@@ -10,9 +10,15 @@ body {
 }
 
 .app {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 32px 24px 64px;
+  padding: 32px 16px 64px;
+}
+
+@media (min-width: 768px) {
+  .app {
+    padding: 32px 24px 64px;
+  }
 }
 
 header {
@@ -30,10 +36,16 @@ header h1 {
   gap: 24px;
 }
 
-@media (min-width: 980px) {
+@media (min-width: 768px) {
+  .content {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    align-items: start;
+  }
+}
+
+@media (min-width: 1024px) {
   .content {
     grid-template-columns: minmax(0, 1fr) 360px;
-    align-items: start;
   }
 }
 
@@ -56,6 +68,8 @@ header h1 {
 
 .panel {
   padding: 16px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .panel h2 {
@@ -72,6 +86,8 @@ header h1 {
   margin: 0;
   font-size: 12px;
   line-height: 1.45;
+  max-height: 200px;
+  word-break: break-all;
 }
 
 .editor .cake {
@@ -92,6 +108,7 @@ header h1 {
 .editor .cake-content:focus,
 .editor .cake-content:focus-visible {
   outline: none;
+  caret-color: transparent;
 }
 
 .editor .cake-placeholder {
@@ -120,4 +137,9 @@ header h1 {
 .editor .cake-line.is-heading-3 {
   font-size: 18px;
   line-height: 1.25;
+}
+
+.editor .cake-caret {
+  width: 2px;
+  background: blue;
 }
