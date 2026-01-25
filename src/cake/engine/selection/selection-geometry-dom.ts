@@ -71,6 +71,7 @@ export function getSelectionGeometry(params: {
         scroll,
       }),
       lineLength: lineInfo.cursorLength,
+      fontSize: getComputedFontSize(lineElement),
       padding: getComputedVerticalPadding(lineElement),
     };
     const caretRect = computeCaretRect(caretMeasurement);
@@ -118,6 +119,7 @@ export function getSelectionGeometry(params: {
             scroll,
           }),
           lineLength: lineInfo.cursorLength,
+          fontSize: getComputedFontSize(focusLineElement),
           padding: getComputedVerticalPadding(focusLineElement),
         };
         focusRect = computeCaretRect(caretMeasurement);
@@ -268,5 +270,11 @@ function getComputedVerticalPadding(lineElement: HTMLElement): {
     top: Number.isFinite(top) ? top : 0,
     bottom: Number.isFinite(bottom) ? bottom : 0,
   };
+}
+
+function getComputedFontSize(lineElement: HTMLElement): number {
+  const fontSize = window.getComputedStyle(lineElement).fontSize;
+  const parsed = Number.parseFloat(fontSize);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 16;
 }
 

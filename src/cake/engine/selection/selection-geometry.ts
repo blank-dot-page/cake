@@ -17,6 +17,7 @@ export type SelectionCaretMeasurement = {
   lineRect: LayoutRect;
   caretRect: LayoutRect;
   lineLength: number;
+  fontSize: number;
   padding: { top: number; bottom: number };
 };
 
@@ -216,7 +217,7 @@ export function computeSelectionRects(
 export function computeCaretRect(
   caret: SelectionCaretMeasurement,
 ): SelectionRect | null {
-  const height = caret.lineRect.height;
+  const height = caret.fontSize * 1.2;
   const contentHeight =
     caret.lineRect.height > 0
       ? Math.max(
