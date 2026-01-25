@@ -71,14 +71,7 @@ export function getSelectionGeometry(params: {
         scroll,
       }),
       lineLength: lineInfo.cursorLength,
-      lineHeight: getComputedLineHeight(lineElement),
-      fontSize: getComputedFontSize(lineElement),
       padding: getComputedVerticalPadding(lineElement),
-      nearestTextCaretHeight: getNearestTextCaretHeight(
-        root,
-        docLines,
-        startLine.lineIndex,
-      ),
     };
     const caretRect = computeCaretRect(caretMeasurement);
     return {
@@ -125,14 +118,7 @@ export function getSelectionGeometry(params: {
             scroll,
           }),
           lineLength: lineInfo.cursorLength,
-          lineHeight: getComputedLineHeight(focusLineElement),
-          fontSize: getComputedFontSize(focusLineElement),
           padding: getComputedVerticalPadding(focusLineElement),
-          nearestTextCaretHeight: getNearestTextCaretHeight(
-            root,
-            docLines,
-            focusLine.lineIndex,
-          ),
         };
         focusRect = computeCaretRect(caretMeasurement);
       }
@@ -271,40 +257,6 @@ export function getCaretRect(params: {
   return { rect: caretRect, lineRect };
 }
 
-function getComputedLineHeight(lineElement: HTMLElement): number | null {
-  const style = window.getComputedStyle(lineElement);
-  const lineHeight = style.lineHeight.trim();
-  if (lineHeight === "normal") {
-    const fontSize = Number.parseFloat(style.fontSize);
-    if (!Number.isFinite(fontSize) || fontSize <= 0) {
-      return null;
-    }
-    return fontSize * 1.2;
-  }
-  const parsed = Number.parseFloat(lineHeight);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-  const hasUnit = /[a-z%]+$/i.test(lineHeight);
-  if (!hasUnit) {
-    const fontSize = Number.parseFloat(style.fontSize);
-    if (!Number.isFinite(fontSize) || fontSize <= 0) {
-      return null;
-    }
-    return parsed * fontSize;
-  }
-  return parsed;
-}
-
-function getComputedFontSize(lineElement: HTMLElement): number | null {
-  const fontSize = window.getComputedStyle(lineElement).fontSize;
-  const parsed = Number.parseFloat(fontSize);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-  return parsed;
-}
-
 function getComputedVerticalPadding(lineElement: HTMLElement): {
   top: number;
   bottom: number;
@@ -318,36 +270,3 @@ function getComputedVerticalPadding(lineElement: HTMLElement): {
   };
 }
 
-function getNearestTextCaretHeight(
-  root: HTMLElement,
-  lines: LineInfo[],
-  lineIndex: number,
-): number | null {
-  for (let distance = 1; distance < lines.length; distance += 1) {
-    const before = lineIndex - distance;
-    const after = lineIndex + distance;
-    const candidates = [before, after];
-    for (const candidate of candidates) {
-      if (candidate < 0 || candidate >= lines.length) {
-        continue;
-      }
-      const line = lines[candidate];
-      if (!line || line.cursorLength === 0) {
-        continue;
-      }
-      const lineElement = getLineElement(root, candidate);
-      if (!lineElement) {
-        continue;
-      }
-      const caret = getCaretRect({
-        lineElement,
-        lineInfo: line,
-        offsetInLine: 0,
-      });
-      if (caret?.rect.height && caret.rect.height > 0) {
-        return caret.rect.height;
-      }
-    }
-  }
-  return null;
-}

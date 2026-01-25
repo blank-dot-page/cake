@@ -17,10 +17,7 @@ export type SelectionCaretMeasurement = {
   lineRect: LayoutRect;
   caretRect: LayoutRect;
   lineLength: number;
-  lineHeight: number | null;
-  fontSize: number | null;
   padding: { top: number; bottom: number };
-  nearestTextCaretHeight: number | null;
 };
 
 export type OffsetToXMeasurer = (
@@ -219,9 +216,7 @@ export function computeSelectionRects(
 export function computeCaretRect(
   caret: SelectionCaretMeasurement,
 ): SelectionRect | null {
-  const fallbackHeight =
-    caret.caretRect.height > 0 ? caret.caretRect.height : caret.lineRect.height;
-  const lineHeight = caret.lineHeight ?? fallbackHeight;
+  const height = caret.lineRect.height;
   const contentHeight =
     caret.lineRect.height > 0
       ? Math.max(
@@ -229,19 +224,6 @@ export function computeCaretRect(
           caret.lineRect.height - caret.padding.top - caret.padding.bottom,
         )
       : 0;
-  const emptyLineHeight =
-    caret.lineLength === 0
-      ? (caret.nearestTextCaretHeight ??
-        caret.fontSize ??
-        (contentHeight > 0 ? contentHeight : null) ??
-        lineHeight)
-      : null;
-  const height =
-    caret.lineLength === 0
-      ? (emptyLineHeight ?? lineHeight)
-      : caret.caretRect.height > 0
-        ? caret.caretRect.height
-        : lineHeight;
   const emptyLineTop =
     contentHeight > 0
       ? caret.lineRect.top + caret.padding.top + (contentHeight - height) / 2
