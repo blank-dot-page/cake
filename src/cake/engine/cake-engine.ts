@@ -318,11 +318,18 @@ export class CakeEngine {
   }
 
   setValue({ value, selection }: { value: string; selection?: Selection }) {
-    const nextSelection = selection ?? this.state.selection;
-    if (value === this.state.source && selection === undefined) {
+    const valueChanged = value !== this.state.source;
+
+    if (!valueChanged && selection === undefined) {
       return;
     }
 
+    if (!valueChanged && selection !== undefined) {
+      this.setSelection(selection);
+      return;
+    }
+
+    const nextSelection = selection ?? this.state.selection;
     this.state = this.runtime.createState(value, nextSelection);
     this.render();
   }
@@ -629,7 +636,13 @@ export class CakeEngine {
       this.extensions,
       this.contentRoot,
     );
-    this.contentRoot.replaceChildren(...content);
+    const existingChildren = Array.from(this.contentRoot.childNodes);
+    const needsUpdate =
+      content.length !== existingChildren.length ||
+      content.some((node, i) => node !== existingChildren[i]);
+    if (needsUpdate) {
+      this.contentRoot.replaceChildren(...content);
+    }
     this.domMap = map;
     this.updateExtensionsOverlayPosition();
     if (!this.isComposing) {

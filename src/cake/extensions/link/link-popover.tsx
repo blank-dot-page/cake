@@ -172,13 +172,13 @@ export function CakeLinkPopover(params: {
     if (state.status !== "open") {
       return;
     }
-    container.addEventListener("scroll", reposition, { passive: true });
+    container.addEventListener("scroll", close, { passive: true });
     window.addEventListener("resize", reposition);
     return () => {
-      container.removeEventListener("scroll", reposition);
+      container.removeEventListener("scroll", close);
       window.removeEventListener("resize", reposition);
     };
-  }, [container, reposition, state.status]);
+  }, [close, container, reposition, state.status]);
 
   const handleMouseDown = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
