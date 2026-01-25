@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import type { StateCommand } from "@codemirror/state";
 import type { Selection } from "../core/types";
 import type {
@@ -303,11 +302,11 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
       : "cake";
 
     const overlayContext =
-      overlayRoot && containerRef.current && contentRoot
+      containerRef.current && contentRoot
         ? ({
             container: containerRef.current,
             contentRoot,
-            overlayRoot,
+            overlayRoot: overlayRoot ?? undefined,
             toOverlayRect: (rect) => {
               const containerRect =
                 containerRef.current?.getBoundingClientRect();
@@ -346,8 +345,12 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
           } satisfies OverlayExtensionContext)
         : null;
 
+    const hasOverlayExtensions = allExtensionsRef.current.some(
+      (ext) => ext.renderOverlay,
+    );
+
     return (
-      <>
+      <div style={{ position: "relative", height: "100%" }}>
         <div
           ref={containerRef}
           className={containerClassName}
@@ -357,22 +360,17 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
             props.onBlur?.(event.nativeEvent);
           }}
         />
-        {overlayRoot && overlayContext
-          ? createPortal(
-              <>
-                {allExtensionsRef.current.map((extension) =>
-                  extension.renderOverlay ? (
-                    <Fragment key={extension.name}>
-                      {extension.renderOverlay(overlayContext)}
-                    </Fragment>
-                  ) : null,
-                )}
-              </>,
-            overlayRoot,
-          )
-        : null}
-    </>
-  );
+        {overlayContext && hasOverlayExtensions
+          ? allExtensionsRef.current.map((extension) =>
+              extension.renderOverlay ? (
+                <Fragment key={extension.name}>
+                  {extension.renderOverlay(overlayContext)}
+                </Fragment>
+              ) : null,
+            )
+          : null}
+      </div>
+    );
 });
 
 CakeEditor.displayName = "CakeEditor";

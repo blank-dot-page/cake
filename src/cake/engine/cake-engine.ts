@@ -3044,8 +3044,9 @@ export class CakeEngine {
     if (!this.extensionsRoot) {
       return;
     }
-    const scrollTop = this.container.scrollTop;
-    const scrollLeft = this.container.scrollLeft;
+    // Clamp to non-negative to prevent movement during elastic bounce/overscroll
+    const scrollTop = Math.max(0, this.container.scrollTop);
+    const scrollLeft = Math.max(0, this.container.scrollLeft);
     if (scrollTop === 0 && scrollLeft === 0) {
       this.extensionsRoot.style.transform = "";
       return;

@@ -1,4 +1,4 @@
-import type { Affinity, Block, Doc, Inline, Selection } from "./types";
+import type { Affinity, Block, Doc, Inline, ParagraphBlock, Selection } from "./types";
 import type { ReactElement } from "react";
 import {
   CursorSourceBuilder,

@@ -20,6 +20,7 @@ function ScrollbarOverlay({ container }: { container: HTMLElement }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const dragStartRef = useRef<{ scrollTop: number; clientY: number } | null>(
     null,
   );
@@ -42,6 +43,31 @@ function ScrollbarOverlay({ container }: { container: HTMLElement }) {
     maxScrollTop > 0
       ? TRACK_PADDING + (scrollTop / maxScrollTop) * (trackHeight - thumbHeight)
       : TRACK_PADDING;
+
+  useEffect(() => {
+    function checkDarkMode() {
+      // Check for explicit dark class - blank page adds "dark" class when in dark mode
+      // When in light mode, there's no explicit class, so default to light
+      const html = document.documentElement;
+      setIsDarkMode(html.classList.contains("dark"));
+    }
+
+    checkDarkMode();
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    mediaQuery.addEventListener("change", checkDarkMode);
+
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    return () => {
+      mediaQuery.removeEventListener("change", checkDarkMode);
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     function update() {
@@ -197,6 +223,14 @@ function ScrollbarOverlay({ container }: { container: HTMLElement }) {
 
   const isVisible = isDragging || isHovered || isScrolling;
 
+  const wrapperStyle: React.CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    pointerEvents: "none",
+    overflow: "hidden",
+    zIndex: 50,
+  };
+
   const trackStyle: React.CSSProperties = {
     position: "absolute",
     top: 0,
@@ -207,6 +241,13 @@ function ScrollbarOverlay({ container }: { container: HTMLElement }) {
     pointerEvents: "auto",
   };
 
+  const getThumbColor = () => {
+    if (isDarkMode) {
+      return isDragging ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 255, 255, 0.3)";
+    }
+    return isDragging ? "rgba(0, 0, 0, 0.5)" : "rgba(0, 0, 0, 0.3)";
+  };
+
   const thumbStyle: React.CSSProperties = {
     position: "absolute",
     right: "2px",
@@ -215,28 +256,27 @@ function ScrollbarOverlay({ container }: { container: HTMLElement }) {
     height: thumbHeight,
     top: thumbTop,
     opacity: isVisible ? 1 : 0,
+    backgroundColor: getThumbColor(),
+    transition: "opacity 150ms",
+    cursor: "pointer",
   };
 
   return (
-    <div
-      data-testid="custom-scrollbar"
-      aria-hidden="true"
-      className="pointer-events-auto absolute top-0 right-0 bottom-0 z-50 w-3"
-      style={trackStyle}
-      onClick={handleTrackClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
+    <div style={wrapperStyle}>
       <div
-        data-testid="scrollbar-thumb"
-        className={`absolute right-0.5 w-1.5 cursor-pointer rounded-full transition-opacity duration-150 ${
-          isDragging
-            ? "bg-black/50 dark:bg-white/50"
-            : "bg-black/30 dark:bg-white/30"
-        }`}
-        style={thumbStyle}
-        onMouseDown={handleThumbMouseDown}
-      />
+        data-testid="custom-scrollbar"
+        aria-hidden="true"
+        style={trackStyle}
+        onClick={handleTrackClick}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <div
+          data-testid="scrollbar-thumb"
+          style={thumbStyle}
+          onMouseDown={handleThumbMouseDown}
+        />
+      </div>
     </div>
   );
 }
