@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { CakeEditor, defaultEditorSettings } from "@blankdotpage/cake";
+import { useState } from "react";
+import { CakeEditor } from "@blankdotpage/cake";
 
 type SelectionDebug = {
   start: number;
@@ -13,11 +13,6 @@ export default function App() {
   );
   const [selection, setSelection] = useState<SelectionDebug | null>(null);
 
-  const settings = useMemo(
-    () => ({ ...defaultEditorSettings, spellCheckEnabled: true }),
-    [],
-  );
-
   return (
     <div className="app">
       <header>
@@ -27,16 +22,13 @@ export default function App() {
       <main className="content">
         <section className="editor">
           <CakeEditor
-            initialValue={value}
             value={value}
             onChange={setValue}
-          onSelectionChange={(start, end, affinity) => {
+            onSelectionChange={(start, end, affinity) => {
               setSelection({ start, end, affinity: affinity ?? "forward" });
             }}
-            settings={settings}
             placeholder="Start typing..."
-            pageId={null}
-            canUploadImage={() => false}
+            spellCheck
             style={{ height: "100%", padding: 24 }}
           />
         </section>

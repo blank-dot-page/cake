@@ -2,27 +2,21 @@ import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
-import { CakeEditor } from "../../index";
-import type { EditorRefHandle } from "../../../editor";
-import { defaultEditorSettings } from "../../../editor";
+import { CakeEditor, type CakeEditorRef } from "../../index";
 import { scrollbarExtension } from "./index";
 
 const TRACK_PADDING = 8;
 const originalConsoleError = console.error;
 
 async function renderScrollbarEditor(markdown: string, height = 200) {
-  const ref = createRef<EditorRefHandle>();
+  const ref = createRef<CakeEditorRef>();
   const renderResult = render(
     <div style={{ height, overflow: "hidden" }}>
       <CakeEditor
         ref={ref}
-        initialValue={markdown}
         value={markdown}
         onChange={() => undefined}
-        settings={defaultEditorSettings}
         placeholder=""
-        pageId={null}
-        canUploadImage={() => true}
         extensions={[scrollbarExtension]}
         style={{ height: "100%", overflow: "auto" }}
       />

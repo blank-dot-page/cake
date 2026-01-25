@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { OverlayExtension } from "../overlay-types";
+import type { CakeExtension } from "../../core/runtime";
 
 type ScrollState = {
   scrollTop: number;
@@ -241,10 +241,9 @@ function ScrollbarOverlay({ container }: { container: HTMLElement }) {
   );
 }
 
-export const scrollbarExtension: OverlayExtension = {
-  type: "overlay",
+export const scrollbarExtension: CakeExtension = {
   name: "scrollbar",
-  render(context) {
+  renderOverlay(context) {
     return <ScrollbarOverlay container={context.container} />;
   },
 };

@@ -2,9 +2,7 @@ import { createRef, useEffect, useRef, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
-import { CakeEditor } from "../index";
-import type { EditorRefHandle } from "../../editor";
-import { defaultEditorSettings } from "../../editor";
+import { CakeEditor, type CakeEditorRef } from "../index";
 import type {
   CakeExtension,
   ParseInlineResult,
@@ -175,27 +173,16 @@ function HelloPopoverOverlay({ context }: { context: HelloOverlayContext }) {
 }
 
 function renderEditor(markdown: string) {
-  const ref = createRef<EditorRefHandle>();
-
-  const bundles = [
-    {
-      name: "hello",
-      extensions: [helloInlineExtension],
-    },
-  ];
+  const ref = createRef<CakeEditorRef>();
 
   const renderResult = render(
     <CakeEditor
       ref={ref}
-      initialValue={markdown}
       value={markdown}
       onChange={() => undefined}
-      settings={defaultEditorSettings}
       placeholder=""
-      pageId={null}
-      canUploadImage={() => true}
       style={{ height: 160, overflow: "auto" }}
-      extensionBundles={bundles}
+      extensions={[helloInlineExtension]}
     />,
   );
 

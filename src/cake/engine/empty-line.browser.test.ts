@@ -92,5 +92,42 @@ describe("CakeEngine empty line handling", () => {
 
       expect(caretHeightOnEmpty).toBe(caretHeightOnContent);
     });
+
+    it("caret height on empty line after heading matches caret height on regular paragraph", async () => {
+      // CSS that makes headings larger, simulating real app styling
+      const css = `
+        .cake-line.is-heading {
+          font-weight: 700;
+        }
+        .cake-line.is-heading-1 {
+          font-size: 28px;
+          line-height: 1.15;
+        }
+      `;
+
+      // Doc: heading, empty line, paragraph
+      harness = createTestHarness({
+        value: "# heading\n\nsomething else",
+        css,
+      });
+
+      const caretElement = harness.container.querySelector(".cake-caret");
+      expect(caretElement).not.toBeNull();
+
+      // Get caret height on the regular paragraph (line 2)
+      await harness.clickAt(0, 2);
+      const caretHeightOnParagraph = (caretElement as HTMLElement).offsetHeight;
+
+      // Get caret height on the empty line after heading (line 1)
+      const line1Rect = harness.getLineRect(1);
+      await harness.clickAtCoords(
+        line1Rect.left + 5,
+        line1Rect.top + line1Rect.height / 2,
+      );
+      const caretHeightOnEmptyLine = (caretElement as HTMLElement).offsetHeight;
+
+      // The empty line's caret should match the paragraph caret, NOT the heading caret
+      expect(caretHeightOnEmptyLine).toBe(caretHeightOnParagraph);
+    });
   });
 });

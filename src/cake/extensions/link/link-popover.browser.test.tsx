@@ -2,22 +2,16 @@ import { createRef } from "react";
 import { describe, expect, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
-import { CakeEditor } from "../../index";
-import type { EditorRefHandle } from "../../../editor";
-import { defaultEditorSettings } from "../../../editor";
+import { CakeEditor, type CakeEditorRef } from "../../index";
 
 function renderEditor(markdown: string) {
-  const ref = createRef<EditorRefHandle>();
+  const ref = createRef<CakeEditorRef>();
   render(
     <CakeEditor
       ref={ref}
-      initialValue={markdown}
       value={markdown}
       onChange={() => undefined}
-      settings={defaultEditorSettings}
       placeholder=""
-      pageId={null}
-      canUploadImage={() => true}
       style={{ height: 300, overflow: "auto" }}
     />,
   );

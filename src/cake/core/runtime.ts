@@ -6,7 +6,21 @@ import {
 } from "./mapping/cursor-source-map";
 import { graphemeSegments } from "../shared/segmenter";
 import type { DomRenderContext } from "../dom/types";
-import type { OverlayExtensionContext } from "../extensions/overlay-types";
+
+export type OverlayExtensionContext = {
+  container: HTMLElement;
+  insertText: (text: string) => void;
+  replaceText: (oldText: string, newText: string) => void;
+  getSelection: () => { start: number; end: number } | null;
+  contentRoot?: HTMLElement;
+  overlayRoot?: HTMLElement;
+  toOverlayRect?: (rect: DOMRectReadOnly) => {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  };
+};
 
 type BlockParseResult = { block: Block; nextPos: number };
 type InlineParseResult = { inline: Inline; nextPos: number };
