@@ -139,6 +139,7 @@ export type Runtime = {
     options?: { kind?: "dom" | "keyboard" | "programmatic" },
   ): RuntimeState;
   serializeSelection(state: RuntimeState, selection: Selection): string;
+  serializeSelectionToHtml(state: RuntimeState, selection: Selection): string;
   applyEdit(command: EditCommand, state: RuntimeState): RuntimeState;
 };
 
@@ -2025,6 +2026,167 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     return serialize(normalize(sliceDoc)).source;
   }
 
+  function escapeHtml(text: string): string {
+    return text
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function runsToHtml(runs: Run[]): string {
+    let html = "";
+    for (const run of runs) {
+      let content = escapeHtml(run.text);
+
+      // Apply marks in reverse order so outer marks wrap inner marks
+      const sortedMarks = [...run.marks].reverse();
+      for (const mark of sortedMarks) {
+        if (mark.kind === "bold") {
+          content = `<strong>${content}</strong>`;
+        } else if (mark.kind === "italic") {
+          content = `<em>${content}</em>`;
+        } else if (mark.kind === "strikethrough") {
+          content = `<s>${content}</s>`;
+        } else if (mark.kind === "link") {
+          const url = (mark.data as { url?: string } | undefined)?.url ?? "";
+          content = `<a href="${escapeHtml(url)}">${content}</a>`;
+        }
+      }
+      html += content;
+    }
+    return html;
+  }
+
+  function serializeSelectionToHtml(
+    state: RuntimeState,
+    selection: Selection,
+  ): string {
+    const normalized = normalizeSelection(selection);
+    const lines = flattenDocToLines(state.doc);
+    const docCursorLength = cursorLengthForLines(lines);
+    const cursorStart = Math.max(
+      0,
+      Math.min(docCursorLength, Math.min(normalized.start, normalized.end)),
+    );
+    const cursorEnd = Math.max(
+      0,
+      Math.min(docCursorLength, Math.max(normalized.start, normalized.end)),
+    );
+
+    if (cursorStart === cursorEnd) {
+      return "";
+    }
+
+    const startLoc = resolveCursorToLine(lines, cursorStart);
+    const endLoc = resolveCursorToLine(lines, cursorEnd);
+
+    let html = "";
+    let activeList: { type: "ol" | "ul"; indent: number } | null = null;
+
+    const closeList = () => {
+      if (activeList) {
+        html += `</${activeList.type}>`;
+        activeList = null;
+      }
+    };
+
+    const openList = (type: "ol" | "ul", indent: number) => {
+      if (activeList && activeList.type === type && activeList.indent === indent) {
+        return;
+      }
+      closeList();
+      html += `<${type}>`;
+      activeList = { type, indent };
+    };
+
+    for (
+      let lineIndex = startLoc.lineIndex;
+      lineIndex <= endLoc.lineIndex;
+      lineIndex += 1
+    ) {
+      const line = lines[lineIndex];
+      if (!line) {
+        continue;
+      }
+      const block = getBlockAtPath(state.doc.blocks, line.path);
+      if (!block || block.type !== "paragraph") {
+        continue;
+      }
+
+      const runs = paragraphToRuns(block);
+      const startInLine =
+        lineIndex === startLoc.lineIndex ? startLoc.offsetInLine : 0;
+      const endInLine =
+        lineIndex === endLoc.lineIndex ? endLoc.offsetInLine : line.cursorLength;
+
+      const selectedRuns = sliceRuns(runs, startInLine, endInLine).selected;
+
+      // Check if this line is inside a block-wrapper (heading or list)
+      let wrapperKind: string | null = null;
+      let wrapperData: Record<string, unknown> | undefined;
+      if (line.path.length > 1) {
+        const wrapperPath = line.path.slice(0, -1);
+        const wrapper = getBlockAtPath(state.doc.blocks, wrapperPath);
+        if (wrapper && wrapper.type === "block-wrapper") {
+          wrapperKind = wrapper.kind;
+          wrapperData = wrapper.data;
+        }
+      }
+
+      // Extract plain text to check for list patterns
+      const plainText = runs.map((r) => r.text).join("");
+      const listMatch = plainText.match(/^(\s*)([-*+]|\d+\.)( )(.*)$/);
+
+      // Determine the HTML content - strip list prefix if it's a list line
+      let lineHtml: string;
+      if (listMatch && !wrapperKind) {
+        // For list lines, only include the content after the prefix
+        const prefixLength = listMatch[1].length + listMatch[2].length + listMatch[3].length;
+        const contentRuns = sliceRuns(runs, prefixLength, runs.reduce((sum, r) => sum + r.text.length, 0)).selected;
+        lineHtml = runsToHtml(normalizeRuns(contentRuns));
+      } else {
+        lineHtml = runsToHtml(normalizeRuns(selectedRuns));
+      }
+
+      if (wrapperKind === "heading") {
+        closeList();
+        const level = Math.min(
+          (wrapperData?.level as number | undefined) ?? 1,
+          6,
+        );
+        html += `<h${level} style="margin:0">${lineHtml}</h${level}>`;
+      } else if (wrapperKind === "bullet-list") {
+        openList("ul", 0);
+        html += `<li>${lineHtml}</li>`;
+      } else if (wrapperKind === "numbered-list") {
+        openList("ol", 0);
+        html += `<li>${lineHtml}</li>`;
+      } else if (wrapperKind === "blockquote") {
+        closeList();
+        html += `<blockquote>${lineHtml}</blockquote>`;
+      } else if (listMatch) {
+        // Plain paragraph with list markers (cake v3 list model)
+        const isNumbered = /^\d+\.$/.test(listMatch[2]);
+        const indent = Math.floor(listMatch[1].length / 2);
+        openList(isNumbered ? "ol" : "ul", indent);
+        html += `<li>${lineHtml}</li>`;
+      } else {
+        closeList();
+        html += `<div>${lineHtml}</div>`;
+      }
+    }
+
+    closeList();
+
+    if (!html) {
+      return "";
+    }
+
+    return `<div>${html}</div>`;
+  }
+
   const runtime: Runtime = {
     extensions,
     parse,
@@ -2032,6 +2194,7 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     createState,
     updateSelection,
     serializeSelection,
+    serializeSelectionToHtml,
     applyEdit,
   };
 

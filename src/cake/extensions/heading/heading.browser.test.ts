@@ -311,7 +311,7 @@ describe("heading extension typing behavior (harness)", () => {
     await h.pressKey("a", { meta: true });
 
     // Copy (Cmd+C)
-    let copiedText = "";
+    const clipboardStore: Record<string, string> = {};
     const copyEvent = new ClipboardEvent("copy", {
       bubbles: true,
       cancelable: true,
@@ -319,8 +319,8 @@ describe("heading extension typing behavior (harness)", () => {
     });
     Object.defineProperty(copyEvent, "clipboardData", {
       value: {
-        setData: (_type: string, data: string) => {
-          copiedText = data;
+        setData: (type: string, data: string) => {
+          clipboardStore[type] = data;
         },
         getData: () => "",
       },
@@ -339,7 +339,7 @@ describe("heading extension typing behavior (harness)", () => {
     });
     Object.defineProperty(pasteEvent, "clipboardData", {
       value: {
-        getData: (type: string) => (type === "text/plain" ? copiedText : ""),
+        getData: (type: string) => clipboardStore[type] ?? "",
       },
     });
     h.contentRoot.dispatchEvent(pasteEvent);

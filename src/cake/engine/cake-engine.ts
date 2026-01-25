@@ -1390,6 +1390,14 @@ export class CakeEngine {
 
     event.preventDefault();
     clipboardData.setData("text/plain", text);
+
+    const html = this.runtime.serializeSelectionToHtml(
+      this.state,
+      this.state.selection,
+    );
+    if (html) {
+      clipboardData.setData("text/html", html);
+    }
   }
 
   private handleCut(event: ClipboardEvent) {
