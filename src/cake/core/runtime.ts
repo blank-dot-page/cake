@@ -515,6 +515,53 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
             },
           };
         }
+
+        // Fallback for insert commands when structural edit fails
+        // (e.g., when selection spans across heading boundaries)
+        if (command.type === "insert" || command.type === "insert-line-break") {
+          const cursorLength = state.map.cursorLength;
+          const cursorStart = Math.max(
+            0,
+            Math.min(cursorLength, Math.min(selection.start, selection.end)),
+          );
+          const cursorEnd = Math.max(
+            0,
+            Math.min(cursorLength, Math.max(selection.start, selection.end)),
+          );
+
+          const range = { start: cursorStart, end: cursorEnd };
+          const fullDocReplace = range.start === 0 && range.end === cursorLength;
+          const from = fullDocReplace
+            ? 0
+            : state.map.cursorToSource(range.start, "backward");
+          const to = fullDocReplace
+            ? state.source.length
+            : state.map.cursorToSource(range.end, "forward");
+          const fromClamped = Math.max(0, Math.min(from, state.source.length));
+          const toClamped = Math.max(
+            fromClamped,
+            Math.min(to, state.source.length),
+          );
+
+          const insertText =
+            command.type === "insert" ? command.text : "\n";
+          const nextSource =
+            state.source.slice(0, fromClamped) +
+            insertText +
+            state.source.slice(toClamped);
+          const next = createState(nextSource);
+          const caretSource = fromClamped + insertText.length;
+          const caretCursor = next.map.sourceToCursor(caretSource, "forward");
+          return {
+            ...next,
+            selection: {
+              start: caretCursor.cursorOffset,
+              end: caretCursor.cursorOffset,
+              affinity: caretCursor.affinity,
+            },
+          };
+        }
+
         return state;
       }
 

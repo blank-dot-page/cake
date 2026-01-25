@@ -1536,3 +1536,67 @@ describe("CakeEngine Cmd+Backspace then backspace", () => {
     expect(harness.engine.getValue()).toBe("👋hello");
   });
 });
+
+describe("Selection replacement with headings", () => {
+  let harness: TestHarness;
+
+  afterEach(() => {
+    harness?.destroy();
+  });
+
+  it("selecting all text including heading and typing replaces the selection", async () => {
+    // Initial value: heading + paragraph (like the demo default)
+    harness = createTestHarness("# Cake Demo\n\nTry bold.");
+    await harness.focus();
+
+    // Select all
+    await harness.pressKey("a", { meta: true });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Verify we have a non-collapsed selection starting at 0
+    expect(harness.selection.start).toBe(0);
+    expect(harness.selection.end).toBeGreaterThan(0);
+
+    // Type replacement text
+    await harness.typeText("replaced");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Should replace all content with new text
+    expect(harness.engine.getValue()).toBe("replaced");
+  });
+
+  it("selecting heading text and typing replaces the text but keeps heading marker", async () => {
+    harness = createTestHarness("# Hello World");
+    await harness.focus();
+
+    // Select all (cursor positions only, not source-only prefix)
+    await harness.pressKey("a", { meta: true });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Type replacement
+    await harness.typeText("new text");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Should replace the text but keep heading marker
+    // (The "# " prefix is source-only and not part of cursor positions)
+    expect(harness.engine.getValue()).toBe("# new text");
+  });
+
+  it("selecting partial heading content and typing replaces selection", async () => {
+    harness = createTestHarness("# Hello");
+    await harness.focus();
+
+    // Select "llo" (cursor positions 2-5 in heading content "Hello")
+    // "# Hello" has cursor positions 0-4 for "Hello" (5 chars)
+    // Position 2 is after "He", position 5 is after "Hello"
+    harness.engine.setSelection({ start: 2, end: 5 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Type replacement
+    await harness.typeText("y");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Should keep heading marker and replace selected text
+    expect(harness.engine.getValue()).toBe("# Hey");
+  });
+});

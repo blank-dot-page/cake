@@ -936,4 +936,152 @@ describe("CakeEngine click positioning", () => {
       harness.assertCaretAtStartOfVisualRow(1);
     });
   });
+
+  describe("arrow key navigation with Space Grotesk font (demo)", () => {
+    const SPACE_GROTESK_CSS = `
+      .cake {
+        font-family: "Space Grotesk", system-ui, sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+      }
+      .cake-content {
+        width: 200px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    `;
+
+    it("arrow right from end of first visual row moves caret to start of second row (Space Grotesk)", async () => {
+      const text = "d".repeat(80);
+      harness = createTestHarness({
+        value: text,
+        css: SPACE_GROTESK_CSS,
+      });
+
+      const rows = harness.getVisualRows();
+      console.log("=== SPACE GROTESK ARROW RIGHT TEST ===");
+      console.log("Actual visual rows:", rows);
+
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+
+      const row0 = rows[0];
+      const row1 = rows[1];
+
+      // Click at end of first visual row (right side of last char on row 0)
+      await harness.clickRightOf(row0.endOffset);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Selection after click:", JSON.stringify(harness.selection));
+      const caretBefore = harness.getCaretRect();
+      console.log("Caret before arrow right:", JSON.stringify(caretBefore));
+
+      // === ASSERT BEFORE STATE ===
+      expect(harness.selection.start).toBe(row0.endOffset + 1);
+      harness.assertCaretAtEndOfVisualRow(0);
+
+      // Press arrow right
+      await harness.pressKey("ArrowRight");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Selection after arrow right:", JSON.stringify(harness.selection));
+      const caretAfter = harness.getCaretRect();
+      console.log("Caret after arrow right:", JSON.stringify(caretAfter));
+
+      // === ASSERT AFTER STATE ===
+      // Selection should stay at same position but affinity changes
+      expect(harness.selection.start).toBe(row1.startOffset);
+      expect(harness.selection.affinity).toBe("forward");
+
+      // Caret should be visually at START of SECOND row
+      harness.assertCaretAtStartOfVisualRow(1);
+    });
+
+    it("Cmd+ArrowRight from middle of first row moves caret to end of row (Space Grotesk)", async () => {
+      const text = "d".repeat(80);
+      harness = createTestHarness({
+        value: text,
+        css: SPACE_GROTESK_CSS,
+      });
+
+      const rows = harness.getVisualRows();
+      console.log("=== SPACE GROTESK CMD+ARROW RIGHT TEST ===");
+      console.log("Actual visual rows:", rows);
+
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+
+      const row0 = rows[0];
+
+      // Click in the middle of first row
+      const middleOffset = Math.floor(row0.endOffset / 2);
+      await harness.clickLeftOf(middleOffset);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Selection after click:", JSON.stringify(harness.selection));
+      const caretBefore = harness.getCaretRect();
+      console.log("Caret before Cmd+ArrowRight:", JSON.stringify(caretBefore));
+
+      // === ASSERT BEFORE STATE ===
+      expect(harness.selection.start).toBe(middleOffset);
+      harness.assertCaretOnVisualRow(0);
+
+      // Press Cmd+ArrowRight (End on visual row)
+      await harness.pressKey("ArrowRight", { meta: true });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Selection after Cmd+ArrowRight:", JSON.stringify(harness.selection));
+      const caretAfter = harness.getCaretRect();
+      console.log("Caret after Cmd+ArrowRight:", JSON.stringify(caretAfter));
+
+      // === ASSERT AFTER STATE ===
+      // Should be at end of first row
+      expect(harness.selection.start).toBe(row0.endOffset + 1);
+
+      // Caret should be visually at END of FIRST row (not start of second)
+      harness.assertCaretAtEndOfVisualRow(0);
+    });
+
+    it("Cmd+ArrowLeft from middle of second row moves caret to start of row (Space Grotesk)", async () => {
+      const text = "d".repeat(80);
+      harness = createTestHarness({
+        value: text,
+        css: SPACE_GROTESK_CSS,
+      });
+
+      const rows = harness.getVisualRows();
+      console.log("=== SPACE GROTESK CMD+ARROW LEFT TEST ===");
+      console.log("Actual visual rows:", rows);
+
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+
+      const row1 = rows[1];
+
+      // Click in the middle of second row
+      const middleOffset = row1.startOffset + Math.floor((row1.endOffset - row1.startOffset) / 2);
+      await harness.clickLeftOf(middleOffset);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Selection after click:", JSON.stringify(harness.selection));
+      const caretBefore = harness.getCaretRect();
+      console.log("Caret before Cmd+ArrowLeft:", JSON.stringify(caretBefore));
+
+      // === ASSERT BEFORE STATE ===
+      expect(harness.selection.start).toBe(middleOffset);
+      harness.assertCaretOnVisualRow(1);
+
+      // Press Cmd+ArrowLeft (Home on visual row)
+      await harness.pressKey("ArrowLeft", { meta: true });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Selection after Cmd+ArrowLeft:", JSON.stringify(harness.selection));
+      const caretAfter = harness.getCaretRect();
+      console.log("Caret after Cmd+ArrowLeft:", JSON.stringify(caretAfter));
+
+      // === ASSERT AFTER STATE ===
+      // Should be at start of second row
+      expect(harness.selection.start).toBe(row1.startOffset);
+
+      // Caret should be visually at START of SECOND row
+      harness.assertCaretAtStartOfVisualRow(1);
+    });
+  });
 });
