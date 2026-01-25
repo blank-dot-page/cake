@@ -980,6 +980,31 @@ export class CakeEngine {
         return;
       }
 
+      // For clicks inside a range selection that weren't dragged, collapse to the clicked position.
+      // In pointerdown, we deferred the selection to allow for potential drag operations.
+      // Now that click has fired without dragging, collapse the selection.
+      const pendingHit = this.pendingClickHit;
+      const selection = this.state.selection;
+      if (pendingHit && selection.start !== selection.end) {
+        const newSelection: Selection = {
+          start: pendingHit.cursorOffset,
+          end: pendingHit.cursorOffset,
+          affinity: pendingHit.affinity,
+        };
+        this.pendingClickHit = null;
+        this.suppressSelectionChange = true;
+        this.state = this.runtime.updateSelection(this.state, newSelection, {
+          kind: "dom",
+        });
+        this.applySelection(this.state.selection);
+        this.onSelectionChange?.(this.state.selection);
+        this.scheduleOverlayUpdate();
+        setTimeout(() => {
+          this.suppressSelectionChange = false;
+        }, 0);
+        return;
+      }
+
       // Selection was already applied in pointerdown, just clear the suppress flag
       // Use setTimeout to delay clearing so any pending selectionchange events are ignored
       // (selectionchange can fire asynchronously after DOM selection changes)
@@ -3432,17 +3457,49 @@ export class CakeEngine {
       }
     }
 
-    // For regular clicks with collapsed selection (no shift key), apply the selection
-    // immediately on pointerdown for better responsiveness. Don't wait for click event.
+    // For clicks without shift key, apply the selection immediately on pointerdown
+    // for better responsiveness. Don't wait for click event.
     // Don't capture when shift is held - that's extend-selection behavior.
-    if (selection.start === selection.end && !event.shiftKey) {
-      // Suppress selectionchange to prevent the browser's native selection from
-      // overwriting our programmatically set selection.
-      this.suppressSelectionChange = true;
+    if (!event.shiftKey) {
       const hit = this.hitTestFromClientPoint(event.clientX, event.clientY);
-      if (hit) {
+      if (!hit) {
+        return;
+      }
+
+      // For range selections, check if clicking inside the selection (for drag behavior)
+      if (selection.start !== selection.end) {
+        const selStart = Math.min(selection.start, selection.end);
+        const selEnd = Math.max(selection.start, selection.end);
+        const clickedInsideSelection =
+          hit.cursorOffset >= selStart && hit.cursorOffset <= selEnd;
+
+        if (clickedInsideSelection) {
+          // Clicking inside selection - set up for potential drag
+          this.suppressSelectionChange = false;
+          this.blockTrustedTextDrag = true;
+          this.pendingClickHit = hit;
+          // Continue to drag handling code below
+        } else {
+          // Clicking outside selection - collapse to clicked position
+          this.suppressSelectionChange = true;
+          this.pendingClickHit = hit;
+          const newSelection: Selection = {
+            start: hit.cursorOffset,
+            end: hit.cursorOffset,
+            affinity: hit.affinity,
+          };
+          this.state = this.runtime.updateSelection(this.state, newSelection, {
+            kind: "dom",
+          });
+          this.applySelection(this.state.selection);
+          this.onSelectionChange?.(this.state.selection);
+          this.scheduleOverlayUpdate();
+          return;
+        }
+      } else {
+        // Collapsed selection - apply immediately
+        this.suppressSelectionChange = true;
         this.pendingClickHit = hit;
-        // Apply selection immediately on pointerdown for responsiveness
         const newSelection: Selection = {
           start: hit.cursorOffset,
           end: hit.cursorOffset,
@@ -3454,10 +3511,11 @@ export class CakeEngine {
         this.applySelection(this.state.selection);
         this.onSelectionChange?.(this.state.selection);
         this.scheduleOverlayUpdate();
+        return;
       }
-      return;
     }
-    // For range selections, let native drag-selection update both DOM + model.
+
+    // For shift+click or clicking inside range selection, let native behavior handle it
     this.suppressSelectionChange = false;
 
     const selStart = Math.min(selection.start, selection.end);
@@ -3469,7 +3527,7 @@ export class CakeEngine {
       return;
     }
 
-    // Check if clicking inside existing selection
+    // Check if clicking inside existing selection (for drag setup)
     const clickedInsideSelection =
       hit.cursorOffset >= selStart && hit.cursorOffset <= selEnd;
     if (!clickedInsideSelection) {

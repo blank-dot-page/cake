@@ -1084,4 +1084,29 @@ describe("CakeEngine click positioning", () => {
       harness.assertCaretAtStartOfVisualRow(1);
     });
   });
+
+  describe("clicking to collapse selection", () => {
+    it("clicking after Cmd+A collapses selection to clicked position", async () => {
+      harness = createTestHarness("hello world");
+
+      // Focus and verify initial state
+      await harness.focus();
+      expect(harness.selection.start).toBe(0);
+      expect(harness.selection.end).toBe(0);
+
+      // Select all with Cmd+A
+      await harness.pressKey("a", { meta: true });
+
+      // Verify full selection
+      expect(harness.selection.start).toBe(0);
+      expect(harness.selection.end).toBe(11);
+
+      // Click on character 5 (the 'o' in "hello")
+      await harness.clickAt(5);
+
+      // Selection should collapse to clicked position
+      expect(harness.selection.start).toBe(5);
+      expect(harness.selection.end).toBe(5);
+    });
+  });
 });
