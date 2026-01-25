@@ -117,88 +117,101 @@ function measureLineRows(params: {
   cursorToCodeUnit: number[];
   codeUnitLength: number;
 }): LayoutRow[] {
-  if (params.lineLength === 0) {
-    const lineBox = toLayoutRect({
-      rect: params.lineRect,
-      containerRect: params.containerRect,
-      scroll: params.scroll,
-    });
-    return [
-      {
-        startOffset: 0,
-        endOffset: 0,
-        rect: { ...lineBox, width: 0 },
-      },
-    ];
-  }
-
-  const fullLineRange = document.createRange();
-  const fullLineStart = resolveDomPosition(params.lineElement, 0);
-  const fullLineEnd = resolveDomPosition(
-    params.lineElement,
-    params.codeUnitLength,
-  );
-  fullLineRange.setStart(fullLineStart.node, fullLineStart.offset);
-  fullLineRange.setEnd(fullLineEnd.node, fullLineEnd.offset);
-  const fullLineRects = groupDomRectsByRow(
-    Array.from(fullLineRange.getClientRects()),
-  );
-
   const fallbackLineBox = toLayoutRect({
     rect: params.lineRect,
     containerRect: params.containerRect,
     scroll: params.scroll,
   });
 
-  const charRect = measureCharacterRect({
-    lineElement: params.lineElement,
-    offset: 0,
-    lineLength: params.lineLength,
-    cursorToCodeUnit: params.cursorToCodeUnit,
-  });
-  const charWidth = charRect?.width ?? 0;
+  if (params.lineLength === 0) {
+    return [
+      {
+        startOffset: 0,
+        endOffset: 0,
+        rect: { ...fallbackLineBox, width: 0 },
+      },
+    ];
+  }
 
-  if (fullLineRects.length === 0 || charWidth <= 0) {
-    const rows = [
+  // Measure actual character positions to find row boundaries
+  // This works correctly with variable-width fonts
+  const rows: LayoutRow[] = [];
+  let currentRowStart = 0;
+  let currentRowTop: number | null = null;
+  let currentRowRect: DOMRect | null = null;
+
+  for (let offset = 0; offset < params.lineLength; offset++) {
+    const charRect = measureCharacterRect({
+      lineElement: params.lineElement,
+      offset,
+      lineLength: params.lineLength,
+      cursorToCodeUnit: params.cursorToCodeUnit,
+    });
+
+    if (!charRect) {
+      continue;
+    }
+
+    if (currentRowTop === null) {
+      // First character
+      currentRowTop = charRect.top;
+      currentRowRect = charRect;
+    } else if (Math.abs(charRect.top - currentRowTop) > 3) {
+      // New row detected - save the previous row
+      // endOffset is the boundary position (cursor position after last char on row)
+      // which equals the startOffset of the next row
+      if (currentRowRect) {
+        rows.push({
+          startOffset: currentRowStart,
+          endOffset: offset,
+          rect: toLayoutRect({
+            rect: currentRowRect,
+            containerRect: params.containerRect,
+            scroll: params.scroll,
+          }),
+        });
+      }
+      currentRowStart = offset;
+      currentRowTop = charRect.top;
+      currentRowRect = charRect;
+    } else if (currentRowRect) {
+      // Same row - expand the rect
+      currentRowRect = new DOMRect(
+        Math.min(currentRowRect.left, charRect.left),
+        Math.min(currentRowRect.top, charRect.top),
+        Math.max(currentRowRect.right, charRect.right) -
+          Math.min(currentRowRect.left, charRect.left),
+        Math.max(currentRowRect.bottom, charRect.bottom) -
+          Math.min(currentRowRect.top, charRect.top),
+      );
+    }
+  }
+
+  // Push the final row
+  if (currentRowRect) {
+    rows.push({
+      startOffset: currentRowStart,
+      endOffset: params.lineLength - 1,
+      rect: toLayoutRect({
+        rect: currentRowRect,
+        containerRect: params.containerRect,
+        scroll: params.scroll,
+      }),
+    });
+  }
+
+  // Fallback if no rows were detected
+  if (rows.length === 0) {
+    return [
       {
         startOffset: 0,
         endOffset: params.lineLength,
         rect: fallbackLineBox,
       },
     ];
-    return rows.length === 1
-      ? [
-          {
-            ...rows[0],
-            rect: {
-              ...rows[0].rect,
-              top: fallbackLineBox.top,
-              height: fallbackLineBox.height,
-            },
-          },
-        ]
-      : rows;
   }
 
-  let startOffset = 0;
-  const rows: LayoutRow[] = fullLineRects.map((rect, index) => {
-    const remaining = params.lineLength - startOffset;
-    const isLast = index === fullLineRects.length - 1;
-    const estimatedLength = Math.max(1, Math.round(rect.width / charWidth));
-    const rowLength = isLast ? remaining : Math.min(remaining, estimatedLength);
-    const row = {
-      startOffset,
-      endOffset: startOffset + rowLength,
-      rect: toLayoutRect({
-        rect,
-        containerRect: params.containerRect,
-        scroll: params.scroll,
-      }),
-    };
-    startOffset += rowLength;
-    return row;
-  });
-
+  // Ensure last row's endOffset is the full line length
   if (rows.length > 0) {
     rows[rows.length - 1] = {
       ...rows[rows.length - 1],
@@ -206,6 +219,7 @@ function measureLineRows(params: {
     };
   }
 
+  // For single-row lines, use the fallback line box dimensions for consistency
   if (rows.length === 1) {
     rows[0] = {
       ...rows[0],

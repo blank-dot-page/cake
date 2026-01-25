@@ -832,4 +832,108 @@ describe("CakeEngine click positioning", () => {
       }
     });
   });
+
+  describe("arrow key navigation with variable-width font", () => {
+    const VARIABLE_WIDTH_CSS = `
+      .cake {
+        font-family: "Times New Roman", serif;
+        font-size: 16px;
+        line-height: 1.5;
+      }
+      .cake-content {
+        width: 200px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    `;
+
+    it("arrow left from start of second visual row moves caret to end of first row (variable-width font)", async () => {
+      // Use mixed-width text: starts with wide W, then narrow i's
+      const text = "W" + "i".repeat(80);
+      harness = createTestHarness({
+        value: text,
+        css: VARIABLE_WIDTH_CSS,
+      });
+
+      const rows = harness.getVisualRows();
+      console.log("=== VARIABLE WIDTH ARROW LEFT TEST ===");
+      console.log("Actual visual rows:", rows);
+
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+
+      const row0 = rows[0];
+      const row1 = rows[1];
+
+      console.log(`Row 0: [${row0.startOffset}-${row0.endOffset}]`);
+      console.log(`Row 1: [${row1.startOffset}-${row1.endOffset}]`);
+
+      // Click at start of second visual row
+      await harness.clickLeftOf(row1.startOffset);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Selection after click:", JSON.stringify(harness.selection));
+
+      // === ASSERT BEFORE STATE ===
+      expect(harness.selection.start).toBe(row1.startOffset);
+      harness.assertCaretAtStartOfVisualRow(1);
+
+      // Press arrow left
+      await harness.pressKey("ArrowLeft");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Selection after arrow left:", JSON.stringify(harness.selection));
+
+      // === ASSERT AFTER STATE ===
+      // Selection should be at end of first row (position AFTER last char)
+      expect(harness.selection.start).toBe(row0.endOffset + 1);
+
+      // Caret should be visually at END of FIRST row
+      harness.assertCaretAtEndOfVisualRow(0);
+    });
+
+    it("arrow right from end of first visual row moves caret to start of second row (variable-width font)", async () => {
+      const text = "W" + "i".repeat(80);
+      harness = createTestHarness({
+        value: text,
+        css: VARIABLE_WIDTH_CSS,
+      });
+
+      const rows = harness.getVisualRows();
+      console.log("=== VARIABLE WIDTH ARROW RIGHT TEST ===");
+      console.log("Actual visual rows:", rows);
+
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+
+      const row0 = rows[0];
+      const row1 = rows[1];
+
+      // Click at end of first visual row (right side of last char on row 0)
+      await harness.clickRightOf(row0.endOffset);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Selection after click:", JSON.stringify(harness.selection));
+      const caretBefore = harness.getCaretRect();
+      console.log("Caret before arrow right:", JSON.stringify(caretBefore));
+
+      // === ASSERT BEFORE STATE ===
+      expect(harness.selection.start).toBe(row0.endOffset + 1);
+      harness.assertCaretAtEndOfVisualRow(0);
+
+      // Press arrow right
+      await harness.pressKey("ArrowRight");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Selection after arrow right:", JSON.stringify(harness.selection));
+      const caretAfter = harness.getCaretRect();
+      console.log("Caret after arrow right:", JSON.stringify(caretAfter));
+
+      // === ASSERT AFTER STATE ===
+      // Selection should stay at same position but affinity changes
+      expect(harness.selection.start).toBe(row1.startOffset);
+      expect(harness.selection.affinity).toBe("forward");
+
+      // Caret should be visually at START of SECOND row
+      harness.assertCaretAtStartOfVisualRow(1);
+    });
+  });
 });
