@@ -84,6 +84,9 @@ header h1 {
 .editor .cake-content {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .editor .cake-content:focus,

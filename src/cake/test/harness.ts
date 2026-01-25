@@ -19,6 +19,15 @@ export interface CaretInfo {
   height: number;
 }
 
+export interface VisualRowInfo {
+  startOffset: number;
+  endOffset: number;
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
 export interface TestHarness {
   container: HTMLDivElement;
   contentRoot: HTMLElement;
@@ -33,6 +42,7 @@ export interface TestHarness {
   getCharRect(offset: number, lineIndex?: number): DOMRect;
   getSelectionRects(): SelectionRectInfo[];
   getCaretRect(): CaretInfo | null;
+  getVisualRows(lineIndex?: number): VisualRowInfo[];
 
   // Actions
   clickLeftOf(offset: number, lineIndex?: number): Promise<void>;
@@ -56,6 +66,11 @@ export interface TestHarness {
     },
   ): Promise<void>;
   focus(): Promise<void>;
+
+  // Assertions
+  assertCaretOnVisualRow(rowIndex: number, lineIndex?: number): void;
+  assertCaretAtEndOfVisualRow(rowIndex: number, lineIndex?: number): void;
+  assertCaretAtStartOfVisualRow(rowIndex: number, lineIndex?: number): void;
 
   // Cleanup
   destroy(): void;
@@ -308,6 +323,128 @@ export function createTestHarness(
     };
   }
 
+  function getVisualRows(lineIndex = 0): VisualRowInfo[] {
+    const textNodes = getTextNodes(lineIndex);
+    if (textNodes.length === 0) {
+      return [];
+    }
+
+    const rows: VisualRowInfo[] = [];
+    let currentRowTop: number | null = null;
+    let currentRow: VisualRowInfo | null = null;
+    let globalOffset = 0;
+
+    for (const textNode of textNodes) {
+      const text = textNode.data;
+      for (let i = 0; i < text.length; i++) {
+        const range = document.createRange();
+        range.setStart(textNode, i);
+        range.setEnd(textNode, i + 1);
+        const rect = range.getBoundingClientRect();
+
+        if (currentRowTop === null || Math.abs(rect.top - currentRowTop) > 5) {
+          if (currentRow) {
+            rows.push(currentRow);
+          }
+          currentRowTop = rect.top;
+          currentRow = {
+            startOffset: globalOffset,
+            endOffset: globalOffset,
+            top: rect.top,
+            bottom: rect.bottom,
+            left: rect.left,
+            right: rect.right,
+          };
+        } else if (currentRow) {
+          currentRow.endOffset = globalOffset;
+          currentRow.right = Math.max(currentRow.right, rect.right);
+          currentRow.bottom = Math.max(currentRow.bottom, rect.bottom);
+        }
+        globalOffset++;
+      }
+    }
+
+    if (currentRow) {
+      rows.push(currentRow);
+    }
+
+    return rows;
+  }
+
+  function assertCaretOnVisualRow(rowIndex: number, lineIndex = 0): void {
+    const rows = getVisualRows(lineIndex);
+    if (rowIndex >= rows.length) {
+      throw new Error(
+        `Row ${rowIndex} does not exist (only ${rows.length} rows)`,
+      );
+    }
+    const row = rows[rowIndex];
+    const caret = getCaretRect();
+    if (!caret) {
+      throw new Error("Caret not found");
+    }
+    if (caret.top < row.top - 2 || caret.top > row.bottom + 2) {
+      throw new Error(
+        `Caret Y (${caret.top}) not on row ${rowIndex} (top: ${row.top}, bottom: ${row.bottom})`,
+      );
+    }
+  }
+
+  function assertCaretAtEndOfVisualRow(rowIndex: number, lineIndex = 0): void {
+    const rows = getVisualRows(lineIndex);
+    if (rowIndex >= rows.length) {
+      throw new Error(
+        `Row ${rowIndex} does not exist (only ${rows.length} rows)`,
+      );
+    }
+    const row = rows[rowIndex];
+    const caret = getCaretRect();
+    if (!caret) {
+      throw new Error("Caret not found");
+    }
+    // Caret should be on this row
+    if (caret.top < row.top - 2 || caret.top > row.bottom + 2) {
+      throw new Error(
+        `Caret Y (${caret.top}) not on row ${rowIndex} (top: ${row.top}, bottom: ${row.bottom})`,
+      );
+    }
+    // Caret X should be at the right edge of the row
+    if (caret.left < row.right - 5) {
+      throw new Error(
+        `Caret X (${caret.left}) not at end of row ${rowIndex} (right: ${row.right})`,
+      );
+    }
+  }
+
+  function assertCaretAtStartOfVisualRow(
+    rowIndex: number,
+    lineIndex = 0,
+  ): void {
+    const rows = getVisualRows(lineIndex);
+    if (rowIndex >= rows.length) {
+      throw new Error(
+        `Row ${rowIndex} does not exist (only ${rows.length} rows)`,
+      );
+    }
+    const row = rows[rowIndex];
+    const caret = getCaretRect();
+    if (!caret) {
+      throw new Error("Caret not found");
+    }
+    // Caret should be on this row
+    if (caret.top < row.top - 2 || caret.top > row.bottom + 2) {
+      throw new Error(
+        `Caret Y (${caret.top}) not on row ${rowIndex} (top: ${row.top}, bottom: ${row.bottom})`,
+      );
+    }
+    // Caret X should be at the left edge of the row
+    if (caret.left > row.left + 5) {
+      throw new Error(
+        `Caret X (${caret.left}) not at start of row ${rowIndex} (left: ${row.left})`,
+      );
+    }
+  }
+
   async function typeText(text: string): Promise<void> {
     const contentRoot = getContentRoot();
     contentRoot.focus();
@@ -423,6 +560,7 @@ export function createTestHarness(
     getCharRect,
     getSelectionRects,
     getCaretRect,
+    getVisualRows,
     clickLeftOf: (offset, lineIndex) =>
       clickAtPosition(offset, "left", lineIndex),
     clickRightOf: (offset, lineIndex) =>
@@ -439,6 +577,9 @@ export function createTestHarness(
     pressShiftTab,
     pressKey,
     focus,
+    assertCaretOnVisualRow,
+    assertCaretAtEndOfVisualRow,
+    assertCaretAtStartOfVisualRow,
     destroy,
   };
 }

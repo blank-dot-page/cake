@@ -2140,6 +2140,61 @@ export class CakeEngine {
     }
 
     const currentPos = selection.start;
+    const currentAffinity = selection.affinity ?? "forward";
+
+    // Check visual row boundaries for wrapped lines
+    const measurement = this.getLayoutForNavigation();
+    if (measurement) {
+      const { lines, layout } = measurement;
+      const { rowStart, rowEnd } = getVisualRowBoundaries({
+        lines,
+        layout,
+        offset: currentPos,
+        affinity: currentAffinity,
+      });
+
+      // Arrow left at start of visual row (not at document start):
+      // Stay at same position but change to backward affinity
+      if (
+        direction === "backward" &&
+        currentPos === rowStart &&
+        currentAffinity === "forward" &&
+        currentPos > 0
+      ) {
+        // Check if there's a previous visual row by checking boundaries with backward affinity
+        const prevBoundaries = getVisualRowBoundaries({
+          lines,
+          layout,
+          offset: currentPos,
+          affinity: "backward",
+        });
+        // If backward affinity puts us on a different row, just change affinity
+        if (prevBoundaries.rowEnd !== rowEnd || prevBoundaries.rowStart !== rowStart) {
+          return { start: currentPos, end: currentPos, affinity: "backward" };
+        }
+      }
+
+      // Arrow right at end of visual row (not at document end):
+      // Stay at same position but change to forward affinity
+      if (
+        direction === "forward" &&
+        currentPos === rowEnd &&
+        currentAffinity === "backward" &&
+        currentPos < this.state.map.cursorLength
+      ) {
+        const nextBoundaries = getVisualRowBoundaries({
+          lines,
+          layout,
+          offset: currentPos,
+          affinity: "forward",
+        });
+        // If forward affinity puts us on a different row, just change affinity
+        if (nextBoundaries.rowEnd !== rowEnd || nextBoundaries.rowStart !== rowStart) {
+          return { start: currentPos, end: currentPos, affinity: "forward" };
+        }
+      }
+    }
+
     const nextPos = this.moveOffsetByChar(currentPos, direction);
     if (nextPos === null) {
       return null;
@@ -4244,6 +4299,9 @@ function findOffsetInTextNode(
   let closestYDistance = Infinity;
   let closestCaretX = 0;
   let closestRowTop = 0;
+  // Track if we selected via right-edge logic (offset i+1 from char i's right edge)
+  // This means we're at the end of a visual row and need backward affinity
+  let selectedViaRightEdge = false;
 
   const rowInfo: Map<
     number,
@@ -4347,6 +4405,24 @@ function findOffsetInTextNode(
         // Also update closestYDistance to prevent characters on other rows
         // from overriding our same-row match
         closestYDistance = yDistance;
+        selectedViaRightEdge = false;
+      }
+
+      // Also consider the right edge of this character as a candidate position
+      // for offset i+1. This handles the case where position i+1 is on a different
+      // visual row (word-break wrapped text) but should be selectable from the
+      // current row by clicking near the right edge of the last character.
+      if (i < text.length) {
+        const rightEdgeX = bestRect.right;
+        const rightEdgeDistance = Math.abs(clientX - rightEdgeX);
+        if (rightEdgeDistance < closestDistance) {
+          closestDistance = rightEdgeDistance;
+          closestOffset = i + 1;
+          closestCaretX = rightEdgeX;
+          closestRowTop = bestRect.top;
+          closestYDistance = yDistance;
+          selectedViaRightEdge = true;
+        }
       }
     } else if (
       yDistance < closestYDistance ||
@@ -4395,7 +4471,10 @@ function findOffsetInTextNode(
       closestCaretX = closestRow.left;
       closestRowTop = closestRow.top;
     } else if (clientX > closestRow.right) {
-      closestOffset = closestRow.endOffset;
+      // When clicking past the right edge of a row, place the caret AFTER
+      // the last character on that row (endOffset + 1), not ON the last character.
+      // This is important for wrapped lines where the user clicks in the margin.
+      closestOffset = Math.min(closestRow.endOffset + 1, text.length);
       closestCaretX = closestRow.right;
       closestRowTop = closestRow.top;
     } else if (clientY < closestRow.top || clientY > closestRow.bottom) {
@@ -4425,10 +4504,15 @@ function findOffsetInTextNode(
     }
   }
 
+  // pastRowEnd indicates the click was at or past the right edge of the row's text,
+  // which means we should use backward affinity to render the caret at the
+  // end of this row rather than the start of the next row.
+  // This is true when:
+  // 1. Click was past the row's right edge (in empty space or margin)
+  // 2. We selected offset i+1 by being closer to char i's right edge
   const pastRowEnd =
-    closestRow !== null &&
-    clientX > closestRow.right &&
-    Math.abs(clientY - closestRowTop) < 1;
+    selectedViaRightEdge ||
+    (closestRow !== null && clientX > closestRow.right);
 
   if (
     Math.abs(clientX - closestCaretX) <= 2 &&
