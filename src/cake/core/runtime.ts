@@ -1997,7 +1997,24 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
 
       const selectedRuns = sliceRuns(runs, startInLine, endInLine).selected;
       const content = runsToInlines(normalizeRuns(selectedRuns));
-      blocks.push({ type: "paragraph", content });
+      const paragraph: ParagraphBlock = { type: "paragraph", content };
+
+      // Check if this line is inside a block-wrapper (e.g., heading)
+      if (line.path.length > 1) {
+        const wrapperPath = line.path.slice(0, -1);
+        const wrapper = getBlockAtPath(state.doc.blocks, wrapperPath);
+        if (wrapper && wrapper.type === "block-wrapper") {
+          blocks.push({
+            type: "block-wrapper",
+            kind: wrapper.kind,
+            data: wrapper.data,
+            blocks: [paragraph],
+          });
+          continue;
+        }
+      }
+
+      blocks.push(paragraph);
     }
 
     const sliceDoc: Doc = {

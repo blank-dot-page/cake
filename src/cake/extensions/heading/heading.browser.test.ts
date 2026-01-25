@@ -302,4 +302,57 @@ describe("heading extension typing behavior (harness)", () => {
     expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
     h.destroy();
   });
+
+  test("copy and paste heading preserves content and formatting", async () => {
+    const h = createTestHarness("# My Heading");
+    await h.focus();
+
+    // Select all (the heading)
+    await h.pressKey("a", { meta: true });
+
+    // Copy (Cmd+C)
+    let copiedText = "";
+    const copyEvent = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: new DataTransfer(),
+    });
+    Object.defineProperty(copyEvent, "clipboardData", {
+      value: {
+        setData: (_type: string, data: string) => {
+          copiedText = data;
+        },
+        getData: () => "",
+      },
+    });
+    h.contentRoot.dispatchEvent(copyEvent);
+
+    // Move to end and insert new line
+    await h.pressKey("ArrowRight");
+    await h.pressEnter();
+
+    // Paste (Cmd+V)
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: new DataTransfer(),
+    });
+    Object.defineProperty(pasteEvent, "clipboardData", {
+      value: {
+        getData: (type: string) => (type === "text/plain" ? copiedText : ""),
+      },
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    // Assert exact copy: content and formatting
+    // After Enter, we have an empty line, then paste inserts the heading
+    expect(h.engine.getValue()).toBe("# My Heading\n\n# My Heading");
+    expect(h.getLineCount()).toBe(3);
+    expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
+    expect(h.getLine(2).classList.contains("is-heading")).toBe(true);
+    expect(h.getLine(0).textContent).toBe("My Heading");
+    expect(h.getLine(2).textContent).toBe("My Heading");
+
+    h.destroy();
+  });
 });
