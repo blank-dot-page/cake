@@ -262,6 +262,7 @@ export function CakeLinkPopover(params: {
       className="cake-link-popover"
       ref={popoverRef}
       style={{
+        position: "absolute",
         top: state.position.top,
         left: state.position.left,
         pointerEvents: "auto",

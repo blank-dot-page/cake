@@ -30,4 +30,27 @@ describe("cake link popover", () => {
     const editButton = page.getByRole("button", { name: "Edit link" });
     await expect.element(editButton).toBeVisible();
   });
+
+  it("positions popover below the clicked link", async () => {
+    renderEditor("hello [world](https://example.com)");
+
+    const link = page.getByRole("link", { name: "world" });
+    await expect.element(link).toBeVisible();
+
+    await userEvent.click(link);
+
+    const popover = page.getByRole("button", { name: "Edit link" }).element()
+      .parentElement?.parentElement;
+    expect(popover).not.toBeNull();
+
+    const linkRect = link.element().getBoundingClientRect();
+    const popoverRect = popover!.getBoundingClientRect();
+
+    // Popover should be positioned below the link (with small gap)
+    expect(popoverRect.top).toBeGreaterThan(linkRect.bottom);
+    expect(popoverRect.top).toBeLessThan(linkRect.bottom + 20);
+
+    // Popover left edge should be near the link's left edge
+    expect(Math.abs(popoverRect.left - linkRect.left)).toBeLessThan(10);
+  });
 });
