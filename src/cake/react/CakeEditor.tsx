@@ -14,7 +14,10 @@ import type {
   OverlayExtensionContext,
 } from "../core/runtime";
 import { CakeEngine } from "../engine/cake-engine";
-import { bundledExtensions } from "../extensions";
+import {
+  bundledExtensions,
+  bundledExtensionsWithoutImage,
+} from "../extensions";
 import {
   toggleBold,
   toggleItalic,
@@ -89,6 +92,7 @@ export interface CakeEditorProps {
   style?: React.CSSProperties;
   extensions?: CakeExtension[];
   onBlur?: (event?: FocusEvent) => void;
+  disableImageExtension?: boolean;
 }
 
 export interface CakeEditorRef {
@@ -117,8 +121,11 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
     const [contentRoot, setContentRoot] = useState<HTMLElement | null>(null);
 
     // Merge bundled extensions with custom extensions
+    const baseExtensions = props.disableImageExtension
+      ? bundledExtensionsWithoutImage
+      : bundledExtensions;
     const allExtensionsRef = useRef<CakeExtension[]>([
-      ...bundledExtensions,
+      ...baseExtensions,
       ...(props.extensions ?? []),
     ]);
 

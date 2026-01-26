@@ -24,7 +24,7 @@ export {
   strikethroughExtension,
 };
 
-export const bundledExtensions = [
+export const bundledExtensionsWithoutImage = [
   blockquoteExtension,
   headingExtension,
   listExtension,
@@ -34,5 +34,9 @@ export const bundledExtensions = [
   strikethroughExtension,
   pipeLinkExtension,
   linkExtension,
+];
+
+export const bundledExtensions = [
+  ...bundledExtensionsWithoutImage,
   imageExtension,
 ];
