@@ -1,14 +1,14 @@
-import type {
-  CakeExtension,
-  ParseInlineResult,
-  SerializeInlineResult,
+import {
+  defineExtension,
+  type ParseInlineResult,
+  type SerializeInlineResult,
 } from "../../core/runtime";
 import type { Inline } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 
 const PIPE_LINK_KIND = "pipe-link";
 
-export const pipeLinkExtension: CakeExtension = {
+export const pipeLinkExtension = defineExtension({
   name: "pipe-link",
   parseInline(source, start, end): ParseInlineResult {
     if (source[start] !== "|") {
@@ -86,4 +86,4 @@ export const pipeLinkExtension: CakeExtension = {
     }
     return element;
   },
-};
+});

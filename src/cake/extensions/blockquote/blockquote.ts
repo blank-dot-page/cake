@@ -1,7 +1,7 @@
-import type {
-  CakeExtension,
-  ParseBlockResult,
-  SerializeBlockResult,
+import {
+  defineExtension,
+  type ParseBlockResult,
+  type SerializeBlockResult,
 } from "../../core/runtime";
 import type { Block } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
@@ -9,7 +9,7 @@ import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 const BLOCKQUOTE_KIND = "blockquote";
 const PREFIX = "> ";
 
-export const blockquoteExtension: CakeExtension = {
+export const blockquoteExtension = defineExtension({
   name: "blockquote",
   parseBlock(source, start, context): ParseBlockResult {
     if (source.slice(start, start + PREFIX.length) !== PREFIX) {
@@ -92,4 +92,4 @@ export const blockquoteExtension: CakeExtension = {
     }
     return element;
   },
-};
+});

@@ -1,6 +1,8 @@
 import type { Affinity, Selection } from "../core/types";
 import {
   createRuntime,
+  isApplyEditCommand,
+  type ApplyEditCommand,
   type CakeExtension,
   type EditCommand,
   type Runtime,
@@ -404,8 +406,9 @@ export class CakeEngine {
   }
 
   executeCommand(command: EditCommand): boolean {
+    // Check for openPopover flag on any command (used by link extension)
     const shouldOpenLinkPopover =
-      command.type === "wrap-link" && command.openPopover;
+      "openPopover" in command && command.openPopover === true;
     const nextState = this.runtime.applyEdit(command, this.state);
     if (nextState === this.state) {
       return false;
@@ -1457,12 +1460,7 @@ export class CakeEngine {
       if (!command) {
         continue;
       }
-      if (
-        command.type === "insert" ||
-        command.type === "insert-line-break" ||
-        command.type === "delete-backward" ||
-        command.type === "delete-forward"
-      ) {
+      if (isApplyEditCommand(command)) {
         this.applyEdit(command);
       } else {
         this.executeCommand(command);
@@ -1909,13 +1907,7 @@ export class CakeEngine {
     return this.domMap?.cursorAtDom(resolved.node, resolved.offset) ?? null;
   }
 
-  private applyEdit(
-    command:
-      | { type: "insert"; text: string }
-      | { type: "insert-line-break" }
-      | { type: "delete-backward" }
-      | { type: "delete-forward" },
-  ) {
+  private applyEdit(command: ApplyEditCommand) {
     // Special handling for backspace at start of line after atomic block
     if (command.type === "delete-backward") {
       const handled = this.handleBackspaceAfterAtomicBlock();

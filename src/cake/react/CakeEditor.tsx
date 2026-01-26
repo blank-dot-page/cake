@@ -342,6 +342,9 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
                   : Math.max(selection.start, selection.end);
               return { start: focus, end: focus };
             },
+            executeCommand: (command) => {
+              return engineRef.current?.executeCommand(command) ?? false;
+            },
           } satisfies OverlayExtensionContext)
         : null;
 

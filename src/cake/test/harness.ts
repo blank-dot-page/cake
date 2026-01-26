@@ -150,6 +150,9 @@ export function createTestHarness(
             : Math.max(selection.start, selection.end);
         return { start: focus, end: focus };
       },
+      executeCommand: (command) => {
+        return engine.executeCommand(command);
+      },
     };
 
     const overlayElements = extensions.flatMap((extension) => {

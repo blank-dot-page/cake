@@ -1,14 +1,14 @@
-import type {
-  CakeExtension,
-  ParseInlineResult,
-  SerializeInlineResult,
+import {
+  defineExtension,
+  type ParseInlineResult,
+  type SerializeInlineResult,
 } from "../../core/runtime";
 import type { Inline } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 
 const ITALIC_KIND = "italic";
 
-export const italicExtension: CakeExtension = {
+export const italicExtension = defineExtension({
   name: "italic",
   toggleInline: { kind: ITALIC_KIND, markers: ["*", "_"] },
   keybindings: [
@@ -94,4 +94,4 @@ export const italicExtension: CakeExtension = {
     }
     return element;
   },
-};
+});

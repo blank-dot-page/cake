@@ -1,7 +1,7 @@
-import type {
-  CakeExtension,
-  ParseInlineResult,
-  SerializeInlineResult,
+import {
+  defineExtension,
+  type ParseInlineResult,
+  type SerializeInlineResult,
 } from "../../core/runtime";
 import type { Inline } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
@@ -15,7 +15,24 @@ import { ensureHttpsProtocol, isUrl } from "../../shared/url";
 
 const LINK_KIND = "link";
 
-export const linkExtension: CakeExtension = {
+/** Command to wrap selected text in a link */
+export type WrapLinkCommand = {
+  type: "wrap-link";
+  url?: string;
+  openPopover?: boolean;
+};
+
+/** Command to remove link formatting */
+export type UnlinkCommand = {
+  type: "unlink";
+  start: number;
+  end: number;
+};
+
+/** All link extension commands */
+export type LinkCommand = WrapLinkCommand | UnlinkCommand;
+
+export const linkExtension = defineExtension<LinkCommand>({
   name: "link",
   inlineWrapperAffinity: [{ kind: LINK_KIND, inclusive: false }],
   keybindings: [
@@ -43,6 +60,55 @@ export const linkExtension: CakeExtension = {
     },
   ],
   onEdit(command, state) {
+    if (command.type === "unlink") {
+      // Find the link at the given cursor position and remove the link markup
+      const cursorPos = command.start;
+      const sourcePos = state.map.cursorToSource(cursorPos, "forward");
+      const source = state.source;
+
+      // Search backwards for the opening bracket
+      let linkStart = sourcePos;
+      while (linkStart > 0 && source[linkStart] !== "[") {
+        linkStart--;
+      }
+      if (source[linkStart] !== "[") {
+        return null;
+      }
+
+      // Find the ]( separator
+      const labelClose = source.indexOf("](", linkStart + 1);
+      if (labelClose === -1) {
+        return null;
+      }
+
+      // Find the closing )
+      const urlClose = source.indexOf(")", labelClose + 2);
+      if (urlClose === -1) {
+        return null;
+      }
+
+      // Extract the label (text between [ and ](  )
+      const label = source.slice(linkStart + 1, labelClose);
+
+      // Replace [label](url) with just label
+      const nextSource =
+        source.slice(0, linkStart) + label + source.slice(urlClose + 1);
+
+      // Calculate new cursor position - place it at the end of the label
+      const newState = state.runtime.createState(nextSource);
+      const labelEndSource = linkStart + label.length;
+      const newCursor = newState.map.sourceToCursor(labelEndSource, "forward");
+
+      return {
+        source: nextSource,
+        selection: {
+          start: newCursor.cursorOffset,
+          end: newCursor.cursorOffset,
+          affinity: "forward",
+        },
+      };
+    }
+
     if (command.type !== "wrap-link") {
       return null;
     }
@@ -180,7 +246,9 @@ export const linkExtension: CakeExtension = {
         container={context.container}
         contentRoot={context.contentRoot}
         toOverlayRect={context.toOverlayRect}
+        getSelection={context.getSelection}
+        executeCommand={context.executeCommand}
       />
     );
   },
-};
+});

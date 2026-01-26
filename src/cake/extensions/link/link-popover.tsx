@@ -8,6 +8,7 @@ import {
 } from "react";
 import { ExternalLink, Pencil, Unlink } from "lucide-react";
 import { ensureHttpsProtocol } from "../../shared/url";
+import type { EditCommand } from "../../core/runtime";
 
 type PopoverPosition = { top: number; left: number };
 
@@ -57,8 +58,11 @@ export function CakeLinkPopover(params: {
     width: number;
     height: number;
   };
+  getSelection: () => { start: number; end: number } | null;
+  executeCommand: (command: EditCommand) => boolean;
 }) {
-  const { container, contentRoot, toOverlayRect } = params;
+  const { container, contentRoot, toOverlayRect, getSelection, executeCommand } =
+    params;
   const anchorRef = useRef<HTMLAnchorElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -242,7 +246,12 @@ export function CakeLinkPopover(params: {
   };
 
   const handleUnlink = () => {
-    // TODO: update Cake source to remove link markup.
+    const selection = getSelection();
+    if (!selection) {
+      close();
+      return;
+    }
+    executeCommand({ type: "unlink", start: selection.start, end: selection.end });
     close();
   };
 

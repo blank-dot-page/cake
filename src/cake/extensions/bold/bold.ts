@@ -1,14 +1,14 @@
-import type {
-  CakeExtension,
-  ParseInlineResult,
-  SerializeInlineResult,
+import {
+  defineExtension,
+  type ParseInlineResult,
+  type SerializeInlineResult,
 } from "../../core/runtime";
 import type { Inline } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 
 const BOLD_KIND = "bold";
 
-export const boldExtension: CakeExtension = {
+export const boldExtension = defineExtension({
   name: "bold",
   toggleInline: { kind: BOLD_KIND, markers: ["**"] },
   keybindings: [
@@ -104,7 +104,7 @@ export const boldExtension: CakeExtension = {
     }
     return element;
   },
-};
+});
 
 function countSingleAsterisks(source: string, start: number, end: number) {
   let count = 0;

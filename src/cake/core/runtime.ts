@@ -12,6 +12,7 @@ export type OverlayExtensionContext = {
   insertText: (text: string) => void;
   replaceText: (oldText: string, newText: string) => void;
   getSelection: () => { start: number; end: number } | null;
+  executeCommand: (command: EditCommand) => boolean;
   contentRoot?: HTMLElement;
   overlayRoot?: HTMLElement;
   toOverlayRect?: (rect: DOMRectReadOnly) => {
@@ -31,18 +32,65 @@ export type ParseInlineResult = InlineParseResult | null;
 export type SerializeBlockResult = { source: string; map: CursorSourceMap };
 export type SerializeInlineResult = { source: string; map: CursorSourceMap };
 
-export type EditCommand =
-  | { type: "insert"; text: string }
+/** Insert command */
+export type InsertCommand = { type: "insert"; text: string };
+
+/** Commands that can be applied directly by the engine */
+export type ApplyEditCommand =
+  | InsertCommand
   | { type: "insert-line-break" }
-  | { type: "exit-block-wrapper" }
   | { type: "delete-backward" }
-  | { type: "delete-forward" }
+  | { type: "delete-forward" };
+
+/** Structural edit commands that modify document structure */
+export type StructuralEditCommand =
+  | ApplyEditCommand
+  | { type: "exit-block-wrapper" };
+
+/** Core edit commands handled by the runtime */
+export type CoreEditCommand =
+  | StructuralEditCommand
   | { type: "indent" }
   | { type: "outdent" }
-  | { type: "toggle-bullet-list" }
-  | { type: "toggle-numbered-list" }
-  | { type: "toggle-inline"; marker: string }
-  | { type: "wrap-link"; url?: string; openPopover?: boolean };
+  | { type: "toggle-inline"; marker: string };
+
+/** Base type for extension-defined commands */
+export type ExtensionCommand = {
+  type: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+};
+
+/**
+ * Edit commands can be core commands or extension-defined commands.
+ * Extensions handle their own commands in onEdit before the core processes them.
+ */
+export type EditCommand = CoreEditCommand | ExtensionCommand;
+
+/** Type guard to check if a command is a structural edit */
+export function isStructuralEdit(
+  command: EditCommand,
+): command is StructuralEditCommand {
+  return (
+    command.type === "insert" ||
+    command.type === "delete-backward" ||
+    command.type === "delete-forward" ||
+    command.type === "insert-line-break" ||
+    command.type === "exit-block-wrapper"
+  );
+}
+
+/** Type guard to check if a command can be applied directly by the engine */
+export function isApplyEditCommand(
+  command: EditCommand,
+): command is ApplyEditCommand {
+  return (
+    command.type === "insert" ||
+    command.type === "insert-line-break" ||
+    command.type === "delete-backward" ||
+    command.type === "delete-forward"
+  );
+}
 
 export type EditResult = {
   source: string;
@@ -119,6 +167,41 @@ export type CakeExtension = {
   ) => Node | Node[] | null;
   renderOverlay?: (context: OverlayExtensionContext) => ReactElement | null;
 };
+
+/**
+ * Extension config with typed custom commands.
+ */
+export type ExtensionConfig<TCommand extends ExtensionCommand> = Omit<
+  CakeExtension,
+  "onEdit"
+> & {
+  onEdit?: (
+    command: EditCommand | TCommand,
+    state: RuntimeState,
+  ) => EditResult | EditCommand | TCommand | null;
+};
+
+/**
+ * Define an extension with typed custom commands.
+ *
+ * @example
+ * type MyCommand = { type: "my-command"; value: number };
+ * export const myExtension = defineExtension<MyCommand>({
+ *   name: "my-extension",
+ *   onEdit(command, state) {
+ *     if (command.type === "my-command") {
+ *       // command is narrowed to MyCommand here
+ *       console.log(command.value);
+ *     }
+ *     return null;
+ *   },
+ * });
+ */
+export function defineExtension<TCommand extends ExtensionCommand>(
+  extension: ExtensionConfig<TCommand>,
+): CakeExtension {
+  return extension as CakeExtension;
+}
 
 export type RuntimeState = {
   source: string;
@@ -441,13 +524,7 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     }
 
     const selection = normalizeSelection(state.selection);
-    if (
-      command.type === "insert" ||
-      command.type === "delete-backward" ||
-      command.type === "delete-forward" ||
-      command.type === "insert-line-break" ||
-      command.type === "exit-block-wrapper"
-    ) {
+    if (isStructuralEdit(command)) {
       const structural = applyStructuralEdit(command, state.doc, selection);
       if (!structural) {
         // Structural edits can refuse to operate across certain doc-tree
@@ -631,12 +708,7 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
   };
 
   function applyStructuralEdit(
-    command:
-      | { type: "insert"; text: string }
-      | { type: "insert-line-break" }
-      | { type: "exit-block-wrapper" }
-      | { type: "delete-backward" }
-      | { type: "delete-forward" },
+    command: StructuralEditCommand,
     doc: Doc,
     selection: Selection,
   ): { doc: Doc; nextCursor: number; nextAffinity?: Affinity } | null {

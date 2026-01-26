@@ -1,7 +1,7 @@
-import type {
-  CakeExtension,
-  ParseBlockResult,
-  SerializeBlockResult,
+import {
+  defineExtension,
+  type ParseBlockResult,
+  type SerializeBlockResult,
 } from "../../core/runtime";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 import type { Block } from "../../core/types";
@@ -34,7 +34,7 @@ function isImageData(data: unknown): data is ImageData {
   return false;
 }
 
-export const imageExtension: CakeExtension = {
+export const imageExtension = defineExtension({
   name: "image",
   parseBlock(source, start): ParseBlockResult {
     let lineEnd = source.indexOf("\n", start);
@@ -139,4 +139,4 @@ export const imageExtension: CakeExtension = {
 
     return element;
   },
-};
+});

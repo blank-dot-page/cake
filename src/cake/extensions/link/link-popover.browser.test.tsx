@@ -130,4 +130,41 @@ describe("cake link popover", () => {
     // Popover should be hidden after scroll
     await expect.element(editButton).not.toBeInTheDocument();
   });
+
+  it("removes link when clicking unlink button", async () => {
+    let currentValue = "hello [world](https://example.com) goodbye";
+
+    function UnlinkTestEditor() {
+      const [value, setValue] = useState(currentValue);
+      return (
+        <CakeEditor
+          value={value}
+          onChange={(newValue) => {
+            currentValue = newValue;
+            setValue(newValue);
+          }}
+          placeholder=""
+          style={{ height: 300, overflow: "auto" }}
+        />
+      );
+    }
+
+    render(<UnlinkTestEditor />);
+
+    // Click the link to open the popover
+    const link = page.getByRole("link", { name: "world" });
+    await expect.element(link).toBeVisible();
+    await userEvent.click(link);
+
+    // Click the unlink button
+    const unlinkButton = page.getByRole("button", { name: "Remove link" });
+    await expect.element(unlinkButton).toBeVisible();
+    await userEvent.click(unlinkButton);
+
+    // Link should be removed - text should remain but without link markup
+    expect(currentValue).toBe("hello world goodbye");
+
+    // The link element should no longer exist
+    await expect.element(page.getByRole("link")).not.toBeInTheDocument();
+  });
 });

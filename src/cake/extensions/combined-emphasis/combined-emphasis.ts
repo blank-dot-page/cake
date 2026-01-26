@@ -1,11 +1,11 @@
-import type { CakeExtension, ParseInlineResult } from "../../core/runtime";
+import { defineExtension, type ParseInlineResult } from "../../core/runtime";
 
 const BOLD_KIND = "bold";
 const ITALIC_KIND = "italic";
 
 const MARKERS = ["***", "___"] as const;
 
-export const combinedEmphasisExtension: CakeExtension = {
+export const combinedEmphasisExtension = defineExtension({
   name: "combined-emphasis",
   parseInline(source, start, end, context): ParseInlineResult {
     const marker = MARKERS.find((m) => source.slice(start, start + 3) === m);
@@ -47,4 +47,4 @@ export const combinedEmphasisExtension: CakeExtension = {
       nextPos: close + 3,
     };
   },
-};
+});

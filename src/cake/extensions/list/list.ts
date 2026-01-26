@@ -1,8 +1,7 @@
-import type {
-  CakeExtension,
-  EditCommand,
-  EditResult,
-  RuntimeState,
+import {
+  defineExtension,
+  type EditResult,
+  type RuntimeState,
 } from "../../core/runtime";
 import type { Block, Selection } from "../../core/types";
 import type { DomRenderContext } from "../../dom/types";
@@ -935,7 +934,7 @@ function handleInsertListMarkerWithSelection(
 function handleMarkerSwitch(
   state: RuntimeState,
   insertedChar: string,
-): EditResult | EditCommand | null {
+): EditResult | ListCommand | null {
   const { source, selection } = state;
 
   // If there's a selection, try to convert lines to list
@@ -1014,7 +1013,16 @@ function getParagraphText(block: Block): string | null {
   return text;
 }
 
-export const listExtension: CakeExtension = {
+/** Command to toggle bullet list formatting */
+export type ToggleBulletListCommand = { type: "toggle-bullet-list" };
+
+/** Command to toggle numbered list formatting */
+export type ToggleNumberedListCommand = { type: "toggle-numbered-list" };
+
+/** All list extension commands */
+export type ListCommand = ToggleBulletListCommand | ToggleNumberedListCommand;
+
+export const listExtension = defineExtension<ListCommand>({
   name: "list",
   keybindings: [
     {
@@ -1042,10 +1050,7 @@ export const listExtension: CakeExtension = {
       command: { type: "toggle-numbered-list" },
     },
   ],
-  onEdit(
-    command: EditCommand,
-    state: RuntimeState,
-  ): EditResult | EditCommand | null {
+  onEdit(command, state) {
     if (command.type === "insert-line-break") {
       return handleInsertLineBreak(state);
     }
@@ -1117,4 +1122,4 @@ export const listExtension: CakeExtension = {
 
     return element;
   },
-};
+});

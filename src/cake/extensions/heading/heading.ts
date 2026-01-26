@@ -1,10 +1,9 @@
-import type {
-  CakeExtension,
-  EditCommand,
-  EditResult,
-  ParseBlockResult,
-  RuntimeState,
-  SerializeBlockResult,
+import {
+  defineExtension,
+  type EditResult,
+  type ParseBlockResult,
+  type RuntimeState,
+  type SerializeBlockResult,
 } from "../../core/runtime";
 import type { Block } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
@@ -160,9 +159,9 @@ function shouldExitHeadingOnLineBreak(state: RuntimeState): boolean {
   return sourcePos >= contentStart && sourcePos <= lineEnd;
 }
 
-export const headingExtension: CakeExtension = {
+export const headingExtension = defineExtension({
   name: "heading",
-  onEdit(command: EditCommand, state: RuntimeState): EditResult | EditCommand | null {
+  onEdit(command, state) {
     if (command.type === "delete-backward") {
       return handleDeleteBackward(state);
     }
@@ -324,4 +323,4 @@ export const headingExtension: CakeExtension = {
     }
     return lineElement;
   },
-};
+});

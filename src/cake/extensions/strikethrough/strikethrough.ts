@@ -1,14 +1,14 @@
-import type {
-  CakeExtension,
-  ParseInlineResult,
-  SerializeInlineResult,
+import {
+  defineExtension,
+  type ParseInlineResult,
+  type SerializeInlineResult,
 } from "../../core/runtime";
 import type { Inline } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 
 const STRIKE_KIND = "strikethrough";
 
-export const strikethroughExtension: CakeExtension = {
+export const strikethroughExtension = defineExtension({
   name: "strikethrough",
   toggleInline: { kind: STRIKE_KIND, markers: ["~~"] },
   keybindings: [
@@ -88,4 +88,4 @@ export const strikethroughExtension: CakeExtension = {
     }
     return element;
   },
-};
+});
