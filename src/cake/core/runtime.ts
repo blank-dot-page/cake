@@ -2339,7 +2339,30 @@ function parseLiteralInline(
   start: number,
   end: number,
 ): InlineParseResult {
-  const segment = graphemeSegments(source.slice(start, end))[0];
+  // Fast path for ASCII characters (most common case)
+  const code = source.charCodeAt(start);
+  if (code < 0x80) {
+    // Single ASCII character
+    const text = source[start] ?? "";
+    return { inline: { type: "text", text }, nextPos: start + 1 };
+  }
+
+  // For non-ASCII, check if it's a surrogate pair (emoji, etc.)
+  if (code >= 0xd800 && code <= 0xdbff) {
+    // High surrogate - combine with low surrogate
+    const lowCode = source.charCodeAt(start + 1);
+    if (lowCode >= 0xdc00 && lowCode <= 0xdfff) {
+      // Valid surrogate pair - but might be part of a larger grapheme cluster (like emoji with skin tone)
+      // Fall back to segmenter for these cases
+      const segment = graphemeSegments(source.slice(start, Math.min(start + 10, end)))[0];
+      const text = segment ? segment.segment : source.slice(start, start + 2);
+      return { inline: { type: "text", text }, nextPos: start + text.length };
+    }
+  }
+
+  // Other multi-byte UTF-8 characters (most are single grapheme clusters)
+  // Use a small window for segmenter to avoid processing entire remaining text
+  const segment = graphemeSegments(source.slice(start, Math.min(start + 10, end)))[0];
   const text = segment ? segment.segment : (source[start] ?? "");
   return { inline: { type: "text", text }, nextPos: start + text.length };
 }

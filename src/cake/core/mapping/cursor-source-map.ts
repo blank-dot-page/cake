@@ -89,15 +89,40 @@ export class CursorSourceBuilder {
       return;
     }
 
-    for (const segment of graphemeSegments(text)) {
-      this.sourceParts.push(segment.segment);
-      this.sourceLengthValue += segment.segment.length;
-      const sourceLength = this.sourceLengthValue;
-      this.cursorLength += 1;
-      this.boundaries.push({
-        sourceBackward: sourceLength,
-        sourceForward: sourceLength,
-      });
+    // Fast path: check if entire text is ASCII
+    let isAllAscii = true;
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) >= 0x80) {
+        isAllAscii = false;
+        break;
+      }
+    }
+
+    if (isAllAscii) {
+      // ASCII fast path: each character is one grapheme
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i]!;
+        this.sourceParts.push(char);
+        this.sourceLengthValue += 1;
+        const sourceLength = this.sourceLengthValue;
+        this.cursorLength += 1;
+        this.boundaries.push({
+          sourceBackward: sourceLength,
+          sourceForward: sourceLength,
+        });
+      }
+    } else {
+      // Non-ASCII: use grapheme segmenter for proper Unicode handling
+      for (const segment of graphemeSegments(text)) {
+        this.sourceParts.push(segment.segment);
+        this.sourceLengthValue += segment.segment.length;
+        const sourceLength = this.sourceLengthValue;
+        this.cursorLength += 1;
+        this.boundaries.push({
+          sourceBackward: sourceLength,
+          sourceForward: sourceLength,
+        });
+      }
     }
   }
 

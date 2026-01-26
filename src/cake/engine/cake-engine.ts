@@ -647,7 +647,6 @@ export class CakeEngine {
       this.contentRoot.replaceChildren(...content);
     }
     this.domMap = map;
-    this.updateExtensionsOverlayPosition();
     if (!this.isComposing) {
       this.applySelection(this.state.selection);
     }
@@ -3048,6 +3047,7 @@ export class CakeEngine {
     }
     this.overlayUpdateId = window.requestAnimationFrame(() => {
       this.overlayUpdateId = null;
+      this.updateExtensionsOverlayPosition();
       this.updateSelectionOverlay();
     });
   }
