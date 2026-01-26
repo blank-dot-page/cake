@@ -66,6 +66,16 @@ export function applyDomSelection(selection: Selection, map: DomMap): void {
     return;
   }
 
+  if (
+    domSelection.rangeCount > 0 &&
+    domSelection.anchorNode === anchorPoint.node &&
+    domSelection.anchorOffset === anchorPoint.offset &&
+    domSelection.focusNode === focusPoint.node &&
+    domSelection.focusOffset === focusPoint.offset
+  ) {
+    return;
+  }
+
   domSelection.removeAllRanges();
 
   if (isCollapsed) {

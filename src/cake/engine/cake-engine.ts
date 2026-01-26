@@ -48,6 +48,15 @@ type EngineOptions = {
   spellCheckEnabled?: boolean;
 };
 
+export type RenderPerf = {
+  totalMs: number;
+  renderAndMapMs: number;
+  applySelectionMs: number;
+  didUpdateDom: boolean;
+  blockCount: number;
+  runCount: number;
+};
+
 type InputIntent =
   | { type: "noop" }
   | { type: "insert-text"; text: string }
@@ -122,6 +131,7 @@ export class CakeEngine {
   private placeholderRoot: HTMLDivElement | null = null;
   private lastFocusRect: SelectionRect | null = null;
   private verticalNavGoalX: number | null = null;
+  private lastRenderPerf: RenderPerf | null = null;
   private history: HistoryState = {
     undoStack: [],
     redoStack: [],
@@ -135,6 +145,10 @@ export class CakeEngine {
     cursorOffset: number;
     affinity: Affinity;
   } | null = null;
+
+  getLastRenderPerf(): RenderPerf | null {
+    return this.lastRenderPerf;
+  }
 
   private isEventTargetInContentRoot(target: EventTarget | null): boolean {
     // In real browser events, `target` is usually a descendant of `contentRoot`.
@@ -616,6 +630,15 @@ export class CakeEngine {
   }
 
   private render() {
+    const perfEnabled = this.container.dataset.cakePerf === "1";
+    let perfStart = 0;
+    let renderStart = 0;
+    let renderAndMapMs = 0;
+    let applySelectionMs = 0;
+
+    if (perfEnabled) {
+      perfStart = performance.now();
+    }
     if (!this.contentRoot) {
       // Overlay roots are positioned absolutely; ensure the container forms a
       // positioning context so browser hit-testing APIs (caretRangeFromPoint)
@@ -634,6 +657,9 @@ export class CakeEngine {
       this.container.replaceChildren(this.contentRoot, overlay, extensionsRoot);
       this.attachDragListeners();
     }
+    if (perfEnabled) {
+      renderStart = performance.now();
+    }
     const { content, map } = renderDocContent(
       this.state.doc,
       this.extensions,
@@ -647,8 +673,26 @@ export class CakeEngine {
       this.contentRoot.replaceChildren(...content);
     }
     this.domMap = map;
+    if (perfEnabled) {
+      renderAndMapMs = performance.now() - renderStart;
+    }
     if (!this.isComposing) {
+      const selectionStart = perfEnabled ? performance.now() : 0;
       this.applySelection(this.state.selection);
+      if (perfEnabled) {
+        applySelectionMs = performance.now() - selectionStart;
+      }
+    }
+    if (perfEnabled) {
+      const totalMs = performance.now() - perfStart;
+      this.lastRenderPerf = {
+        totalMs,
+        renderAndMapMs: renderAndMapMs,
+        applySelectionMs: applySelectionMs,
+        didUpdateDom: needsUpdate,
+        blockCount: this.state.doc.blocks.length,
+        runCount: map.runs.length,
+      };
     }
     this.updatePlaceholder();
     this.scheduleOverlayUpdate();

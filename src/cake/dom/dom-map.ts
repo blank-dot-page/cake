@@ -19,13 +19,33 @@ export type DomMap = {
   ): { cursorOffset: number; affinity: Affinity } | null;
 };
 
+type GraphemeCacheEntry = {
+  data: string;
+  boundaryOffsets: number[];
+};
+
+const graphemeCache = new WeakMap<Text, GraphemeCacheEntry>();
+
 export function createTextRun(node: Text, cursorStart: number): TextRun {
-  const segments = graphemeSegments(node.data);
+  const data = node.data;
+  const cached = graphemeCache.get(node);
+  if (cached && cached.data === data) {
+    const segmentCount = Math.max(0, cached.boundaryOffsets.length - 1);
+    return {
+      node,
+      cursorStart,
+      cursorEnd: cursorStart + segmentCount,
+      boundaryOffsets: cached.boundaryOffsets,
+    };
+  }
+
+  const segments = graphemeSegments(data);
   const boundaryOffsets = [0];
   for (const segment of segments) {
     boundaryOffsets.push(segment.index + segment.segment.length);
   }
   const cursorEnd = cursorStart + segments.length;
+  graphemeCache.set(node, { data, boundaryOffsets });
   return { node, cursorStart, cursorEnd, boundaryOffsets };
 }
 
@@ -50,6 +70,23 @@ function boundaryIndexForOffset(
   return boundaryOffsets.length - 1;
 }
 
+function firstRunStartingAfterCursor(
+  runs: TextRun[],
+  cursorOffset: number,
+): number {
+  let low = 0;
+  let high = runs.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (runs[mid]!.cursorStart <= cursorOffset) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  return low;
+}
+
 export function createDomMap(runs: TextRun[]): DomMap {
   const runForNode = new Map<Text, TextRun>();
   const runIndexForNode = new Map<Text, number>();
@@ -68,52 +105,54 @@ export function createDomMap(runs: TextRun[]): DomMap {
       return null;
     }
 
-    for (let i = 0; i < runs.length; i += 1) {
-      const run = runs[i];
-      const previous = i > 0 ? runs[i - 1] : null;
-      const next = i + 1 < runs.length ? runs[i + 1] : null;
+    const nextIndex = firstRunStartingAfterCursor(runs, cursorOffset);
+    const runIndex = nextIndex - 1;
 
-      if (cursorOffset < run.cursorStart) {
-        if (!previous) {
-          return { node: run.node, offset: run.boundaryOffsets[0] };
-        }
-        const previousOffset =
-          previous.boundaryOffsets[previous.boundaryOffsets.length - 1];
-        return affinity === "backward"
-          ? { node: previous.node, offset: previousOffset }
-          : { node: run.node, offset: run.boundaryOffsets[0] };
-      }
-
-      if (
-        cursorOffset === run.cursorStart &&
-        previous &&
-        affinity === "backward"
-      ) {
-        return {
-          node: previous.node,
-          offset: previous.boundaryOffsets[previous.boundaryOffsets.length - 1],
-        };
-      }
-
-      if (cursorOffset <= run.cursorEnd) {
-        if (
-          cursorOffset === run.cursorEnd &&
-          affinity === "forward" &&
-          next &&
-          next.cursorStart === cursorOffset
-        ) {
-          return { node: next.node, offset: next.boundaryOffsets[0] };
-        }
-        const index = Math.max(0, cursorOffset - run.cursorStart);
-        const boundedIndex = Math.min(index, run.boundaryOffsets.length - 1);
-        return { node: run.node, offset: run.boundaryOffsets[boundedIndex] };
-      }
+    if (runIndex < 0) {
+      const first = runs[0]!;
+      return { node: first.node, offset: first.boundaryOffsets[0]! };
     }
 
-    const last = runs[runs.length - 1];
+    const run = runs[runIndex]!;
+    const previous = runIndex > 0 ? runs[runIndex - 1]! : null;
+    const next = nextIndex < runs.length ? runs[nextIndex]! : null;
+
+    if (cursorOffset === run.cursorStart && previous && affinity === "backward") {
+      return {
+        node: previous.node,
+        offset: previous.boundaryOffsets[previous.boundaryOffsets.length - 1]!,
+      };
+    }
+
+    // Cursor lies within this run
+    if (cursorOffset <= run.cursorEnd) {
+      if (
+        cursorOffset === run.cursorEnd &&
+        affinity === "forward" &&
+        next &&
+        next.cursorStart === cursorOffset
+      ) {
+        return { node: next.node, offset: next.boundaryOffsets[0]! };
+      }
+
+      const index = Math.max(0, cursorOffset - run.cursorStart);
+      const boundedIndex = Math.min(index, run.boundaryOffsets.length - 1);
+      return { node: run.node, offset: run.boundaryOffsets[boundedIndex]! };
+    }
+
+    // Cursor lies in a gap between runs (e.g., block boundary/newline)
+    if (next) {
+      const runEndOffset = run.boundaryOffsets[run.boundaryOffsets.length - 1]!;
+      return affinity === "backward"
+        ? { node: run.node, offset: runEndOffset }
+        : { node: next.node, offset: next.boundaryOffsets[0]! };
+    }
+
+    // Cursor lies after final run
+    const last = run;
     return {
       node: last.node,
-      offset: last.boundaryOffsets[last.boundaryOffsets.length - 1],
+      offset: last.boundaryOffsets[last.boundaryOffsets.length - 1]!,
     };
   }
 
