@@ -76,8 +76,6 @@ export function applyDomSelection(selection: Selection, map: DomMap): void {
     return;
   }
 
-  domSelection.removeAllRanges();
-
   if (isCollapsed) {
     domSelection.collapse(anchorPoint.node, anchorPoint.offset);
     return;
@@ -108,6 +106,7 @@ export function applyDomSelection(selection: Selection, map: DomMap): void {
   }
 
   // Fallback: apply the selection as a range in document order.
+  domSelection.removeAllRanges();
   const range = document.createRange();
   const rangeStart = isForward ? anchorPoint : focusPoint;
   const rangeEnd = isForward ? focusPoint : anchorPoint;

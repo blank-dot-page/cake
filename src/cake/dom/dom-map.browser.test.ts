@@ -218,4 +218,32 @@ describe("dom map", () => {
     expect(domPoint?.node).toBe(linkTextNode);
     expect(domPoint?.offset).toBe(5); // After "world"
   });
+
+  it("cursorAtDom stays fast for large text nodes", () => {
+    const runtime = createRuntime([]);
+    const source = "a".repeat(24_000);
+    const state = runtime.createState(source);
+    const { root, map } = renderDoc(state.doc, runtime.extensions);
+    document.body.append(root);
+
+    const textNode = findFirstTextNodeIn(root);
+
+    const iterations = 20_000;
+    const offset = textNode.data.length;
+
+    // Warm up (helps avoid first-run noise skewing the measurement)
+    for (let i = 0; i < 100; i += 1) {
+      map.cursorAtDom(textNode, offset);
+    }
+
+    let sum = 0;
+    const start = performance.now();
+    for (let i = 0; i < iterations; i += 1) {
+      sum += map.cursorAtDom(textNode, offset)!.cursorOffset;
+    }
+    const elapsedMs = performance.now() - start;
+
+    expect(sum).toBe(iterations * offset);
+    expect(elapsedMs).toBeLessThan(300);
+  });
 });

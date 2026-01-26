@@ -4,7 +4,7 @@ import {
   createOffsetToXMeasurer,
   cursorOffsetToDomOffset,
   getLineElement,
-  measureLayoutModelFromDom,
+  measureLayoutModelRangeFromDom,
   resolveDomPosition,
   toLayoutRect,
 } from "./selection-layout-dom";
@@ -37,7 +37,17 @@ export function getSelectionGeometry(params: {
           affinity: selection.affinity,
         };
   const layout = shouldMeasureLayout(normalized)
-    ? measureLayoutModelFromDom({ lines: docLines, root, container })
+    ? (() => {
+        const startLine = resolveOffsetToLine(docLines, normalized.start);
+        const endLine = resolveOffsetToLine(docLines, normalized.end);
+        return measureLayoutModelRangeFromDom({
+          lines: docLines,
+          root,
+          container,
+          startLineIndex: startLine.lineIndex,
+          endLineIndex: endLine.lineIndex,
+        });
+      })()
     : null;
   const containerRect = container.getBoundingClientRect();
   const scroll = { top: container.scrollTop, left: container.scrollLeft };
@@ -277,4 +287,3 @@ function getComputedFontSize(lineElement: HTMLElement): number {
   const parsed = Number.parseFloat(fontSize);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 16;
 }
-

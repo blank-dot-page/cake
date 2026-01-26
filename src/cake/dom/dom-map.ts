@@ -57,17 +57,30 @@ function boundaryIndexForOffset(
     return 0;
   }
 
-  for (let i = 1; i < boundaryOffsets.length; i += 1) {
-    const boundary = boundaryOffsets[i];
-    if (offset < boundary) {
-      return i - 1;
-    }
-    if (offset === boundary) {
-      return i;
+  const lastIndex = boundaryOffsets.length - 1;
+  if (lastIndex <= 0) {
+    return 0;
+  }
+  const lastBoundary = boundaryOffsets[lastIndex]!;
+  if (offset >= lastBoundary) {
+    return lastIndex;
+  }
+
+  // Find first boundary >= offset (lower_bound).
+  let low = 1;
+  let high = lastIndex;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    const boundary = boundaryOffsets[mid]!;
+    if (boundary < offset) {
+      low = mid + 1;
+    } else {
+      high = mid;
     }
   }
 
-  return boundaryOffsets.length - 1;
+  const boundary = boundaryOffsets[low]!;
+  return boundary === offset ? low : low - 1;
 }
 
 function firstRunStartingAfterCursor(

@@ -4,8 +4,9 @@ import type {
   LayoutRect,
   LayoutRow,
   LineInfo,
+  LineLayout,
 } from "./selection-layout";
-import { buildLayoutModel } from "./selection-layout";
+import { buildLayoutModel, getLineOffsets } from "./selection-layout";
 
 export function toLayoutRect(params: {
   rect: DOMRect;
@@ -133,75 +134,100 @@ function measureLineRows(params: {
     ];
   }
 
-  // Measure actual character positions to find row boundaries
-  // This works correctly with variable-width fonts
-  const rows: LayoutRow[] = [];
-  let currentRowStart = 0;
-  let currentRowTop: number | null = null;
-  let currentRowRect: DOMRect | null = null;
+  const WRAP_THRESHOLD_PX = 3;
 
-  for (let offset = 0; offset < params.lineLength; offset++) {
-    const charRect = measureCharacterRect({
+  function offsetToTop(offset: number): number | null {
+    const rect = measureCharacterRect({
       lineElement: params.lineElement,
       offset,
       lineLength: params.lineLength,
       cursorToCodeUnit: params.cursorToCodeUnit,
     });
+    return rect ? rect.top : null;
+  }
 
-    if (!charRect) {
-      continue;
-    }
-
-    if (currentRowTop === null) {
-      // First character
-      currentRowTop = charRect.top;
-      currentRowRect = charRect;
-    } else if (Math.abs(charRect.top - currentRowTop) > 3) {
-      // New row detected - save the previous row
-      // endOffset is the boundary position (cursor position after last char on row)
-      // which equals the startOffset of the next row
-      if (currentRowRect) {
-        rows.push({
-          startOffset: currentRowStart,
-          endOffset: offset,
-          rect: toLayoutRect({
-            rect: currentRowRect,
-            containerRect: params.containerRect,
-            scroll: params.scroll,
-          }),
-        });
+  function findFirstMeasurableOffset(from: number): number | null {
+    for (let offset = Math.max(0, from); offset < params.lineLength; offset++) {
+      if (offsetToTop(offset) !== null) {
+        return offset;
       }
-      currentRowStart = offset;
-      currentRowTop = charRect.top;
-      currentRowRect = charRect;
-    } else if (currentRowRect) {
-      // Same row - expand the rect
-      currentRowRect = new DOMRect(
-        Math.min(currentRowRect.left, charRect.left),
-        Math.min(currentRowRect.top, charRect.top),
-        Math.max(currentRowRect.right, charRect.right) -
-          Math.min(currentRowRect.left, charRect.left),
-        Math.max(currentRowRect.bottom, charRect.bottom) -
-          Math.min(currentRowRect.top, charRect.top),
-      );
     }
+    return null;
   }
 
-  // Push the final row
-  if (currentRowRect) {
-    rows.push({
-      startOffset: currentRowStart,
-      endOffset: params.lineLength - 1,
-      rect: toLayoutRect({
-        rect: currentRowRect,
-        containerRect: params.containerRect,
-        scroll: params.scroll,
-      }),
-    });
+  function findNextRowStartOffset(
+    fromExclusive: number,
+    rowTop: number,
+  ): number | null {
+    const lastIndex = params.lineLength - 1;
+    if (fromExclusive > lastIndex) {
+      return null;
+    }
+
+    const isNewRowAt = (offset: number): boolean => {
+      const top = offsetToTop(offset);
+      return top !== null && Math.abs(top - rowTop) > WRAP_THRESHOLD_PX;
+    };
+
+    // Exponential search to find a point that lands on the next row.
+    let step = 1;
+    let lastSame = fromExclusive - 1;
+    let probe = fromExclusive;
+    while (probe <= lastIndex) {
+      if (isNewRowAt(probe)) {
+        break;
+      }
+      lastSame = probe;
+      probe += step;
+      step *= 2;
+    }
+    if (probe > lastIndex) {
+      probe = lastIndex;
+      if (!isNewRowAt(probe)) {
+        return null;
+      }
+    }
+
+    // Binary search for the first offset whose top differs (lower_bound).
+    let low = Math.max(fromExclusive, lastSame + 1);
+    let high = probe;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (isNewRowAt(mid)) {
+        high = mid;
+      } else {
+        low = mid + 1;
+      }
+    }
+    return low < params.lineLength ? low : null;
   }
 
-  // Fallback if no rows were detected
-  if (rows.length === 0) {
+  function measureRowRect(startOffset: number, endOffset: number): DOMRect | null {
+    const startCodeUnit = cursorOffsetToCodeUnit(params.cursorToCodeUnit, startOffset);
+    const endCodeUnit = cursorOffsetToCodeUnit(params.cursorToCodeUnit, endOffset);
+    const startPosition = resolveDomPosition(params.lineElement, startCodeUnit);
+    const endPosition = resolveDomPosition(params.lineElement, endCodeUnit);
+    const range = document.createRange();
+    range.setStart(startPosition.node, startPosition.offset);
+    range.setEnd(endPosition.node, endPosition.offset);
+
+    const rects = groupDomRectsByRow(Array.from(range.getClientRects()));
+    const merged = mergeDomRects(rects);
+    if (merged) {
+      return merged;
+    }
+    const bounding = range.getBoundingClientRect();
+    if (bounding.width === 0 && bounding.height === 0) {
+      return null;
+    }
+    return bounding;
+  }
+
+  // Measure row boundaries using a log-time search per row rather than a full
+  // per-character scan (important for very long lines).
+  const rows: LayoutRow[] = [];
+  const firstMeasurable = findFirstMeasurableOffset(0);
+  if (firstMeasurable === null) {
     return [
       {
         startOffset: 0,
@@ -211,12 +237,36 @@ function measureLineRows(params: {
     ];
   }
 
-  // Ensure last row's endOffset is the full line length
-  if (rows.length > 0) {
-    rows[rows.length - 1] = {
-      ...rows[rows.length - 1],
-      endOffset: params.lineLength,
-    };
+  let currentRowStart = 0;
+  let currentRowTop = offsetToTop(firstMeasurable) ?? params.lineRect.top;
+  let searchFrom = firstMeasurable + 1;
+
+  while (currentRowStart < params.lineLength) {
+    const nextRowStart = findNextRowStartOffset(searchFrom, currentRowTop);
+    const currentRowEnd = nextRowStart ?? params.lineLength;
+    const rowRect = measureRowRect(currentRowStart, currentRowEnd);
+    const domRect = rowRect ?? params.lineRect;
+
+    rows.push({
+      startOffset: currentRowStart,
+      endOffset: currentRowEnd,
+      rect: toLayoutRect({
+        rect: domRect,
+        containerRect: params.containerRect,
+        scroll: params.scroll,
+      }),
+    });
+
+    if (nextRowStart === null) {
+      break;
+    }
+    currentRowStart = nextRowStart;
+    const nextMeasurable = findFirstMeasurableOffset(currentRowStart);
+    if (nextMeasurable === null) {
+      break;
+    }
+    currentRowTop = offsetToTop(nextMeasurable) ?? currentRowTop;
+    searchFrom = nextMeasurable + 1;
   }
 
   // For single-row lines, use the fallback line box dimensions for consistency
@@ -301,6 +351,54 @@ export function measureLayoutModelFromDom(params: {
     return null;
   }
   return buildLayoutModel(params.lines, measurer);
+}
+
+export function measureLayoutModelRangeFromDom(params: {
+  lines: LineInfo[];
+  root: HTMLElement;
+  container: HTMLElement;
+  startLineIndex: number;
+  endLineIndex: number;
+}): LayoutModel | null {
+  const measurer = createDomLayoutMeasurer({
+    root: params.root,
+    container: params.container,
+    lines: params.lines,
+  });
+  if (!measurer) {
+    return null;
+  }
+
+  const clampedStart = Math.max(0, Math.min(params.startLineIndex, params.lines.length - 1));
+  const clampedEnd = Math.max(clampedStart, Math.min(params.endLineIndex, params.lines.length - 1));
+  const lineOffsets = getLineOffsets(params.lines);
+  let lineStartOffset = lineOffsets[clampedStart] ?? 0;
+
+  const layouts: LineLayout[] = [];
+  for (let lineIndex = clampedStart; lineIndex <= clampedEnd; lineIndex += 1) {
+    const lineInfo = params.lines[lineIndex];
+    if (!lineInfo) {
+      continue;
+    }
+    const measurement = measurer.measureLine({
+      lineIndex: lineInfo.lineIndex,
+      lineText: lineInfo.text,
+      lineLength: lineInfo.cursorLength,
+      lineHasNewline: lineInfo.hasNewline,
+      top: 0,
+    });
+    layouts.push({
+      lineIndex: lineInfo.lineIndex,
+      lineStartOffset,
+      lineLength: lineInfo.cursorLength,
+      lineHasNewline: lineInfo.hasNewline,
+      lineBox: measurement.lineBox,
+      rows: measurement.rows,
+    });
+    lineStartOffset += lineInfo.cursorLength + (lineInfo.hasNewline ? 1 : 0);
+  }
+
+  return { container: measurer.container, lines: layouts };
 }
 
 export function getLineElement(
