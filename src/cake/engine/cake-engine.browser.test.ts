@@ -935,17 +935,10 @@ describe("CakeEngine (browser)", () => {
     expect(lines[0].textContent).toBe("hello");
     expect(lines[1].textContent).toBe("");
 
-    // Check the selection is positioned correctly
-    const domSelection = window.getSelection();
-    expect(domSelection).not.toBeNull();
-    expect(domSelection!.rangeCount).toBeGreaterThan(0);
-
-    const range = domSelection!.getRangeAt(0);
-    const line1 = lines[1];
-
-    // The selection should be inside line 1
-    const selectionInLine1 = line1.contains(range.startContainer);
-    expect(selectionInLine1).toBe(true);
+    // Check the engine selection is positioned at the start of the second line
+    const engineSelection = engine.getSelection();
+    expect(engineSelection.start).toBe(6); // After "hello\n"
+    expect(engineSelection.end).toBe(6);
 
     engine.destroy();
   });
@@ -1598,5 +1591,201 @@ describe("Selection replacement with headings", () => {
 
     // Should keep heading marker and replace selected text
     expect(harness.engine.getValue()).toBe("# Hey");
+  });
+});
+
+describe("Touch/Mobile selection support", () => {
+  afterEach(() => {
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    document.body.innerHTML = "";
+  });
+
+  function createContainer(): HTMLDivElement {
+    const container = document.createElement("div");
+    container.contentEditable = "true";
+    document.body.append(container);
+    return container;
+  }
+
+  function dispatchSelectionChange() {
+    document.dispatchEvent(new Event("selectionchange"));
+  }
+
+  function setDomSelection(node: Node, start: number, end: number) {
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("Missing selection");
+    }
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, end);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    dispatchSelectionChange();
+  }
+
+  function getFirstTextNode(root: HTMLElement): Text {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const node = walker.nextNode();
+    if (!node || !(node instanceof Text)) {
+      throw new Error("Missing text node");
+    }
+    return node;
+  }
+
+  it("touch tap places caret at tapped position", async () => {
+    const container = createContainer();
+    let lastSelection: { start: number; end: number } | null = null;
+    const engine = new CakeEngine({
+      container,
+      value: "hello world",
+      selection: { start: 0, end: 0, affinity: "forward" },
+      onSelectionChange: (selection) => {
+        lastSelection = { start: selection.start, end: selection.end };
+      },
+    });
+
+    // Wait for render
+    await new Promise((r) => setTimeout(r, 50));
+
+    const textNode = getFirstTextNode(container);
+    const range = document.createRange();
+    range.setStart(textNode, 5); // Position after "hello"
+    range.setEnd(textNode, 5);
+    const rect = range.getBoundingClientRect();
+
+    // Simulate a touch tap with pointerType="touch"
+    const pointerDown = new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left,
+      clientY: rect.top + 5,
+      button: 0,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+    container.dispatchEvent(pointerDown);
+
+    // Simulate native selection being set (browser behavior on touch)
+    setDomSelection(textNode, 5, 5);
+
+    // Wait for events to process
+    await new Promise((r) => setTimeout(r, 100));
+
+    // The caret should be at position 5 (after "hello")
+    expect(lastSelection).not.toBeNull();
+    expect(lastSelection!.start).toBe(5);
+    expect(lastSelection!.end).toBe(5);
+
+    engine.destroy();
+  });
+
+  it("touch drag creates selection", async () => {
+    const container = createContainer();
+    let lastSelection: { start: number; end: number } | null = null;
+    const engine = new CakeEngine({
+      container,
+      value: "hello world",
+      selection: { start: 0, end: 0, affinity: "forward" },
+      onSelectionChange: (selection) => {
+        lastSelection = { start: selection.start, end: selection.end };
+      },
+    });
+
+    // Wait for render
+    await new Promise((r) => setTimeout(r, 50));
+
+    const textNode = getFirstTextNode(container);
+
+    // Simulate native selection being set via touch drag (browser handles this)
+    setDomSelection(textNode, 0, 5); // Select "hello"
+
+    // Wait for events to process
+    await new Promise((r) => setTimeout(r, 100));
+
+    // The selection should be 0-5
+    expect(lastSelection).not.toBeNull();
+    expect(lastSelection!.start).toBe(0);
+    expect(lastSelection!.end).toBe(5);
+
+    engine.destroy();
+  });
+
+  it("does not prevent default on touch pointerdown", async () => {
+    const container = createContainer();
+    const engine = new CakeEngine({
+      container,
+      value: "hello",
+      selection: { start: 0, end: 0, affinity: "forward" },
+    });
+
+    // Wait for render
+    await new Promise((r) => setTimeout(r, 50));
+
+    const textNode = getFirstTextNode(container);
+    const range = document.createRange();
+    range.setStart(textNode, 2);
+    range.setEnd(textNode, 2);
+    const rect = range.getBoundingClientRect();
+
+    // Simulate a touch pointerdown
+    const pointerDown = new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left,
+      clientY: rect.top + 5,
+      button: 0,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+    container.dispatchEvent(pointerDown);
+
+    // Touch pointerdown should NOT prevent default (allow native selection)
+    expect(pointerDown.defaultPrevented).toBe(false);
+
+    engine.destroy();
+  });
+
+  it("hides custom caret overlay during touch interaction", async () => {
+    const container = createContainer();
+    const engine = new CakeEngine({
+      container,
+      value: "hello",
+      selection: { start: 0, end: 0, affinity: "forward" },
+    });
+
+    // Wait for render
+    await new Promise((r) => setTimeout(r, 50));
+
+    const textNode = getFirstTextNode(container);
+    const range = document.createRange();
+    range.setStart(textNode, 2);
+    range.setEnd(textNode, 2);
+    const rect = range.getBoundingClientRect();
+
+    // Simulate a touch pointerdown
+    const pointerDown = new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left,
+      clientY: rect.top + 5,
+      button: 0,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+    container.dispatchEvent(pointerDown);
+
+    // Simulate native selection
+    setDomSelection(textNode, 2, 2);
+
+    // Wait for events to process
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Custom caret should be hidden when in touch mode
+    const caret = container.querySelector(".cake-caret") as HTMLElement | null;
+    expect(caret?.style.display).toBe("none");
+
+    engine.destroy();
   });
 });

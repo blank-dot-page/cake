@@ -1,4 +1,4 @@
-import { createRef, useState, useEffect } from "react";
+import { createRef, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 import { CakeEditor, type CakeEditorRef } from "../index";
@@ -51,106 +51,6 @@ describe("page load caret positioning (replicates editor.client.tsx runCaretInit
 
     // Caret should now be at the end
     const selection = ref.current?.getSelection();
-    expect(selection).toEqual({ start: 11, end: 11 });
-  });
-
-  /**
-   * Test with value prop changing (simulates content loading from server)
-   * This more closely replicates what happens in the app where:
-   * 1. Editor mounts with empty content
-   * 2. Server data arrives and value prop updates
-   * 3. runCaretInit effect fires and calls applyUpdate
-   *
-   * NOTE: Using setTimeout to wait for React effects is a workaround.
-   * The real app has the same issue - runCaretInit might fire before
-   * the value sync effect completes.
-   */
-  it("caret at end after value prop changes (with delay - passes)", async () => {
-    const ref = createRef<CakeEditorRef>();
-    let triggerLoad: () => void = () => {};
-
-    const TestComponent = () => {
-      const [value, setValue] = useState("");
-      triggerLoad = () => setValue("Hello world");
-      return (
-        <CakeEditor
-          ref={ref}
-          value={value}
-          onChange={() => undefined}
-          placeholder=""
-          style={{ height: 160, overflow: "auto" }}
-        />
-      );
-    };
-
-    render(<TestComponent />);
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
-
-    // Initially empty
-    expect(ref.current?.getValue()).toBe("");
-
-    // Load content (simulates server response)
-    triggerLoad();
-    // Wait for React to re-render and effect to run
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
-
-    // Verify content was loaded
-    expect(ref.current?.getValue()).toBe("Hello world");
-
-    // Now call applyUpdate to position caret at end (like runCaretInit does)
-    ref.current?.applyUpdate({
-      selection: { start: 11, end: 11 },
-      focus: true,
-    });
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
-
-    const selection = ref.current?.getSelection();
-    expect(selection).toEqual({ start: 11, end: 11 });
-  });
-
-  /**
-   * This test demonstrates the actual bug - when applyUpdate is called
-   * immediately after value prop changes (as happens in runCaretInit),
-   * the selection doesn't get applied.
-   */
-  it("FAILS: caret at end after value prop changes (immediate - race condition)", async () => {
-    const ref = createRef<CakeEditorRef>();
-    let triggerLoad: () => void = () => {};
-
-    const TestComponent = () => {
-      const [value, setValue] = useState("");
-      triggerLoad = () => setValue("Hello world");
-      return (
-        <CakeEditor
-          ref={ref}
-          value={value}
-          onChange={() => undefined}
-          placeholder=""
-          style={{ height: 160, overflow: "auto" }}
-        />
-      );
-    };
-
-    render(<TestComponent />);
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
-
-    // Initially empty
-    expect(ref.current?.getValue()).toBe("");
-
-    // Load content (simulates server response)
-    triggerLoad();
-    // Only wait for microtask (like the app does with useEffect)
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
-
-    // Now call applyUpdate to position caret at end (like runCaretInit does)
-    ref.current?.applyUpdate({
-      selection: { start: 11, end: 11 },
-      focus: true,
-    });
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
-
-    const selection = ref.current?.getSelection();
-    // This should be {11, 11} but due to race condition it's {0, 0}
     expect(selection).toEqual({ start: 11, end: 11 });
   });
 

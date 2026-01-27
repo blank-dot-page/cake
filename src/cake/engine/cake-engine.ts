@@ -218,6 +218,10 @@ export class CakeEngine {
   private pointerDownPosition: { x: number; y: number } | null = null;
   private hasMovedSincePointerDown = false;
 
+  // Touch interaction tracking - when a recent touch occurred, we use native
+  // selection handling and hide the custom caret overlay
+  private lastTouchTime = 0;
+
   constructor(options: EngineOptions) {
     this.container = options.container;
     this.extensions = options.extensions ?? bundledExtensions;
@@ -3207,6 +3211,18 @@ export class CakeEngine {
     if (!this.overlayRoot || !this.contentRoot) {
       return;
     }
+
+    // During touch interaction, hide the custom caret and selection overlay
+    // and let the browser show native selection handles
+    const isRecentTouch = Date.now() - this.lastTouchTime < 2000;
+    if (isRecentTouch) {
+      this.contentRoot.classList.add("cake-touch-mode");
+      this.updateCaret(null);
+      this.syncSelectionRects([]);
+      return;
+    }
+    this.contentRoot.classList.remove("cake-touch-mode");
+
     const lines = getDocLines(this.state.doc);
     const geometry = getSelectionGeometry({
       root: this.contentRoot,
@@ -3483,13 +3499,11 @@ export class CakeEngine {
     }
 
     if (event.pointerType === "touch") {
-      // In Playwright touch emulation (and some desktop browsers), tapping a
-      // contentEditable updates the native DOM selection. Cake currently
-      // doesn't implement touch caret placement, so ignore the native selection
-      // updates and any follow-up click from the tap.
-      this.ignoreTouchNativeSelectionUntil = performance.now() + 750;
-      this.suppressSelectionChangeForTick();
-      event.preventDefault();
+      // For touch interactions, let the browser handle native selection.
+      // This enables native caret placement, selection handles, and mobile
+      // context menus. We track the touch time to hide the custom caret overlay
+      // and trust selectionchange events to sync state.
+      this.lastTouchTime = Date.now();
       return;
     }
 

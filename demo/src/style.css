@@ -111,6 +111,12 @@ header h1 {
   caret-color: transparent;
 }
 
+/* Show native caret during touch/mobile interaction */
+.editor .cake-content.cake-touch-mode:focus,
+.editor .cake-content.cake-touch-mode:focus-visible {
+  caret-color: auto;
+}
+
 .editor .cake-placeholder {
   position: absolute;
   inset: 0;
