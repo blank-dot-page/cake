@@ -76,11 +76,61 @@ function cursorOffsetToCodeUnit(
   return cursorToCodeUnit[clamped] ?? 0;
 }
 
+type DomPosition = { node: Node; offset: number };
+
+function createDomPositionResolver(
+  lineElement: HTMLElement,
+): (offsetInLine: number) => DomPosition {
+  const textNodes: Text[] = [];
+  const cumulativeEnds: number[] = [];
+  const walker = createTextWalker(lineElement);
+  let current = walker.nextNode();
+  let total = 0;
+
+  while (current) {
+    if (current instanceof Text) {
+      const length = current.data.length;
+      textNodes.push(current);
+      total += length;
+      cumulativeEnds.push(total);
+    }
+    current = walker.nextNode();
+  }
+
+  if (textNodes.length === 0) {
+    return () => {
+      if (!lineElement.textContent) {
+        return { node: lineElement, offset: 0 };
+      }
+      return { node: lineElement, offset: lineElement.childNodes.length };
+    };
+  }
+
+  return (offsetInLine: number) => {
+    const clamped = Math.max(0, Math.min(offsetInLine, total));
+    let low = 0;
+    let high = cumulativeEnds.length - 1;
+    while (low < high) {
+      const mid = low + high >>> 1;
+      if ((cumulativeEnds[mid] ?? 0) < clamped) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    const node = textNodes[low] ?? lineElement;
+    const prevEnd = low > 0 ? (cumulativeEnds[low - 1] ?? 0) : 0;
+    return { node, offset: clamped - prevEnd };
+  };
+}
+
 function measureCharacterRect(params: {
   lineElement: HTMLElement;
   offset: number;
   lineLength: number;
   cursorToCodeUnit: number[];
+  resolveDomPosition: (offset: number) => DomPosition;
+  range: Range;
 }): DOMRect | null {
   if (params.lineLength <= 0) {
     return null;
@@ -93,16 +143,15 @@ function measureCharacterRect(params: {
     params.cursorToCodeUnit,
     Math.min(params.offset + 1, params.lineLength),
   );
-  const startPosition = resolveDomPosition(params.lineElement, startCodeUnit);
-  const endPosition = resolveDomPosition(params.lineElement, endCodeUnit);
-  const range = document.createRange();
-  range.setStart(startPosition.node, startPosition.offset);
-  range.setEnd(endPosition.node, endPosition.offset);
-  const rects = range.getClientRects();
+  const startPosition = params.resolveDomPosition(startCodeUnit);
+  const endPosition = params.resolveDomPosition(endCodeUnit);
+  params.range.setStart(startPosition.node, startPosition.offset);
+  params.range.setEnd(endPosition.node, endPosition.offset);
+  const rects = params.range.getClientRects();
   if (rects.length > 0) {
     return rects[0] ?? null;
   }
-  const rect = range.getBoundingClientRect();
+  const rect = params.range.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) {
     return null;
   }
@@ -136,14 +185,40 @@ function measureLineRows(params: {
 
   const WRAP_THRESHOLD_PX = 3;
 
+  const resolvePosition = createDomPositionResolver(params.lineElement);
+  const scratchRange = document.createRange();
+  const topCache = new Map<number, number | null>();
+
+  const fullLineStart = resolvePosition(0);
+  const fullLineEnd = resolvePosition(params.codeUnitLength);
+  scratchRange.setStart(fullLineStart.node, fullLineStart.offset);
+  scratchRange.setEnd(fullLineEnd.node, fullLineEnd.offset);
+  const fullLineRects = groupDomRectsByRow(Array.from(scratchRange.getClientRects()));
+  if (fullLineRects.length === 0) {
+    return [
+      {
+        startOffset: 0,
+        endOffset: params.lineLength,
+        rect: fallbackLineBox,
+      },
+    ];
+  }
+
   function offsetToTop(offset: number): number | null {
+    if (topCache.has(offset)) {
+      return topCache.get(offset) ?? null;
+    }
     const rect = measureCharacterRect({
       lineElement: params.lineElement,
       offset,
       lineLength: params.lineLength,
       cursorToCodeUnit: params.cursorToCodeUnit,
+      resolveDomPosition: resolvePosition,
+      range: scratchRange,
     });
-    return rect ? rect.top : null;
+    const top = rect ? rect.top : null;
+    topCache.set(offset, top);
+    return top;
   }
 
   function findFirstMeasurableOffset(from: number): number | null {
@@ -202,27 +277,6 @@ function measureLineRows(params: {
     return low < params.lineLength ? low : null;
   }
 
-  function measureRowRect(startOffset: number, endOffset: number): DOMRect | null {
-    const startCodeUnit = cursorOffsetToCodeUnit(params.cursorToCodeUnit, startOffset);
-    const endCodeUnit = cursorOffsetToCodeUnit(params.cursorToCodeUnit, endOffset);
-    const startPosition = resolveDomPosition(params.lineElement, startCodeUnit);
-    const endPosition = resolveDomPosition(params.lineElement, endCodeUnit);
-    const range = document.createRange();
-    range.setStart(startPosition.node, startPosition.offset);
-    range.setEnd(endPosition.node, endPosition.offset);
-
-    const rects = groupDomRectsByRow(Array.from(range.getClientRects()));
-    const merged = mergeDomRects(rects);
-    if (merged) {
-      return merged;
-    }
-    const bounding = range.getBoundingClientRect();
-    if (bounding.width === 0 && bounding.height === 0) {
-      return null;
-    }
-    return bounding;
-  }
-
   // Measure row boundaries using a log-time search per row rather than a full
   // per-character scan (important for very long lines).
   const rows: LayoutRow[] = [];
@@ -238,14 +292,14 @@ function measureLineRows(params: {
   }
 
   let currentRowStart = 0;
-  let currentRowTop = offsetToTop(firstMeasurable) ?? params.lineRect.top;
+  let currentRowTop = fullLineRects[0]?.top ?? params.lineRect.top;
   let searchFrom = firstMeasurable + 1;
+  let rowIndex = 0;
 
   while (currentRowStart < params.lineLength) {
     const nextRowStart = findNextRowStartOffset(searchFrom, currentRowTop);
     const currentRowEnd = nextRowStart ?? params.lineLength;
-    const rowRect = measureRowRect(currentRowStart, currentRowEnd);
-    const domRect = rowRect ?? params.lineRect;
+    const domRect = fullLineRects[rowIndex] ?? params.lineRect;
 
     rows.push({
       startOffset: currentRowStart,
@@ -261,11 +315,12 @@ function measureLineRows(params: {
       break;
     }
     currentRowStart = nextRowStart;
+    rowIndex += 1;
     const nextMeasurable = findFirstMeasurableOffset(currentRowStart);
     if (nextMeasurable === null) {
       break;
     }
-    currentRowTop = offsetToTop(nextMeasurable) ?? currentRowTop;
+    currentRowTop = fullLineRects[rowIndex]?.top ?? currentRowTop;
     searchFrom = nextMeasurable + 1;
   }
 

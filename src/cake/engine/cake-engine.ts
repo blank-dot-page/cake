@@ -123,6 +123,8 @@ export class CakeEngine {
   private caretBlinkTimeoutId: number | null = null;
   private overlayUpdateId: number | null = null;
   private scrollCaretIntoViewId: number | null = null;
+  private selectionRectElements: HTMLDivElement[] = [];
+  private lastSelectionRects: SelectionRect[] | null = null;
   private onChange?: EngineOptions["onChange"];
   private onSelectionChange?: EngineOptions["onSelectionChange"];
   private readOnly: boolean;
@@ -266,6 +268,10 @@ export class CakeEngine {
     return this.state.selection;
   }
 
+  getCursorLength() {
+    return this.state.map.cursorLength;
+  }
+
   getFocusRect() {
     return this.lastFocusRect;
   }
@@ -331,6 +337,7 @@ export class CakeEngine {
     if (!this.isComposing) {
       this.applySelection(this.state.selection);
     }
+    this.scheduleScrollCaretIntoView();
   }
 
   setValue({ value, selection }: { value: string; selection?: Selection }) {
@@ -676,7 +683,7 @@ export class CakeEngine {
     if (perfEnabled) {
       renderAndMapMs = performance.now() - renderStart;
     }
-    if (!this.isComposing) {
+    if (!this.isComposing && this.hasFocus()) {
       const selectionStart = perfEnabled ? performance.now() : 0;
       this.applySelection(this.state.selection);
       if (perfEnabled) {
@@ -3128,7 +3135,37 @@ export class CakeEngine {
     overlay.append(caret);
     this.overlayRoot = overlay;
     this.caretElement = caret;
+    this.selectionRectElements = [];
+    this.lastSelectionRects = null;
     return overlay;
+  }
+
+  private selectionRectsEqual(
+    prev: SelectionRect[] | null,
+    next: SelectionRect[],
+  ): boolean {
+    if (!prev) {
+      return false;
+    }
+    if (prev.length !== next.length) {
+      return false;
+    }
+    for (let index = 0; index < prev.length; index += 1) {
+      const a = prev[index];
+      const b = next[index];
+      if (!a || !b) {
+        return false;
+      }
+      if (
+        a.top !== b.top ||
+        a.left !== b.left ||
+        a.width !== b.width ||
+        a.height !== b.height
+      ) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private ensureExtensionsRoot(): HTMLDivElement {
@@ -3195,21 +3232,37 @@ export class CakeEngine {
     if (!this.overlayRoot || !this.caretElement) {
       return;
     }
-    const existing = Array.from(
-      this.overlayRoot.querySelectorAll(".cake-selection-rect"),
-    );
-    existing.forEach((node) => node.remove());
-    const fragment = document.createDocumentFragment();
-    rects.forEach((rect) => {
-      const element = document.createElement("div");
-      element.className = "cake-selection-rect";
+    if (this.selectionRectsEqual(this.lastSelectionRects, rects)) {
+      return;
+    }
+    this.lastSelectionRects = rects;
+
+    while (this.selectionRectElements.length > rects.length) {
+      const element = this.selectionRectElements.pop();
+      element?.remove();
+    }
+
+    if (this.selectionRectElements.length < rects.length) {
+      const fragment = document.createDocumentFragment();
+      while (this.selectionRectElements.length < rects.length) {
+        const element = document.createElement("div");
+        element.className = "cake-selection-rect";
+        fragment.append(element);
+        this.selectionRectElements.push(element);
+      }
+      this.overlayRoot.insertBefore(fragment, this.caretElement);
+    }
+
+    rects.forEach((rect, index) => {
+      const element = this.selectionRectElements[index];
+      if (!element) {
+        return;
+      }
       element.style.top = `${rect.top}px`;
       element.style.left = `${rect.left}px`;
       element.style.width = `${rect.width}px`;
       element.style.height = `${rect.height}px`;
-      fragment.append(element);
     });
-    this.overlayRoot.insertBefore(fragment, this.caretElement);
   }
 
   private updateCaret(

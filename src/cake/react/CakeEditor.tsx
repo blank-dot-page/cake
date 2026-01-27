@@ -105,6 +105,7 @@ export interface CakeEditorRef {
   applyUpdate: (update: CakeEditorUpdate) => void;
   getValue: () => string;
   getSelection: () => { start: number; end: number } | null;
+  getCursorLength: () => number;
   insertText: (text: string) => void;
   replaceText: (oldText: string, newText: string) => void;
 }
@@ -288,6 +289,7 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
           }
           return { start: selection.start, end: selection.end };
         },
+        getCursorLength: () => engineRef.current?.getCursorLength() ?? 0,
         insertText: (text: string) => {
           engineRef.current?.insertText(text);
         },
