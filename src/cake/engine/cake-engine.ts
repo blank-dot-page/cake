@@ -131,6 +131,7 @@ export class CakeEngine {
   private spellCheckEnabled: boolean;
   private extensionsRoot: HTMLDivElement | null = null;
   private placeholderRoot: HTMLDivElement | null = null;
+  private resizeObserver: ResizeObserver | null = null;
   private lastFocusRect: SelectionRect | null = null;
   private verticalNavGoalX: number | null = null;
   private lastRenderPerf: RenderPerf | null = null;
@@ -221,6 +222,15 @@ export class CakeEngine {
   // Touch interaction tracking - when a recent touch occurred, we use native
   // selection handling and hide the custom caret overlay
   private lastTouchTime = 0;
+
+  // Detect if this is a touch-primary device (mobile/tablet)
+  // We check for touch support AND coarse pointer to exclude laptops with touchscreens
+  private isTouchDevice(): boolean {
+    return (
+      "ontouchstart" in window &&
+      window.matchMedia("(pointer: coarse)").matches
+    );
+  }
 
   constructor(options: EngineOptions) {
     this.container = options.container;
@@ -468,6 +478,11 @@ export class CakeEngine {
     );
     this.container.addEventListener("scroll", this.handleScrollBound);
     window.addEventListener("resize", this.handleResizeBound);
+    this.resizeObserver = new ResizeObserver(() => {
+      this.syncPlaceholderPosition();
+      this.scheduleOverlayUpdate();
+    });
+    this.resizeObserver.observe(this.container);
     this.container.addEventListener("click", this.handleClickBound);
     this.container.addEventListener("keydown", this.handleKeyDownBound);
     this.container.addEventListener("paste", this.handlePasteBound);
@@ -521,6 +536,8 @@ export class CakeEngine {
     );
     this.container.removeEventListener("scroll", this.handleScrollBound);
     window.removeEventListener("resize", this.handleResizeBound);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.container.removeEventListener("click", this.handleClickBound);
     this.container.removeEventListener("keydown", this.handleKeyDownBound);
     this.container.removeEventListener("paste", this.handlePasteBound);
@@ -662,6 +679,10 @@ export class CakeEngine {
       }
       this.contentRoot = document.createElement("div");
       this.contentRoot.className = "cake-content";
+      // On touch devices, add touch mode class immediately to use native caret
+      if (this.isTouchDevice()) {
+        this.contentRoot.classList.add("cake-touch-mode");
+      }
       this.updateContentRootAttributes();
       const overlay = this.ensureOverlayRoot();
       const extensionsRoot = this.ensureExtensionsRoot();
@@ -740,6 +761,8 @@ export class CakeEngine {
     if (!this.placeholderRoot) {
       this.placeholderRoot = document.createElement("div");
       this.placeholderRoot.className = "cake-placeholder";
+      this.placeholderRoot.style.position = "absolute";
+      this.placeholderRoot.style.pointerEvents = "none";
     }
 
     if (!shouldShow) {
@@ -751,21 +774,22 @@ export class CakeEngine {
     }
 
     this.placeholderRoot.textContent = placeholderText ?? "";
-    this.syncPlaceholderPadding();
     if (!this.placeholderRoot.isConnected) {
       this.container.prepend(this.placeholderRoot);
     }
+    this.syncPlaceholderPosition();
   }
 
-  private syncPlaceholderPadding() {
-    if (!this.placeholderRoot) {
+  private syncPlaceholderPosition() {
+    if (!this.placeholderRoot || !this.contentRoot) {
       return;
     }
-    const style = window.getComputedStyle(this.container);
-    this.placeholderRoot.style.paddingTop = style.paddingTop;
-    this.placeholderRoot.style.paddingRight = style.paddingRight;
-    this.placeholderRoot.style.paddingBottom = style.paddingBottom;
-    this.placeholderRoot.style.paddingLeft = style.paddingLeft;
+    const containerRect = this.container.getBoundingClientRect();
+    const contentRect = this.contentRoot.getBoundingClientRect();
+    this.placeholderRoot.style.top = `${contentRect.top - containerRect.top}px`;
+    this.placeholderRoot.style.left = `${contentRect.left - containerRect.left}px`;
+    this.placeholderRoot.style.width = `${contentRect.width}px`;
+    this.placeholderRoot.style.height = `${contentRect.height}px`;
   }
 
   private updateContentRootAttributes() {
@@ -3212,10 +3236,16 @@ export class CakeEngine {
       return;
     }
 
-    // During touch interaction, hide the custom caret and selection overlay
-    // and let the browser show native selection handles
+    // Hide custom caret/selection when editor doesn't have focus
+    if (!this.hasFocus()) {
+      this.updateCaret(null);
+      this.syncSelectionRects([]);
+      return;
+    }
+
+    // On touch devices, always use native caret and selection handles
     const isRecentTouch = Date.now() - this.lastTouchTime < 2000;
-    if (isRecentTouch) {
+    if (this.isTouchDevice() || isRecentTouch) {
       this.contentRoot.classList.add("cake-touch-mode");
       this.updateCaret(null);
       this.syncSelectionRects([]);
