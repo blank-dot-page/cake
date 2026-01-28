@@ -1,5 +1,6 @@
 import {
   defineExtension,
+  type EditCommand,
   type ParseInlineResult,
   type SerializeInlineResult,
 } from "../../core/runtime";
@@ -8,14 +9,24 @@ import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 
 const BOLD_KIND = "bold";
 
-export const boldExtension = defineExtension({
+/** Semantic command to toggle bold formatting */
+type ToggleBoldCommand = { type: "toggle-bold" };
+
+export const boldExtension = defineExtension<ToggleBoldCommand>({
   name: "bold",
   toggleInline: { kind: BOLD_KIND, markers: ["**"] },
   keybindings: [
-    { key: "b", meta: true, command: { type: "toggle-inline", marker: "**" } },
-    { key: "b", ctrl: true, command: { type: "toggle-inline", marker: "**" } },
+    { key: "b", meta: true, command: { type: "toggle-bold" } },
+    { key: "b", ctrl: true, command: { type: "toggle-bold" } },
   ],
   inlineWrapperAffinity: [{ kind: BOLD_KIND, inclusive: true }],
+  onEdit(command) {
+    // Handle semantic command by delegating to toggle-inline
+    if (command.type === "toggle-bold") {
+      return { type: "toggle-inline", marker: "**" } as EditCommand;
+    }
+    return null;
+  },
   parseInline(source, start, end, context): ParseInlineResult {
     // Combined emphasis: ***text*** (bold + italic). Parse as nested wrappers so
     // serialization remains stable and matches v1 output.
