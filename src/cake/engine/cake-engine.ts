@@ -170,6 +170,8 @@ export class CakeEngine {
   private handleCompositionStartBound = this.handleCompositionStart.bind(this);
   private handleCompositionEndBound = this.handleCompositionEnd.bind(this);
   private handleSelectionChangeBound = this.handleSelectionChange.bind(this);
+  private handleFocusInBound = this.handleFocusIn.bind(this);
+  private handleFocusOutBound = this.handleFocusOut.bind(this);
   private handleScrollBound = this.handleScroll.bind(this);
   private handleResizeBound = this.handleResize.bind(this);
   private handleClickBound = this.handleClick.bind(this);
@@ -466,6 +468,8 @@ export class CakeEngine {
       "compositionend",
       this.handleCompositionEndBound,
     );
+    this.container.addEventListener("focusin", this.handleFocusInBound);
+    this.container.addEventListener("focusout", this.handleFocusOutBound);
     document.addEventListener(
       "selectionchange",
       this.handleSelectionChangeBound,
@@ -524,6 +528,8 @@ export class CakeEngine {
       "compositionend",
       this.handleCompositionEndBound,
     );
+    this.container.removeEventListener("focusin", this.handleFocusInBound);
+    this.container.removeEventListener("focusout", this.handleFocusOutBound);
     document.removeEventListener(
       "selectionchange",
       this.handleSelectionChangeBound,
@@ -547,6 +553,18 @@ export class CakeEngine {
     );
     this.container.removeEventListener("pointerup", this.handlePointerUpBound);
     this.detachDragListeners();
+  }
+
+  private handleFocusIn() {
+    queueMicrotask(() => {
+      this.scheduleOverlayUpdate();
+    });
+  }
+
+  private handleFocusOut() {
+    queueMicrotask(() => {
+      this.scheduleOverlayUpdate();
+    });
   }
 
   private render() {
