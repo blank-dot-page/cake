@@ -6,11 +6,11 @@ import {
 import type { Inline } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 import { CakeLinkPopover } from "./link-popover";
-import { getDocLines } from "../../engine/selection/selection-layout";
+import { getDocLines } from "../../editor/selection/selection-layout";
 import {
   cursorOffsetToVisibleOffset,
   getVisibleText,
-} from "../../engine/selection/visible-text";
+} from "../../editor/selection/visible-text";
 import { ensureHttpsProtocol, isUrl } from "../../shared/url";
 
 const LINK_KIND = "link";

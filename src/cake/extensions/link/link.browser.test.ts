@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import { CakeEngine } from "../../engine/cake-engine";
+import { CakeEditor } from "../../editor/cake-editor";
 import { bundledExtensions } from "../index";
 
 describe("link extension DOM rendering", () => {
   let container: HTMLDivElement;
-  let engine: CakeEngine;
+  let engine: CakeEditor;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -20,7 +20,7 @@ describe("link extension DOM rendering", () => {
   });
 
   test("renders link with anchor element", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "[link text](https://example.com)",
       extensions: bundledExtensions,
@@ -33,7 +33,7 @@ describe("link extension DOM rendering", () => {
   });
 
   test("renders link with cake-link class", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "[link](url)",
       extensions: bundledExtensions,
@@ -44,7 +44,7 @@ describe("link extension DOM rendering", () => {
   });
 
   test("renders multiple links", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "[first](url1) text [second](url2)",
       extensions: bundledExtensions,
@@ -57,7 +57,7 @@ describe("link extension DOM rendering", () => {
   });
 
   test("renders link with plain text around it", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "before [link](url) after",
       extensions: bundledExtensions,
@@ -69,7 +69,7 @@ describe("link extension DOM rendering", () => {
   });
 
   test("renders link with bold inside", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "[**bold link**](url)",
       extensions: bundledExtensions,
@@ -84,7 +84,7 @@ describe("link extension DOM rendering", () => {
   });
 
   test("renders link with italic inside", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "[_italic link_](url)",
       extensions: bundledExtensions,
@@ -99,7 +99,7 @@ describe("link extension DOM rendering", () => {
   });
 
   test("renders link inside heading", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# [Link](url) Heading",
       extensions: bundledExtensions,

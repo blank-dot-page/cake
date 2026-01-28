@@ -1,3 +1,3 @@
-export { CakeEngine } from "./cake/engine/cake-engine";
+export { CakeEditor } from "./cake/editor/cake-editor";
 export type { CakeExtension, EditCommand } from "./cake/core/runtime";
 export * from "./cake/extensions";

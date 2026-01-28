@@ -49,6 +49,73 @@ npm run demo
 
 ## Library usage
 
+### With React
+
 ```tsx
-import { CakeEditor, defaultEditorSettings } from "@blankdotpage/cake";
+import { CakeEditor } from "@blankdotpage/cake/react";
+import { boldExtension } from "@blankdotpage/cake/extensions/bold";
+import { italicExtension } from "@blankdotpage/cake/extensions/italic";
+import { linkExtension } from "@blankdotpage/cake/extensions/link";
+import { headingExtension } from "@blankdotpage/cake/extensions/heading";
+import { plainTextListExtension } from "@blankdotpage/cake/extensions/list";
+
+const extensions = [
+  headingExtension,
+  plainTextListExtension,
+  boldExtension,
+  italicExtension,
+  linkExtension,
+];
+
+function MyEditor() {
+  const [value, setValue] = useState("");
+
+  return (
+    <CakeEditor
+      value={value}
+      onChange={setValue}
+      extensions={extensions}
+      placeholder="Start typing..."
+    />
+  );
+}
 ```
+
+### Without React
+
+```ts
+import { CakeEditor } from "@blankdotpage/cake";
+import { boldExtension } from "@blankdotpage/cake/extensions/bold";
+import { italicExtension } from "@blankdotpage/cake/extensions/italic";
+import { linkExtension } from "@blankdotpage/cake/extensions/link";
+
+const container = document.getElementById("editor");
+
+const engine = new CakeEditor({
+  container,
+  value: "Hello **world**",
+  extensions: [boldExtension, italicExtension, linkExtension],
+  onChange: (value, selection) => {
+    console.log("Content changed:", value);
+  },
+  onSelectionChange: (selection) => {
+    console.log("Selection:", selection);
+  },
+});
+
+// Later: clean up
+engine.destroy();
+```
+
+### Available extensions
+
+- `blockquoteExtension` - Block quotes (`>`)
+- `boldExtension` - Bold text (`**text**`)
+- `combinedEmphasisExtension` - Combined bold/italic (`***text***`)
+- `headingExtension` - Headings (`#`, `##`, etc.)
+- `imageExtension` - Images (`![alt](url)`)
+- `italicExtension` - Italic text (`*text*`)
+- `linkExtension` - Links (`[text](url)`)
+- `plainTextListExtension` - Ordered and unordered lists
+- `scrollbarExtension` - Custom scrollbar styling
+- `strikethroughExtension` - Strikethrough (`~~text~~`)

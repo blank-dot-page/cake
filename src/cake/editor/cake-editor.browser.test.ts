@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
-import { CakeEngine } from "./cake-engine";
+import { CakeEditor } from "./cake-editor";
 import { createTestHarness, type TestHarness } from "../test/harness";
 import { linkExtension } from "../extensions/link/link";
-import { listExtension } from "../extensions/list/list";
+import { plainTextListExtension } from "../extensions/list/list";
 import type { CakeExtension } from "../core/runtime";
 
 const isMac =
@@ -54,7 +54,7 @@ function createSelection(start: number, end: number): EngineSelection {
   return { start, end, affinity: "forward" };
 }
 
-describe("CakeEngine (browser)", () => {
+describe("CakeEditor (browser)", () => {
   afterEach(() => {
     const selection = window.getSelection();
     selection?.removeAllRanges();
@@ -103,7 +103,7 @@ describe("CakeEngine (browser)", () => {
   it("does not show placeholder when doc has only wrapped text (e.g. **bold**)", () => {
     const container = createContainer();
     container.dataset.placeholder = "Type here";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "**bold**",
       selection: createSelection(0, 0),
@@ -119,7 +119,7 @@ describe("CakeEngine (browser)", () => {
     const container = createContainer();
     let lastValue = "";
     let lastSelection: EngineSelection | null = null;
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "",
       onChange: (value, selection) => {
@@ -145,7 +145,7 @@ describe("CakeEngine (browser)", () => {
 
   it("preserves non-managed children injected into the content root (e.g. Grammarly)", () => {
     const container = createContainer();
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "",
     });
@@ -173,7 +173,7 @@ describe("CakeEngine (browser)", () => {
 
   it("does not create an extensions overlay root unless requested", () => {
     const container = createContainer();
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "",
     });
@@ -189,7 +189,7 @@ describe("CakeEngine (browser)", () => {
     injected.setAttribute("data-test", "1");
     container.appendChild(injected);
 
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "",
     });
@@ -202,7 +202,7 @@ describe("CakeEngine (browser)", () => {
   it("handles beforeinput insertReplacementText with targetRanges", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "ab",
       selection: createSelection(0, 0),
@@ -238,7 +238,7 @@ describe("CakeEngine (browser)", () => {
   it("handles beforeinput insertReplacementText without targetRanges", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "ab",
       selection: createSelection(1, 1),
@@ -264,7 +264,7 @@ describe("CakeEngine (browser)", () => {
   it("defers insertReplacementText when beforeinput data is null and reconciles on input", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "ab",
       selection: createSelection(0, 0),
@@ -312,7 +312,7 @@ describe("CakeEngine (browser)", () => {
   it("handles insertText with non-collapsed targetRanges as replacement", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "ab",
       selection: createSelection(2, 2),
@@ -348,7 +348,7 @@ describe("CakeEngine (browser)", () => {
   it("ignores insertText targetRanges when collapsed and inserts at model selection", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "ab",
       selection: createSelection(2, 2),
@@ -384,7 +384,7 @@ describe("CakeEngine (browser)", () => {
   it("ignores deleteContentBackward targetRanges when selection is collapsed", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "ab",
       selection: createSelection(2, 2),
@@ -419,7 +419,7 @@ describe("CakeEngine (browser)", () => {
   it("does not wrap pasted URLs into markdown when link extension is not installed", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: lastValue,
       extensions: [],
@@ -450,7 +450,7 @@ describe("CakeEngine (browser)", () => {
   it("wraps pasted URLs into markdown when link extension is installed", () => {
     const container = createContainer();
     let lastValue = "hello";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: lastValue,
       extensions: [linkExtension],
@@ -484,7 +484,7 @@ describe("CakeEngine (browser)", () => {
   it("does not handle Ctrl+Shift+8 list toggle when list extension is not installed", () => {
     const container = createContainer();
     let lastValue = "hello";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: lastValue,
       extensions: [],
@@ -516,10 +516,10 @@ describe("CakeEngine (browser)", () => {
   it("handles Ctrl+Shift+8 list toggle via the list extension", () => {
     const container = createContainer();
     let lastValue = "hello";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: lastValue,
-      extensions: [listExtension],
+      extensions: [plainTextListExtension],
       onChange: (value) => {
         lastValue = value;
       },
@@ -573,7 +573,7 @@ describe("CakeEngine (browser)", () => {
       ],
     };
 
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: lastValue,
       // "b" is first, so it should win.
@@ -619,7 +619,7 @@ describe("CakeEngine (browser)", () => {
       ],
     };
 
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: lastValue,
       extensions: [nullBindingExtension],
@@ -657,7 +657,7 @@ describe("CakeEngine (browser)", () => {
       onPasteText: () => null,
     };
 
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: lastValue,
       extensions: [nullPasteExtension],
@@ -688,7 +688,7 @@ describe("CakeEngine (browser)", () => {
   it("prevents default history undo/redo input", () => {
     const container = createContainer();
     let callCount = 0;
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "ab",
       onChange: () => {
@@ -711,7 +711,7 @@ describe("CakeEngine (browser)", () => {
   it("syncs selectionchange inside the editor", async () => {
     const container = createContainer();
     let lastSelection: EngineSelection | null = null;
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "ab",
       onSelectionChange: (selection) => {
@@ -734,7 +734,7 @@ describe("CakeEngine (browser)", () => {
   it("ignores selectionchange outside the editor", () => {
     const container = createContainer();
     let callCount = 0;
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "ab",
       onSelectionChange: () => {
@@ -755,7 +755,7 @@ describe("CakeEngine (browser)", () => {
   it("reconciles DOM text on compositionend", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "a",
       onChange: (value) => {
@@ -779,7 +779,7 @@ describe("CakeEngine (browser)", () => {
   it("reconciles IME composition in a link without breaking markdown", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "[hello](http://localhost:3000/)",
       onChange: (value) => {
@@ -809,7 +809,7 @@ describe("CakeEngine (browser)", () => {
   it("reconciles IME composition at a bold boundary without duplicating markers", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello **world**",
       onChange: (value) => {
@@ -842,7 +842,7 @@ describe("CakeEngine (browser)", () => {
     const container = createContainer();
     let lastValue = "";
     let lastSelection: EngineSelection | null = null;
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "",
       onChange: (value, selection) => {
@@ -872,7 +872,7 @@ describe("CakeEngine (browser)", () => {
   it("executeCommand toggle-bullet-list adds bullet marker", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello",
       selection: createSelection(0, 5),
@@ -891,7 +891,7 @@ describe("CakeEngine (browser)", () => {
   it("executeCommand toggle-numbered-list adds numbered marker", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello",
       selection: createSelection(0, 5),
@@ -910,7 +910,7 @@ describe("CakeEngine (browser)", () => {
   it("executeCommand toggle-bullet-list on multiple lines", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "First item\nSecond item\nThird item",
       selection: createSelection(0, 33),
@@ -932,7 +932,7 @@ describe("CakeEngine (browser)", () => {
     const container = createContainer();
     let lastValue = "";
     let lastSelection: { start: number; end: number } | null = null;
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "First\nSecond\nThird",
       selection: createSelection(0, 18), // Select all
@@ -970,7 +970,7 @@ describe("CakeEngine (browser)", () => {
   it("delete range leaves empty line when deleting all content on last line", () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello\nworld",
       selection: createSelection(6, 11), // Select "world"
@@ -1007,7 +1007,7 @@ describe("CakeEngine (browser)", () => {
     container.style.left = "0";
     container.style.top = "0";
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "Line One\nLine Two\nLine Three\nLine Four",
       selection: createSelection(0, 0),
@@ -1093,7 +1093,7 @@ describe("CakeEngine (browser)", () => {
   it("undo restores content after deleteByCut beforeinput", async () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello\nworld",
       selection: createSelection(6, 11), // Select "world"
@@ -1153,7 +1153,7 @@ describe("CakeEngine (browser)", () => {
   it("undo restores content after text insertion then cut", async () => {
     const container = createContainer();
     let lastValue = "";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "",
       selection: createSelection(0, 0),
@@ -1232,7 +1232,7 @@ describe("CakeEngine (browser)", () => {
   it("clicking at end of text places cursor at end", async () => {
     const container = createContainer();
     let lastSelection: EngineSelection = { start: 0, end: 0 };
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello",
       selection: createSelection(0, 0),
@@ -1292,7 +1292,7 @@ describe("CakeEngine (browser)", () => {
   it("clicking at end of bold text places cursor at end", async () => {
     const container = createContainer();
     let lastSelection: EngineSelection = { start: 0, end: 0 };
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "**Hello** world",
       selection: createSelection(0, 0),
@@ -1363,7 +1363,7 @@ describe("CakeEngine (browser)", () => {
   it("clicking on link element bounding box right edge places cursor at end", async () => {
     const container = createContainer();
     let lastSelection: EngineSelection = { start: 0, end: 0 };
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello [world](http://test/)",
       selection: createSelection(0, 0),
@@ -1424,7 +1424,7 @@ describe("CakeEngine (browser)", () => {
     container.style.width = "400px";
 
     let lastValue = "# Title\nBody text";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: lastValue,
       onChange: (value) => {
@@ -1498,7 +1498,7 @@ describe("CakeEngine (browser)", () => {
   });
 });
 
-describe("CakeEngine Cmd+Backspace then backspace", () => {
+describe("CakeEditor Cmd+Backspace then backspace", () => {
   let harness: TestHarness | null = null;
   const originalPlatform = navigator.platform;
 
@@ -1693,7 +1693,7 @@ describe("Touch/Mobile selection support", () => {
   it("touch tap places caret at tapped position", async () => {
     const container = createContainer();
     let lastSelection: { start: number; end: number } | null = null;
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello world",
       selection: { start: 0, end: 0, affinity: "forward" },
@@ -1740,7 +1740,7 @@ describe("Touch/Mobile selection support", () => {
   it("touch drag creates selection", async () => {
     const container = createContainer();
     let lastSelection: { start: number; end: number } | null = null;
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello world",
       selection: { start: 0, end: 0, affinity: "forward" },
@@ -1770,7 +1770,7 @@ describe("Touch/Mobile selection support", () => {
 
   it("does not prevent default on touch pointerdown", async () => {
     const container = createContainer();
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello",
       selection: { start: 0, end: 0, affinity: "forward" },
@@ -1805,7 +1805,7 @@ describe("Touch/Mobile selection support", () => {
 
   it("hides custom caret overlay during touch interaction", async () => {
     const container = createContainer();
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: "hello",
       selection: { start: 0, end: 0, affinity: "forward" },

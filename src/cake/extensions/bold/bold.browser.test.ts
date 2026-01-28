@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import { CakeEngine } from "../../engine/cake-engine";
+import { CakeEditor } from "../../editor/cake-editor";
 import { bundledExtensions } from "../index";
 
 describe("bold extension DOM rendering", () => {
   let container: HTMLDivElement;
-  let engine: CakeEngine;
+  let engine: CakeEditor;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -20,7 +20,7 @@ describe("bold extension DOM rendering", () => {
   });
 
   test("renders bold text with strong element", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "**bold**",
       extensions: bundledExtensions,
@@ -32,7 +32,7 @@ describe("bold extension DOM rendering", () => {
   });
 
   test("renders multiple bold spans", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "**first** normal **second**",
       extensions: bundledExtensions,
@@ -45,7 +45,7 @@ describe("bold extension DOM rendering", () => {
   });
 
   test("renders bold with plain text around it", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "before **bold** after",
       extensions: bundledExtensions,
@@ -60,7 +60,7 @@ describe("bold extension DOM rendering", () => {
   });
 
   test("renders nested bold and italic", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "**_bold italic_**",
       extensions: bundledExtensions,
@@ -75,7 +75,7 @@ describe("bold extension DOM rendering", () => {
   });
 
   test("renders bold inside heading", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# **Bold** Heading",
       extensions: bundledExtensions,

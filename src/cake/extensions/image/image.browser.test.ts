@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import { CakeEngine } from "../../engine/cake-engine";
+import { CakeEditor } from "../../editor/cake-editor";
 import { bundledExtensions } from "../index";
 
 describe("image extension DOM rendering", () => {
   let container: HTMLDivElement;
-  let engine: CakeEngine;
+  let engine: CakeEditor;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -20,7 +20,7 @@ describe("image extension DOM rendering", () => {
   });
 
   test("renders ready image with img element", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "![alt text](https://example.com/image.png)",
       extensions: bundledExtensions,
@@ -33,7 +33,7 @@ describe("image extension DOM rendering", () => {
   });
 
   test("renders image with empty alt", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "![](https://example.com/image.png)",
       extensions: bundledExtensions,
@@ -45,7 +45,7 @@ describe("image extension DOM rendering", () => {
   });
 
   test("renders uploading image with skeleton", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "![uploading:abc123]()",
       extensions: bundledExtensions,
@@ -62,7 +62,7 @@ describe("image extension DOM rendering", () => {
   });
 
   test("image block is not contenteditable", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "![alt](url)",
       extensions: bundledExtensions,
@@ -74,7 +74,7 @@ describe("image extension DOM rendering", () => {
   });
 
   test("renders multiple images", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "![a](url1)\n![b](url2)",
       extensions: bundledExtensions,
@@ -87,7 +87,7 @@ describe("image extension DOM rendering", () => {
   });
 
   test("renders mixed content with images and paragraphs", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "paragraph\n![img](url)\nanother paragraph",
       extensions: bundledExtensions,
@@ -102,7 +102,7 @@ describe("image extension DOM rendering", () => {
   });
 
   test("has data-line-index attribute", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "![alt](url)",
       extensions: bundledExtensions,
@@ -114,7 +114,7 @@ describe("image extension DOM rendering", () => {
   });
 
   test("line indexes are sequential with mixed content", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "text\n![img](url)\nmore text",
       extensions: bundledExtensions,
@@ -128,7 +128,7 @@ describe("image extension DOM rendering", () => {
   });
 
   test("uploading skeleton has dimensions", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "![uploading:test]()",
       extensions: bundledExtensions,

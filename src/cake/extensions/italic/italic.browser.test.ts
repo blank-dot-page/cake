@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import { CakeEngine } from "../../engine/cake-engine";
+import { CakeEditor } from "../../editor/cake-editor";
 import { bundledExtensions } from "../index";
 
 describe("italic extension DOM rendering", () => {
   let container: HTMLDivElement;
-  let engine: CakeEngine;
+  let engine: CakeEditor;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -20,7 +20,7 @@ describe("italic extension DOM rendering", () => {
   });
 
   test("renders italic text with em element", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "_italic_",
       extensions: bundledExtensions,
@@ -32,7 +32,7 @@ describe("italic extension DOM rendering", () => {
   });
 
   test("renders multiple italic spans", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "_first_ normal _second_",
       extensions: bundledExtensions,
@@ -45,7 +45,7 @@ describe("italic extension DOM rendering", () => {
   });
 
   test("renders italic with plain text around it", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "before _italic_ after",
       extensions: bundledExtensions,
@@ -60,7 +60,7 @@ describe("italic extension DOM rendering", () => {
   });
 
   test("renders nested italic and bold", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "_**bold italic**_",
       extensions: bundledExtensions,
@@ -75,7 +75,7 @@ describe("italic extension DOM rendering", () => {
   });
 
   test("renders italic inside heading", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# _Italic_ Heading",
       extensions: bundledExtensions,

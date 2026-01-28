@@ -5,7 +5,7 @@ import { blockquoteExtension } from "./blockquote/blockquote";
 import { italicExtension } from "./italic/italic";
 import { headingExtension } from "./heading/heading";
 import { imageExtension } from "./image/image";
-import { listExtension } from "./list/list";
+import { plainTextListExtension } from "./list/list";
 import { scrollbarExtension } from "./scrollbar";
 import { strikethroughExtension } from "./strikethrough/strikethrough";
 
@@ -17,7 +17,7 @@ export {
   italicExtension,
   headingExtension,
   imageExtension,
-  listExtension,
+  plainTextListExtension,
   scrollbarExtension,
   strikethroughExtension,
 };
@@ -25,7 +25,7 @@ export {
 export const bundledExtensionsWithoutImage = [
   blockquoteExtension,
   headingExtension,
-  listExtension,
+  plainTextListExtension,
   combinedEmphasisExtension,
   boldExtension,
   italicExtension,

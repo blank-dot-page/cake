@@ -1,11 +1,11 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import { CakeEngine } from "../../engine/cake-engine";
+import { CakeEditor } from "../../editor/cake-editor";
 import { bundledExtensions } from "../index";
 import { createTestHarness } from "../../test/harness";
 
 describe("heading extension DOM rendering", () => {
   let container: HTMLDivElement;
-  let engine: CakeEngine;
+  let engine: CakeEditor;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -21,7 +21,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("renders h1 heading with is-heading class", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# Title",
       extensions: bundledExtensions,
@@ -35,7 +35,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("renders h2 heading with is-heading-2 class", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "## Subtitle",
       extensions: bundledExtensions,
@@ -49,7 +49,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("renders h3 heading with is-heading-3 class", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "### Section",
       extensions: bundledExtensions,
@@ -63,7 +63,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("renders multiple headings", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# First\n## Second\n### Third",
       extensions: bundledExtensions,
@@ -77,7 +77,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("renders mixed content with headings and paragraphs", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# Title\nparagraph\n## Subtitle",
       extensions: bundledExtensions,
@@ -92,7 +92,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("renders heading with bold content", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# **Bold** Title",
       extensions: bundledExtensions,
@@ -107,7 +107,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("renders heading with italic content", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# _Italic_ Title",
       extensions: bundledExtensions,
@@ -122,7 +122,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("empty heading shows placeholder", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# ",
       extensions: bundledExtensions,
@@ -136,7 +136,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("empty h2 heading shows placeholder", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "## ",
       extensions: bundledExtensions,
@@ -150,7 +150,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("has data-line-index attribute", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# Title",
       extensions: bundledExtensions,
@@ -162,7 +162,7 @@ describe("heading extension DOM rendering", () => {
   });
 
   test("line indexes are sequential across headings and paragraphs", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "# Title\nparagraph\n## Subtitle",
       extensions: bundledExtensions,

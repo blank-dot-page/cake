@@ -12,7 +12,7 @@ import type {
   EditCommand,
   OverlayExtensionContext,
 } from "../core/runtime";
-import { CakeEngine } from "../engine/cake-engine";
+import { CakeEditor as CakeEditorEngine } from "../editor/cake-editor";
 
 function toEngineSelection(selection?: CakeEditorSelection): Selection {
   if (!selection) {
@@ -89,7 +89,7 @@ export interface CakeEditorRef {
 export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
   function CakeEditor(props: CakeEditorProps, outerRef) {
     const containerRef = useRef<HTMLDivElement | null>(null);
-    const engineRef = useRef<CakeEngine | null>(null);
+    const engineRef = useRef<CakeEditorEngine | null>(null);
     const onChangeRef = useRef(props.onChange);
     const onSelectionChangeRef = useRef(props.onSelectionChange);
     const lastEmittedValueRef = useRef<string | null>(null);
@@ -116,7 +116,7 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
         return;
       }
 
-      const engine = new CakeEngine({
+      const engine = new CakeEditorEngine({
         container,
         value: props.value,
         selection: props.selection ?? undefined,

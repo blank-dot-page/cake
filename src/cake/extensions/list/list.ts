@@ -1040,8 +1040,8 @@ export type ToggleNumberedListCommand = { type: "toggle-numbered-list" };
 /** All list extension commands */
 export type ListCommand = ToggleBulletListCommand | ToggleNumberedListCommand;
 
-export const listExtension = defineExtension<ListCommand>({
-  name: "list",
+export const plainTextListExtension = defineExtension<ListCommand>({
+  name: "plain-text-list",
   keybindings: [
     {
       key: "8",

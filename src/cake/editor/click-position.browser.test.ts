@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { page } from "vitest/browser";
 import { createTestHarness, type TestHarness } from "../test/harness";
 
-describe("CakeEngine click positioning", () => {
+describe("CakeEditor click positioning", () => {
   let harness: TestHarness | null = null;
 
   afterEach(() => {

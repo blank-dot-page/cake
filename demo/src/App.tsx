@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { CakeEditor, CakeEditorRef } from "@blankdotpage/cake";
+import { CakeEditor, CakeEditorRef } from "@blankdotpage/cake/react";
+import { bundledExtensions } from "@blankdotpage/cake";
 
 type FontStyle = "sans" | "serif" | "mono";
 
@@ -190,6 +191,7 @@ export default function App() {
             }}
             placeholder="Start typing..."
             spellCheck={spellCheck}
+            extensions={bundledExtensions}
             style={{ height: "100%", padding: 24 }}
           />
         </section>

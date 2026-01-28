@@ -7,14 +7,14 @@ import {
   imageExtension,
   italicExtension,
   linkExtension,
-  listExtension,
+  plainTextListExtension,
   strikethroughExtension,
 } from "./index";
 
 export const bundledExtensionBundles: CakeExtensionBundle[] = [
   { name: "blockquote", extensions: [blockquoteExtension] },
   { name: "heading", extensions: [headingExtension] },
-  { name: "list", extensions: [listExtension] },
+  { name: "list", extensions: [plainTextListExtension] },
   { name: "combined-emphasis", extensions: [combinedEmphasisExtension] },
   { name: "bold", extensions: [boldExtension] },
   { name: "italic", extensions: [italicExtension] },

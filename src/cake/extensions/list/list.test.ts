@@ -1,12 +1,12 @@
 import { describe, test, expect } from "vitest";
 import { createRuntime } from "../../core/runtime";
-import { listExtension } from "./list";
+import { plainTextListExtension } from "./list";
 import { boldExtension } from "../bold/bold";
 
 describe("list extension", () => {
   describe("cursor mapping debug", () => {
     test("cursor position 7 maps to source position 7 for '- hello'", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("- hello");
 
       // Log the mapping for debugging
@@ -34,7 +34,7 @@ describe("list extension", () => {
   describe("parseBlock", () => {
     // Lists are now just paragraphs - the extension only adds styling and edit behavior
     test("parses unordered list as paragraph", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("- item");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0]).toMatchObject({
@@ -43,7 +43,7 @@ describe("list extension", () => {
     });
 
     test("parses unordered list with asterisk as paragraph", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("* item");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0]).toMatchObject({
@@ -52,7 +52,7 @@ describe("list extension", () => {
     });
 
     test("parses unordered list with plus as paragraph", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("+ item");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0]).toMatchObject({
@@ -61,7 +61,7 @@ describe("list extension", () => {
     });
 
     test("parses ordered list as paragraph", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("1. first");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0]).toMatchObject({
@@ -70,7 +70,7 @@ describe("list extension", () => {
     });
 
     test("parses ordered list with larger number as paragraph", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("10. tenth");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0]).toMatchObject({
@@ -79,7 +79,7 @@ describe("list extension", () => {
     });
 
     test("parses indented list as paragraph", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("  - indented");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0]).toMatchObject({
@@ -88,7 +88,7 @@ describe("list extension", () => {
     });
 
     test("does not parse without space after marker", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("-item");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0]).toMatchObject({
@@ -97,7 +97,7 @@ describe("list extension", () => {
     });
 
     test("does not parse plain text", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("hello world");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0]).toMatchObject({
@@ -106,7 +106,7 @@ describe("list extension", () => {
     });
 
     test("parses multiple list items as paragraphs", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("- first\n- second\n- third");
       expect(doc.blocks).toHaveLength(3);
       doc.blocks.forEach((block) => {
@@ -115,7 +115,7 @@ describe("list extension", () => {
     });
 
     test("parses list with bold content as paragraph", () => {
-      const runtime = createRuntime([listExtension, boldExtension]);
+      const runtime = createRuntime([plainTextListExtension, boldExtension]);
       const doc = runtime.parse("- **bold** item");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0].type).toBe("paragraph");
@@ -124,28 +124,28 @@ describe("list extension", () => {
 
   describe("serializeBlock", () => {
     test("serializes unordered list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("- item");
       const serialized = runtime.serialize(doc);
       expect(serialized.source).toBe("- item");
     });
 
     test("serializes ordered list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("1. first");
       const serialized = runtime.serialize(doc);
       expect(serialized.source).toBe("1. first");
     });
 
     test("serializes indented list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const doc = runtime.parse("  - indented");
       const serialized = runtime.serialize(doc);
       expect(serialized.source).toBe("  - indented");
     });
 
     test("round-trips list", () => {
-      const runtime = createRuntime([listExtension, boldExtension]);
+      const runtime = createRuntime([plainTextListExtension, boldExtension]);
       const source = "- **bold** item";
       const doc = runtime.parse(source);
       const serialized = runtime.serialize(doc);
@@ -153,7 +153,7 @@ describe("list extension", () => {
     });
 
     test("round-trips multiple list items", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const source = "- first\n- second\n- third";
       const doc = runtime.parse(source);
       const serialized = runtime.serialize(doc);
@@ -164,28 +164,28 @@ describe("list extension", () => {
   describe("cursor mapping", () => {
     // List prefixes should be in cursor model (navigable/selectable)
     test("includes list prefix in cursor length for bullet list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("- item");
       // "- item" = 6 characters, all navigable
       expect(state.map.cursorLength).toBe(6);
     });
 
     test("includes list prefix in cursor length for indented list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("  - item");
       // "  - item" = 8 characters, all navigable
       expect(state.map.cursorLength).toBe(8);
     });
 
     test("includes list prefix in cursor length for ordered list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("1. item");
       // "1. item" = 7 characters, all navigable
       expect(state.map.cursorLength).toBe(7);
     });
 
     test("includes list prefix in cursor length for multi-digit ordered list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("10. item");
       // "10. item" = 8 characters, all navigable
       expect(state.map.cursorLength).toBe(8);
@@ -194,7 +194,7 @@ describe("list extension", () => {
 
   describe("insert-line-break (onEdit)", () => {
     test("continues list prefix on line break", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "- item" with cursor at end (position 6)
       const state = runtime.createState("- item", { start: 6, end: 6 });
 
@@ -204,7 +204,7 @@ describe("list extension", () => {
     });
 
     test("continues numbered list prefix on line break", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "1. item" with cursor at end (position 7)
       const state = runtime.createState("1. item", { start: 7, end: 7 });
 
@@ -214,7 +214,7 @@ describe("list extension", () => {
     });
 
     test("exits a list when inserting a line break on an empty item", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "- " with cursor at end (position 2)
       const state = runtime.createState("- ", { start: 2, end: 2 });
 
@@ -224,7 +224,7 @@ describe("list extension", () => {
     });
 
     test("restarts numbered lists after exiting on an empty item", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "1. one\n2. \n3. three" with cursor at end of empty item (position 10)
       const source = "1. one\n2. \n3. three";
       const state = runtime.createState(source, { start: 10, end: 10 });
@@ -235,7 +235,7 @@ describe("list extension", () => {
     });
 
     test("splits numbered list items and renumbers following items", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "1. one\n2. two\n3. three" with cursor at end of first item content
       const source = "1. one\n2. two\n3. three";
       // Position 6 is at end of "1. one"
@@ -247,7 +247,7 @@ describe("list extension", () => {
     });
 
     test("inserts a blank line before list items when breaking at line start", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "Intro\n- item" with cursor at start of list item (position 6)
       const source = "Intro\n- item";
       const state = runtime.createState(source, { start: 6, end: 6 });
@@ -258,7 +258,7 @@ describe("list extension", () => {
     });
 
     test("inserts line break after deleting selection", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "- one two" with selection from position 2 to 6 (selecting "one ")
       const state = runtime.createState("- one two", { start: 2, end: 6 });
 
@@ -268,7 +268,7 @@ describe("list extension", () => {
     });
 
     test("does not handle line break for plain text (falls through)", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("Hello", { start: 5, end: 5 });
 
       const nextState = runtime.applyEdit({ type: "insert-line-break" }, state);
@@ -280,7 +280,7 @@ describe("list extension", () => {
 
   describe("delete-backward (onEdit)", () => {
     test("removes list prefix when backspacing at content start", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "- item" with cursor at position 2 (after "- ")
       const state = runtime.createState("- item", { start: 2, end: 2 });
 
@@ -291,7 +291,7 @@ describe("list extension", () => {
     });
 
     test("removes numbered list prefix when backspacing at content start", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "1. item" with cursor at position 3 (after "1. ")
       const state = runtime.createState("1. item", { start: 3, end: 3 });
 
@@ -302,7 +302,7 @@ describe("list extension", () => {
     });
 
     test("removes indented list prefix when backspacing at content start", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "  - item" with cursor at position 4 (after "  - ")
       const state = runtime.createState("  - item", { start: 4, end: 4 });
 
@@ -313,7 +313,7 @@ describe("list extension", () => {
     });
 
     test("joins numbered list items on backspace at line start", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "1. one\n2. two\n3. three" with cursor at start of second item (position 7)
       const source = "1. one\n2. two\n3. three";
       const state = runtime.createState(source, { start: 7, end: 7 });
@@ -324,7 +324,7 @@ describe("list extension", () => {
     });
 
     test("renumbers numbered lists when merging across a blank line", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "1. one\n\n1. two\n2. three" with cursor at start of blank line (position 8)
       const source = "1. one\n\n1. two\n2. three";
       const state = runtime.createState(source, { start: 8, end: 8 });
@@ -335,7 +335,7 @@ describe("list extension", () => {
     });
 
     test("performs normal backspace when cursor is in middle of content", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "- item" with cursor at position 4 (after "- it")
       const state = runtime.createState("- item", { start: 4, end: 4 });
 
@@ -345,7 +345,7 @@ describe("list extension", () => {
     });
 
     test("performs normal backspace when cursor is in list prefix", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "- item" with cursor at position 1 (after "-")
       const state = runtime.createState("- item", { start: 1, end: 1 });
 
@@ -358,7 +358,7 @@ describe("list extension", () => {
 
   describe("delete-forward (onEdit)", () => {
     test("renumbers numbered lists when deleting a blank line forward", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "1. one\n\n1. two\n2. three" with cursor at end of first item (position 6)
       const source = "1. one\n\n1. two\n2. three";
       const state = runtime.createState(source, { start: 6, end: 6 });
@@ -371,7 +371,7 @@ describe("list extension", () => {
 
   describe("indent/outdent (onEdit)", () => {
     test("indents list item", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("- item", { start: 2, end: 2 });
 
       const nextState = runtime.applyEdit({ type: "indent" }, state);
@@ -380,7 +380,7 @@ describe("list extension", () => {
     });
 
     test("outdents indented list item", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("  - item", { start: 4, end: 4 });
 
       const nextState = runtime.applyEdit({ type: "outdent" }, state);
@@ -389,7 +389,7 @@ describe("list extension", () => {
     });
 
     test("indents and outdents list items across a selection", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "- one\n- two" with selection across both lines
       const source = "- one\n- two";
       const state = runtime.createState(source, { start: 0, end: 11 });
@@ -402,7 +402,7 @@ describe("list extension", () => {
     });
 
     test("renumbers numbered lists when indenting list items", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "1. A\n2. B\n3. C" with cursor on second item
       const source = "1. A\n2. B\n3. C";
       // Position is in the middle of "2. B"
@@ -414,7 +414,7 @@ describe("list extension", () => {
     });
 
     test("renumbers numbered lists when outdenting list items", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "1. A\n  1. X\n  2. Y\n2. B" with cursor on second nested item
       const source = "1. A\n  1. X\n  2. Y\n2. B";
       // Position is in "  2. Y"
@@ -426,7 +426,7 @@ describe("list extension", () => {
     });
 
     test("does not handle indent for non-list lines (falls through)", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // Plain text - list extension returns null, runtime does nothing
       const state = runtime.createState("hello world", { start: 5, end: 5 });
 
@@ -439,7 +439,7 @@ describe("list extension", () => {
 
   describe("toggle-bullet-list (onEdit)", () => {
     test("toggles a paragraph to a bullet list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("Hello world", { start: 0, end: 0 });
 
       const nextState = runtime.applyEdit(
@@ -451,7 +451,7 @@ describe("list extension", () => {
     });
 
     test("toggles bullet list OFF when toggling on existing bullet", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("- Hello world", { start: 0, end: 13 });
 
       const nextState = runtime.applyEdit(
@@ -463,7 +463,7 @@ describe("list extension", () => {
     });
 
     test("toggles bullet list across multiple lines", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const source = "Line one\nLine two";
       const state = runtime.createState(source, { start: 0, end: 17 });
 
@@ -476,7 +476,7 @@ describe("list extension", () => {
     });
 
     test("converts numbered list to bullet list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const source = "1. Item one\n2. Item two";
       const state = runtime.createState(source, { start: 0, end: 23 });
 
@@ -491,7 +491,7 @@ describe("list extension", () => {
 
   describe("toggle-numbered-list (onEdit)", () => {
     test("toggles a paragraph to a numbered list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("Hello world", { start: 0, end: 0 });
 
       const nextState = runtime.applyEdit(
@@ -503,7 +503,7 @@ describe("list extension", () => {
     });
 
     test("toggles numbered list OFF when toggling on existing numbered", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const state = runtime.createState("1. Hello world", {
         start: 0,
         end: 14,
@@ -518,7 +518,7 @@ describe("list extension", () => {
     });
 
     test("toggles numbered list across multiple lines with renumbering", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const source = "Line one\nLine two\nLine three";
       const state = runtime.createState(source, { start: 0, end: 28 });
 
@@ -531,7 +531,7 @@ describe("list extension", () => {
     });
 
     test("converts bullet list to numbered list", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       const source = "- Item one\n- Item two";
       const state = runtime.createState(source, { start: 0, end: 21 });
 
@@ -546,7 +546,7 @@ describe("list extension", () => {
 
   describe("marker switching", () => {
     test("switches bullet list markers when typing alternate markers", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "- item" with cursor at position 0
       const dashState = runtime.createState("- item", { start: 0, end: 0 });
 
@@ -570,7 +570,7 @@ describe("list extension", () => {
 
   describe("restarts numbered lists when splitting with enter then backspace", () => {
     test("splits then backspaces to create gap and renumber", () => {
-      const runtime = createRuntime([listExtension]);
+      const runtime = createRuntime([plainTextListExtension]);
       // "1. one\n2. two\n3. three" with cursor at end of first item
       const source = "1. one\n2. two\n3. three";
       const state = runtime.createState(source, { start: 6, end: 6 });

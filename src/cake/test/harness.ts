@@ -1,11 +1,11 @@
 import { userEvent } from "vitest/browser";
 import { createElement, Fragment } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { CakeEngine } from "../engine/cake-engine";
+import { CakeEditor } from "../editor/cake-editor";
 import type { Selection } from "../core/types";
 import type { CakeExtension, OverlayExtensionContext } from "../core/runtime";
 import { bundledExtensions } from "../extensions";
-import { measureLayoutModelFromDom } from "../engine/selection/selection-layout-dom";
+import { measureLayoutModelFromDom } from "../editor/selection/selection-layout-dom";
 
 export interface SelectionRectInfo {
   top: number;
@@ -32,7 +32,7 @@ export interface VisualRowInfo {
 export interface TestHarness {
   container: HTMLDivElement;
   contentRoot: HTMLElement;
-  engine: CakeEngine;
+  engine: CakeEditor;
   selection: Selection;
 
   // Queries
@@ -115,7 +115,7 @@ export function createTestHarness(
   document.head.appendChild(styleElement);
 
   const extensions = options.extensions ?? bundledExtensions;
-  const engine = new CakeEngine({
+  const engine = new CakeEditor({
     container,
     value: options.value,
     selection: { start: 0, end: 0, affinity: "forward" },

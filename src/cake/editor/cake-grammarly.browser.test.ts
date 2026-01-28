@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { CakeEngine } from "./cake-engine";
+import { CakeEditor } from "./cake-editor";
 import { createTestHarness } from "../test/harness";
 
 type EngineSelection = {
@@ -55,7 +55,7 @@ function dispatchInput(
   root.dispatchEvent(inputEvent);
 }
 
-describe("CakeEngine - Grammarly-like flows (browser)", () => {
+describe("CakeEditor - Grammarly-like flows (browser)", () => {
   afterEach(() => {
     const selection = window.getSelection();
     selection?.removeAllRanges();
@@ -152,7 +152,7 @@ describe("CakeEngine - Grammarly-like flows (browser)", () => {
     document.body.append(container);
 
     let lastValue = "The quik brown fox";
-    const engine = new CakeEngine({
+    const engine = new CakeEditor({
       container,
       value: lastValue,
       selection: createSelection(0, 0),

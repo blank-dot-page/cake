@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createTestHarness, type TestHarness } from "../test/harness";
 
-describe("CakeEngine empty line handling", () => {
+describe("CakeEditor empty line handling", () => {
   let harness: TestHarness | null = null;
 
   afterEach(() => {

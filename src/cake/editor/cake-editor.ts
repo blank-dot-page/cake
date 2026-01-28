@@ -88,7 +88,7 @@ type HistoryState = {
   lastKind: string | null;
 };
 
-export class CakeEngine {
+export class CakeEditor {
   private container: HTMLElement;
   private runtime: Runtime;
   private extensions: CakeExtension[];

@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import { CakeEngine } from "../../engine/cake-engine";
+import { CakeEditor } from "../../editor/cake-editor";
 import { bundledExtensions } from "../index";
 
 describe("blockquote extension DOM rendering", () => {
   let container: HTMLDivElement;
-  let engine: CakeEngine;
+  let engine: CakeEditor;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -20,7 +20,7 @@ describe("blockquote extension DOM rendering", () => {
   });
 
   test("renders blockquote with blockquote element", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "> quoted text",
       extensions: bundledExtensions,
@@ -31,7 +31,7 @@ describe("blockquote extension DOM rendering", () => {
   });
 
   test("renders nested content inside blockquote", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "> quoted text",
       extensions: bundledExtensions,
@@ -43,7 +43,7 @@ describe("blockquote extension DOM rendering", () => {
   });
 
   test("consecutive blockquote lines merge into single blockquote", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "> first quote\n> second quote",
       extensions: bundledExtensions,
@@ -57,7 +57,7 @@ describe("blockquote extension DOM rendering", () => {
   });
 
   test("renders separate blockquotes with non-quote line between", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "> first\nregular text\n> second",
       extensions: bundledExtensions,
@@ -68,7 +68,7 @@ describe("blockquote extension DOM rendering", () => {
   });
 
   test("renders blockquote with bold content", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "> **bold** text",
       extensions: bundledExtensions,
@@ -83,7 +83,7 @@ describe("blockquote extension DOM rendering", () => {
   });
 
   test("renders blockquote with italic content", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "> _italic_ text",
       extensions: bundledExtensions,
@@ -98,7 +98,7 @@ describe("blockquote extension DOM rendering", () => {
   });
 
   test("blockquote line has data-line-index attribute", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "> quoted",
       extensions: bundledExtensions,
@@ -110,7 +110,7 @@ describe("blockquote extension DOM rendering", () => {
   });
 
   test("renders mixed content with blockquotes and paragraphs", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "paragraph\n> quote\nanother paragraph",
       extensions: bundledExtensions,

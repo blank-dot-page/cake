@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { userEvent } from "vitest/browser";
-import { CakeEngine } from "../../engine/cake-engine";
+import { CakeEditor } from "../../editor/cake-editor";
 import { bundledExtensions } from "../index";
 import { createTestHarness, type TestHarness } from "../../test/harness";
 
@@ -14,7 +14,7 @@ const modShift = { ...mod, shift: true };
 
 describe("list extension DOM rendering", () => {
   let container: HTMLDivElement;
-  let engine: CakeEngine;
+  let engine: CakeEditor;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -30,7 +30,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("renders unordered list with is-list class", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "- item",
       extensions: bundledExtensions,
@@ -44,7 +44,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("renders ordered list with is-list class", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "1. first",
       extensions: bundledExtensions,
@@ -58,7 +58,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("renders multiple list items", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "- one\n- two\n- three",
       extensions: bundledExtensions,
@@ -73,7 +73,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("renders mixed content with list items", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "paragraph\n- list item\nanother paragraph",
       extensions: bundledExtensions,
@@ -88,7 +88,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("sets list marker CSS variable for text-indent", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "- item",
       extensions: bundledExtensions,
@@ -102,7 +102,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("sets list indent CSS variable for nested list", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "  - indented",
       extensions: bundledExtensions,
@@ -116,7 +116,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("renders list with bold content", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "- **bold** item",
       extensions: bundledExtensions,
@@ -131,7 +131,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("renders list with italic content", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "- _italic_ item",
       extensions: bundledExtensions,
@@ -146,7 +146,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("empty list item renders correctly", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "- ",
       extensions: bundledExtensions,
@@ -159,7 +159,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("asterisk marker creates list", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "* item",
       extensions: bundledExtensions,
@@ -178,7 +178,7 @@ describe("list extension DOM rendering", () => {
   });
 
   test("plus marker creates list", () => {
-    engine = new CakeEngine({
+    engine = new CakeEditor({
       container,
       value: "+ item",
       extensions: bundledExtensions,
