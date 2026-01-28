@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { measureLayoutModelFromDom } from "./selection-layout-dom";
 import type { LineInfo } from "./selection-layout";
+import { getCaretRect } from "./selection-geometry-dom";
 
 function buildCursorToCodeUnit(text: string): number[] {
   // For ASCII text, cursor positions map 1:1 with code units
@@ -37,7 +38,36 @@ function measureActualRowBoundaries(
     const range = document.createRange();
     range.setStart(textNode, i);
     range.setEnd(textNode, i + 1);
-    const rect = range.getBoundingClientRect();
+    // Prefer `getClientRects()` because `getBoundingClientRect()` can span
+    // multiple rows at wrap boundaries and WebKit can emit zero-width fragments.
+    const rects = Array.from(range.getClientRects());
+    let rect: DOMRect;
+    if (rects.length > 0) {
+      let best = rects[0]!;
+      let bestArea = best.width * best.height;
+      for (const r of rects) {
+        const area = r.width * r.height;
+        if (area > bestArea) {
+          best = r;
+          bestArea = area;
+        }
+      }
+      // If the best rect is degenerate, fall back to bounding rect, and if that's
+      // also degenerate, skip this character.
+      if (bestArea > 0) {
+        rect = best;
+      } else {
+        rect = range.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) {
+          continue;
+        }
+      }
+    } else {
+      rect = range.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        continue;
+      }
+    }
 
     if (currentRowTop === null) {
       currentRowTop = rect.top;
@@ -319,15 +349,20 @@ describe("Layout measurement with variable-width fonts", () => {
     expect(layout!.lines[0].rows.length).toBeGreaterThanOrEqual(2);
 
     // Now simulate what happens when we position caret at end of first row
-    // and check if the caret Y matches row.rect.top
+    // and check if the caret Y matches row.rect.top.
+    //
+    // NOTE: At wrap boundaries, engines differ in what a *collapsed* DOM range
+    // reports. Use our affinity-aware caret measurement instead of relying on
+    // `Range.getBoundingClientRect()` semantics.
     const firstRowEndOffset = layout!.lines[0].rows[0].endOffset;
-    const range = document.createRange();
-
-    // Get caret position at end of first row
-    range.setStart(textNode, firstRowEndOffset);
-    range.setEnd(textNode, firstRowEndOffset);
-    const caretRects = range.getClientRects();
-    const caretRect = caretRects[0] || range.getBoundingClientRect();
+    const caret = getCaretRect({
+      lineElement: lineDiv,
+      lineInfo: lines[0]!,
+      offsetInLine: firstRowEndOffset,
+      affinity: "backward",
+    });
+    expect(caret).not.toBeNull();
+    const caretRect = caret!.rect;
 
     console.log("Caret at end of first row:");
     console.log("  offset:", firstRowEndOffset);
@@ -395,19 +430,22 @@ describe("Layout measurement with variable-width fonts", () => {
     console.log("=== ROW BOUNDARY TEST (line-height: 2) ===");
     console.log("Boundary offset:", boundaryOffset);
 
-    // Test caret at boundary with FORWARD affinity (should be on row 1)
-    const rangeForward = document.createRange();
-    rangeForward.setStart(textNode, boundaryOffset);
-    rangeForward.setEnd(textNode, boundaryOffset);
-    const forwardRect = rangeForward.getBoundingClientRect();
-
-    // Test caret at boundary with BACKWARD affinity
-    // To get backward affinity, we need to measure the character before
-    const rangeBackward = document.createRange();
-    rangeBackward.setStart(textNode, boundaryOffset - 1);
-    rangeBackward.setEnd(textNode, boundaryOffset);
-    const backwardRects = rangeBackward.getClientRects();
-    const backwardRect = backwardRects[backwardRects.length - 1]; // Last rect = right edge
+    const forwardCaret = getCaretRect({
+      lineElement: lineDiv,
+      lineInfo: lines[0]!,
+      offsetInLine: boundaryOffset,
+      affinity: "forward",
+    });
+    const backwardCaret = getCaretRect({
+      lineElement: lineDiv,
+      lineInfo: lines[0]!,
+      offsetInLine: boundaryOffset,
+      affinity: "backward",
+    });
+    expect(forwardCaret).not.toBeNull();
+    expect(backwardCaret).not.toBeNull();
+    const forwardRect = forwardCaret!.rect;
+    const backwardRect = backwardCaret!.rect;
 
     console.log("Forward caret at boundary:");
     console.log("  rect.top:", forwardRect.top);
@@ -430,25 +468,20 @@ describe("Layout measurement with variable-width fonts", () => {
       forwardDistToRow0 < forwardDistToRow1 ? "row 0" : "row 1",
     );
 
-    if (backwardRect) {
-      const backwardDistToRow0 = Math.abs(
-        backwardRect.top - layout!.lines[0].rows[0].rect.top,
-      );
-      const backwardDistToRow1 = Math.abs(
-        backwardRect.top - layout!.lines[0].rows[1].rect.top,
-      );
-      console.log("Backward caret distance to row 0:", backwardDistToRow0);
-      console.log("Backward caret distance to row 1:", backwardDistToRow1);
-      console.log(
-        "Backward caret closest to:",
-        backwardDistToRow0 < backwardDistToRow1 ? "row 0" : "row 1",
-      );
-    }
+    const backwardDistToRow0 = Math.abs(
+      backwardRect.top - layout!.lines[0].rows[0].rect.top,
+    );
+    const backwardDistToRow1 = Math.abs(
+      backwardRect.top - layout!.lines[0].rows[1].rect.top,
+    );
+    console.log("Backward caret distance to row 0:", backwardDistToRow0);
+    console.log("Backward caret distance to row 1:", backwardDistToRow1);
 
-    // At the boundary offset, the zero-width range gives a rect at the end of row 0.
-    // This is correct browser behavior - the offset is AT the boundary, not past it.
-    // To be on row 1, the offset would need to be AFTER the boundary (offset + 1).
-    expect(forwardDistToRow0).toBeLessThanOrEqual(forwardDistToRow1);
+    // At a wrap boundary, the same logical offset can represent either the end
+    // of the previous visual row ("backward" affinity) or the start of the next
+    // ("forward" affinity).
+    expect(backwardDistToRow0).toBeLessThanOrEqual(backwardDistToRow1);
+    expect(forwardDistToRow1).toBeLessThanOrEqual(forwardDistToRow0);
   });
 });
 

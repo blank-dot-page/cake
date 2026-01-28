@@ -460,7 +460,10 @@ export class CakeEngine {
     this.onChange?.(this.state.source, this.state.selection);
     this.scheduleScrollCaretIntoView();
     if (shouldOpenLinkPopover) {
-      queueMicrotask(() => {
+      // The popover is rendered via React overlays, and its event listeners are
+      // registered in `useEffect`. Dispatch after a frame so the overlay has a
+      // chance to commit and attach listeners across engines.
+      window.requestAnimationFrame(() => {
         this.openLinkPopoverForSelection(true);
       });
     }
@@ -1043,6 +1046,34 @@ export class CakeEngine {
         return;
       }
 
+      // Some environments (notably WebKit in certain test/synthetic setups) may
+      // not dispatch PointerEvents, which means we never ran pointerdown hit
+      // testing. In that case, fall back to hit-testing on click so caret
+      // placement is consistent across engines.
+      if (!pendingHit) {
+        const hit = this.hitTestFromClientPoint(event.clientX, event.clientY);
+        if (!hit) {
+          return;
+        }
+        const newSelection: Selection = {
+          start: hit.cursorOffset,
+          end: hit.cursorOffset,
+          affinity: hit.affinity,
+        };
+        this.pendingClickHit = null;
+        this.suppressSelectionChange = true;
+        this.state = this.runtime.updateSelection(this.state, newSelection, {
+          kind: "dom",
+        });
+        this.applySelection(this.state.selection);
+        this.onSelectionChange?.(this.state.selection);
+        this.scheduleOverlayUpdate();
+        setTimeout(() => {
+          this.suppressSelectionChange = false;
+        }, 0);
+        return;
+      }
+
       // Selection was already applied in pointerdown, just clear the suppress flag
       // Use setTimeout to delay clearing so any pending selectionchange events are ignored
       // (selectionchange can fire asynchronously after DOM selection changes)
@@ -1384,13 +1415,17 @@ export class CakeEngine {
   }
 
   private resolveExtensionKeybinding(event: KeyboardEvent): EditCommand | null {
+    const eventKey =
+      event.key.length === 1 ? event.key.toLowerCase() : event.key;
     for (const extension of this.extensions) {
       const bindings = extension.keybindings;
       if (!bindings) {
         continue;
       }
       for (const binding of bindings) {
-        if (binding.key !== event.key) {
+        const bindingKey =
+          binding.key.length === 1 ? binding.key.toLowerCase() : binding.key;
+        if (bindingKey !== eventKey) {
           continue;
         }
         if (binding.meta !== undefined && binding.meta !== event.metaKey) {

@@ -267,7 +267,7 @@ describe("heading extension typing behavior (harness)", () => {
 
     // Click at start of "hello" then backspace should delete the newline and
     // move the paragraph text into the heading.
-    await h.clickAt(0, 1);
+    await h.clickLeftOf(0, 1);
     await h.pressBackspace();
 
     expect(h.engine.getValue()).toBe("# Cake Demohello");

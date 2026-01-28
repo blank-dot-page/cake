@@ -238,11 +238,23 @@ export function createTestHarness(
         const range = document.createRange();
         range.setStart(textNode, remaining);
         range.setEnd(textNode, remaining + 1);
-        // Use getClientRects()[0] instead of getBoundingClientRect() because
-        // at wrap boundaries, getBoundingClientRect() can span multiple rows
-        const rects = range.getClientRects();
-        if (rects.length > 0 && rects[0]) {
-          return rects[0];
+        // Prefer `getClientRects()` because `getBoundingClientRect()` can span
+        // multiple rows at wrap boundaries. Some engines (notably WebKit) can
+        // include zero-width rect fragments; pick the largest rect.
+        const rects = Array.from(range.getClientRects());
+        if (rects.length > 0) {
+          let best = rects[0]!;
+          let bestArea = best.width * best.height;
+          for (const rect of rects) {
+            const area = rect.width * rect.height;
+            if (area > bestArea) {
+              best = rect;
+              bestArea = area;
+            }
+          }
+          if (bestArea > 0) {
+            return best;
+          }
         }
         return range.getBoundingClientRect();
       }
@@ -254,6 +266,53 @@ export function createTestHarness(
     );
   }
 
+  function dispatchSyntheticClickAt(clientX: number, clientY: number): void {
+    // `userEvent.click(el, { position })` can quantize/round coordinates
+    // differently across engines (notably WebKit), which makes coordinate-based
+    // selection tests flaky. Dispatch events with explicit `clientX/Y` instead.
+    const target = document.elementFromPoint(clientX, clientY) ?? container;
+    // Ensure focus follows click semantics.
+    getContentRoot().focus();
+
+    const base = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX,
+      clientY,
+      button: 0,
+    };
+
+    if (typeof PointerEvent !== "undefined") {
+      target.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          ...base,
+          buttons: 1,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+        }),
+      );
+    }
+
+    target.dispatchEvent(new MouseEvent("mousedown", { ...base, buttons: 1 }));
+
+    if (typeof PointerEvent !== "undefined") {
+      target.dispatchEvent(
+        new PointerEvent("pointerup", {
+          ...base,
+          buttons: 0,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+        }),
+      );
+    }
+
+    target.dispatchEvent(new MouseEvent("mouseup", { ...base, buttons: 0 }));
+    target.dispatchEvent(new MouseEvent("click", { ...base, detail: 1 }));
+  }
+
   async function clickAtPosition(
     offset: number,
     side: "left" | "right" | "center",
@@ -263,22 +322,29 @@ export function createTestHarness(
 
     let clickX: number;
     if (side === "left") {
-      clickX = charRect.left + 1;
+      // Prefer clicking well inside the left half of the glyph so "left of"
+      // remains meaningful even for very narrow characters across engines.
+      clickX =
+        charRect.width >= 2
+          ? charRect.left + charRect.width * 0.25
+          : charRect.left - 1;
     } else if (side === "right") {
-      clickX = charRect.right - 1;
+      // Prefer clicking well inside the right half of the glyph so "right of"
+      // is robust even when glyph widths differ slightly across engines/fonts.
+      //
+      // Some engines report very narrow (or even ~0 width) rects for certain
+      // characters (notably spaces). In that case, nudge past the right edge so
+      // we reliably land on the post-character boundary.
+      clickX =
+        charRect.width >= 2
+          ? charRect.left + charRect.width * 0.75
+          : charRect.right + 1;
     } else {
       clickX = charRect.left + charRect.width / 2;
     }
     const clickY = charRect.top + charRect.height / 2;
 
-    // Click on container to go through the engine's hit testing
-    const containerRect = container.getBoundingClientRect();
-    await userEvent.click(container, {
-      position: {
-        x: clickX - containerRect.left,
-        y: clickY - containerRect.top,
-      },
-    });
+    dispatchSyntheticClickAt(clickX, clickY);
   }
 
   async function doubleClick(offset: number, lineIndex: number): Promise<void> {
@@ -305,14 +371,7 @@ export function createTestHarness(
     clientX: number,
     clientY: number,
   ): Promise<void> {
-    // Click on container (not contentRoot) to handle margin clicks properly
-    const rect = container.getBoundingClientRect();
-    await userEvent.click(container, {
-      position: {
-        x: clientX - rect.left,
-        y: clientY - rect.top,
-      },
-    });
+    dispatchSyntheticClickAt(clientX, clientY);
   }
 
   function getSelectionRects(): SelectionRectInfo[] {

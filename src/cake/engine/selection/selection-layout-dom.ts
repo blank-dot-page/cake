@@ -40,28 +40,32 @@ function mergeDomRects(rects: DOMRect[]): DOMRect | null {
   return new DOMRect(left, top, right - left, bottom - top);
 }
 
-function rectsOverlapVertically(a: DOMRect, b: DOMRect): boolean {
-  const aBottom = a.top + a.height;
-  const bBottom = b.top + b.height;
-  return a.top < bBottom && b.top < aBottom;
-}
-
-function groupDomRectsByRow(rects: DOMRect[]): DOMRect[] {
+export function groupDomRectsByRow(rects: DOMRect[]): DOMRect[] {
   if (rects.length === 0) {
     return [];
   }
+  // IMPORTANT:
+  // `Range.getClientRects()` returns one rect per line box fragment, but in some
+  // engines (and/or with small line-heights) adjacent fragments can *overlap*
+  // vertically. Grouping-by-overlap will incorrectly merge multiple rows into one.
+  //
+  // Instead, group by (approximately) equal `top` and merge only within that row.
+  const ROW_TOP_EPS_PX = 1;
+
   const sorted = [...rects].sort((a, b) =>
     a.top === b.top ? a.left - b.left : a.top - b.top,
   );
+
   const grouped: DOMRect[] = [];
-  sorted.forEach((rect) => {
+  for (const rect of sorted) {
     const last = grouped[grouped.length - 1];
-    if (last && rectsOverlapVertically(last, rect)) {
+    if (last && Math.abs(rect.top - last.top) <= ROW_TOP_EPS_PX) {
       grouped[grouped.length - 1] = mergeDomRects([last, rect]) ?? last;
-      return;
+      continue;
     }
     grouped.push(rect);
-  });
+  }
+
   return grouped;
 }
 
@@ -165,7 +169,19 @@ function measureCharacterRect(params: {
 
   const rects = params.range.getClientRects();
   if (rects.length > 0) {
-    return rects[0] ?? null;
+    // Some engines can include zero-width fragments for a single character
+    // (notably at soft wrap boundaries). Prefer the largest rect.
+    const list = Array.from(rects);
+    let best = list[0] ?? null;
+    let bestArea = best ? best.width * best.height : 0;
+    for (const rect of list) {
+      const area = rect.width * rect.height;
+      if (area > bestArea) {
+        best = rect;
+        bestArea = area;
+      }
+    }
+    return bestArea > 0 ? best : (list[0] ?? null);
   }
   const rect = params.range.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) {
@@ -209,7 +225,9 @@ function measureLineRows(params: {
   const fullLineEnd = resolvePosition(params.codeUnitLength);
   scratchRange.setStart(fullLineStart.node, fullLineStart.offset);
   scratchRange.setEnd(fullLineEnd.node, fullLineEnd.offset);
-  const fullLineRects = groupDomRectsByRow(Array.from(scratchRange.getClientRects()));
+  const fullLineRects = groupDomRectsByRow(
+    Array.from(scratchRange.getClientRects()),
+  );
   if (fullLineRects.length === 0) {
     return [
       {
@@ -219,6 +237,17 @@ function measureLineRows(params: {
       },
     ];
   }
+
+  // Convert fragment rects into non-overlapping row boxes by clamping each row's
+  // height to the distance to the next row top. This avoids downstream logic
+  // (hit-testing, center-based row selection, etc.) being affected by engines
+  // that report overlapping line box heights.
+  const rowRects: DOMRect[] = fullLineRects.map((rect, index) => {
+    const nextTop = fullLineRects[index + 1]?.top ?? params.lineRect.bottom;
+    const bottom = Math.max(rect.top, nextTop);
+    const height = Math.max(0, bottom - rect.top);
+    return new DOMRect(rect.left, rect.top, rect.width, height);
+  });
 
   function offsetToTop(offset: number): number | null {
     if (topCache.has(offset)) {
@@ -232,7 +261,25 @@ function measureLineRows(params: {
       resolveDomPosition: resolvePosition,
       range: scratchRange,
     });
-    const top = rect ? rect.top : null;
+    let top = rect ? rect.top : null;
+    if (top === null) {
+      // Some engines occasionally fail to return a usable rect for certain
+      // characters (notably at soft-wrap boundaries). Fall back to measuring the
+      // caret position at this offset so row detection remains stable.
+      const codeUnitOffset = cursorOffsetToCodeUnit(params.cursorToCodeUnit, offset);
+      const position = resolvePosition(codeUnitOffset);
+      scratchRange.setStart(position.node, position.offset);
+      scratchRange.setEnd(position.node, position.offset);
+      const rects = scratchRange.getClientRects();
+      if (rects.length > 0) {
+        top = rects[0]?.top ?? null;
+      } else {
+        const caretRect = scratchRange.getBoundingClientRect();
+        if (!(caretRect.width === 0 && caretRect.height === 0)) {
+          top = caretRect.top;
+        }
+      }
+    }
     topCache.set(offset, top);
     return top;
   }
@@ -315,7 +362,7 @@ function measureLineRows(params: {
   while (currentRowStart < params.lineLength) {
     const nextRowStart = findNextRowStartOffset(searchFrom, currentRowTop);
     const currentRowEnd = nextRowStart ?? params.lineLength;
-    const domRect = fullLineRects[rowIndex] ?? params.lineRect;
+    const domRect = rowRects[rowIndex] ?? params.lineRect;
 
     rows.push({
       startOffset: currentRowStart,
@@ -623,144 +670,285 @@ export function hitTestFromLayout(params: {
     return null;
   }
 
-  // Find the closest character offset by X within the target row
+  // Find the closest cursor offset by X within the target row.
+  //
+  // Measuring per-character client rects is brittle across engines at text-node
+  // boundaries (e.g. when a trailing space lives in a text node that ends right
+  // before an inline wrapper like <a>). Prefer collapsed ranges (caret positions)
+  // and pick the fragment that belongs to the target visual row.
   const resolvePosition = createDomPositionResolver(lineElement);
   const scratchRange = document.createRange();
+  const rowTop = row.rect.top;
 
-  let closestOffset = row.startOffset;
-  let closestDistance = Infinity;
-  let firstCharX: number | null = null;
-  let lastCharRightX: number | null = null;
-
-  // Track whether we chose based on a right edge (for backward affinity)
-  let choseRightEdge = false;
-
-  // Note: endOffset is exclusive (it's the start of the next row)
-  for (let offset = row.startOffset; offset < row.endOffset; offset++) {
-    const codeUnitStart = cursorOffsetToCodeUnit(
-      lineInfo.cursorToCodeUnit,
-      offset,
+  const approximateX = (cursorOffsetInLine: number): number => {
+    const clamped = Math.max(
+      row.startOffset,
+      Math.min(cursorOffsetInLine, row.endOffset),
     );
-    const codeUnitEnd = cursorOffsetToCodeUnit(
-      lineInfo.cursorToCodeUnit,
-      offset + 1,
-    );
-    const startPos = resolvePosition(codeUnitStart);
-    const endPos = resolvePosition(codeUnitEnd);
+    const rowLength = row.endOffset - row.startOffset;
+    if (rowLength <= 0) {
+      return row.rect.left;
+    }
+    const fraction = (clamped - row.startOffset) / rowLength;
+    return row.rect.left + row.rect.width * fraction;
+  };
 
-    // If start and end are in different text nodes and start is at the end of its node,
-    // the character is in the end node, so measure from the start of end node
-    if (
-      startPos.node !== endPos.node &&
-      startPos.node instanceof Text &&
-      endPos.node instanceof Text &&
-      startPos.offset === startPos.node.length &&
-      endPos.offset > 0
-    ) {
-      scratchRange.setStart(endPos.node, 0);
-      scratchRange.setEnd(endPos.node, endPos.offset);
-    } else {
-      scratchRange.setStart(startPos.node, startPos.offset);
-      scratchRange.setEnd(endPos.node, endPos.offset);
+  const measureCaretXOnRow = (cursorOffsetInLine: number): number | null => {
+    const maxRowTopDelta = Math.max(2, row.rect.height / 2);
+
+    const measureCharEdgeX = (
+      from: number,
+      to: number,
+      edge: "left" | "right",
+    ): number | null => {
+      const fromCodeUnit = cursorOffsetToCodeUnit(lineInfo.cursorToCodeUnit, from);
+      const toCodeUnit = cursorOffsetToCodeUnit(lineInfo.cursorToCodeUnit, to);
+      const fromPos = resolvePosition(fromCodeUnit);
+      const toPos = resolvePosition(toCodeUnit);
+      // When the measured character boundary spans across text nodes (e.g. a
+      // trailing space in one node right before an inline wrapper), some engines
+      // can return empty rect lists for a cross-node range. Prefer measuring
+      // inside the end node when the boundary lands at the end of the start node.
+      if (
+        fromPos.node !== toPos.node &&
+        fromPos.node instanceof Text &&
+        toPos.node instanceof Text &&
+        fromPos.offset === fromPos.node.length &&
+        toPos.offset > 0
+      ) {
+        scratchRange.setStart(toPos.node, 0);
+        scratchRange.setEnd(toPos.node, toPos.offset);
+      } else {
+        scratchRange.setStart(fromPos.node, fromPos.offset);
+        scratchRange.setEnd(toPos.node, toPos.offset);
+      }
+      const rects = scratchRange.getClientRects();
+      const list =
+        rects.length > 0
+          ? Array.from(rects)
+          : (() => {
+              const rect = scratchRange.getBoundingClientRect();
+              return rect.width === 0 && rect.height === 0 ? [] : [rect];
+            })();
+      if (list.length === 0) {
+        return null;
+      }
+      // Pick rects from the visual row closest to `rowTop`, then take the
+      // extreme edge across those rects. This avoids zero-width fragments
+      // skewing the result (WebKit can include those at wrap boundaries).
+      const DIST_EPS = 0.01;
+      let bestTopDistance = Number.POSITIVE_INFINITY;
+      const candidates: DOMRect[] = [];
+      for (const rect of list) {
+        const top = rect.top - containerRect.top + scroll.top;
+        const distance = Math.abs(top - rowTop);
+        if (distance + DIST_EPS < bestTopDistance) {
+          bestTopDistance = distance;
+          candidates.length = 0;
+          candidates.push(rect);
+        } else if (Math.abs(distance - bestTopDistance) <= DIST_EPS) {
+          candidates.push(rect);
+        }
+      }
+      if (candidates.length === 0 || bestTopDistance > maxRowTopDelta) {
+        return null;
+      }
+      if (edge === "left") {
+        let left = candidates[0]!.left;
+        for (const rect of candidates) {
+          left = Math.min(left, rect.left);
+        }
+        return left - containerRect.left + scroll.left;
+      }
+      let right = candidates[0]!.right;
+      for (const rect of candidates) {
+        right = Math.max(right, rect.right);
+      }
+      return right - containerRect.left + scroll.left;
+    };
+
+    // Prefer deriving boundary X from a neighboring character's rect. This is
+    // more stable than collapsed-caret rects at wrap boundaries across engines.
+    //
+    // WebKit can report "trailing" spaces at the end of a text node (right before
+    // an inline element like <a>) with a zero-width rect whose right edge equals
+    // the previous character's boundary. In that case the caret boundary after
+    // the space must be derived from the next visible character instead.
+    const prevChar =
+      cursorOffsetInLine > 0
+        ? (lineInfo.text[cursorOffsetInLine - 1] ?? "")
+        : "";
+    const preferNextForPrevWhitespace =
+      cursorOffsetInLine > row.startOffset &&
+      cursorOffsetInLine < row.endOffset &&
+      /\s/.test(prevChar);
+
+    if (preferNextForPrevWhitespace) {
+      const xNext = measureCharEdgeX(
+        cursorOffsetInLine,
+        cursorOffsetInLine + 1,
+        "left",
+      );
+      if (xNext !== null) {
+        return xNext;
+      }
     }
 
+    if (cursorOffsetInLine > row.startOffset) {
+      const xPrev = measureCharEdgeX(
+        cursorOffsetInLine - 1,
+        cursorOffsetInLine,
+        "right",
+      );
+      if (xPrev !== null) {
+        return xPrev;
+      }
+    }
+
+    if (cursorOffsetInLine < row.endOffset) {
+      const xNext = measureCharEdgeX(
+        cursorOffsetInLine,
+        cursorOffsetInLine + 1,
+        "left",
+      );
+      if (xNext !== null) {
+        return xNext;
+      }
+    }
+
+    const codeUnitOffset = cursorOffsetToCodeUnit(
+      lineInfo.cursorToCodeUnit,
+      cursorOffsetInLine,
+    );
+    const position = resolvePosition(codeUnitOffset);
+    scratchRange.setStart(position.node, position.offset);
+    scratchRange.setEnd(position.node, position.offset);
     const rects = scratchRange.getClientRects();
-    if (rects.length === 0) {
-      continue;
+    const candidates =
+      rects.length > 0
+        ? Array.from(rects)
+        : [scratchRange.getBoundingClientRect()];
+    if (candidates.length === 0) {
+      return null;
     }
-
-    const charLeftX = rects[0].left - containerRect.left + scroll.left;
-    const charRightX = rects[0].right - containerRect.left + scroll.left;
-    const distanceToLeft = Math.abs(relativeX - charLeftX);
-    const distanceToRight = Math.abs(relativeX - charRightX);
-
-    // Track first character's X position
-    if (firstCharX === null) {
-      firstCharX = charLeftX;
+    let best = candidates[0];
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const rect of candidates) {
+      const top = rect.top - containerRect.top + scroll.top;
+      const distance = Math.abs(top - rowTop);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = rect;
+      }
     }
-
-    // Check left edge (cursor position = offset, forward affinity)
-    if (distanceToLeft < closestDistance) {
-      closestDistance = distanceToLeft;
-      closestOffset = offset;
-      choseRightEdge = false;
-    } else if (distanceToLeft === closestDistance && relativeX >= charLeftX) {
-      // When tied with a previous right edge at the same position, prefer left edge
-      // if click is to the right of the boundary (forward affinity)
-      closestOffset = offset;
-      choseRightEdge = false;
+    // If the caret rect we got belongs to a different visual row (common at wrap
+    // boundaries in some engines), fall back to the layout-based approximation
+    // to keep X monotonic within this row.
+    if (bestDistance > maxRowTopDelta) {
+      return null;
     }
+    if (best.height <= 0) {
+      return null;
+    }
+    return best.left - containerRect.left + scroll.left;
+  };
 
-    // Check right edge (cursor position = offset + 1, backward affinity)
-    // Only check if this is not the last character (last char right edge is handled separately)
-    if (offset < row.endOffset - 1) {
-      if (distanceToRight < closestDistance) {
-        closestDistance = distanceToRight;
-        closestOffset = offset + 1;
-        choseRightEdge = true;
-      } else if (distanceToRight === closestDistance && relativeX < charRightX) {
-        // When tied with a previous left edge at the same position, prefer right edge
-        // if click is to the left of the boundary (backward affinity)
-        closestOffset = offset + 1;
-        choseRightEdge = true;
+  const caretX = (cursorOffsetInLine: number): number => {
+    return measureCaretXOnRow(cursorOffsetInLine) ?? approximateX(cursorOffsetInLine);
+  };
+
+  // Binary search the insertion point for relativeX among monotonic caret Xs.
+  let low = row.startOffset;
+  let high = row.endOffset;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    const xMid = caretX(mid);
+    if (xMid < relativeX) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  const candidateA = Math.max(row.startOffset, Math.min(low, row.endOffset));
+  const candidateB = Math.max(
+    row.startOffset,
+    Math.min(candidateA - 1, row.endOffset),
+  );
+  const xA = caretX(candidateA);
+  const xB = caretX(candidateB);
+  const distA = Math.abs(relativeX - xA);
+  const distB = Math.abs(relativeX - xB);
+  const DIST_EPS_PX = 0.5;
+  let closestOffset = (() => {
+    if (distB + DIST_EPS_PX < distA) {
+      return candidateB;
+    }
+    if (distA + DIST_EPS_PX < distB) {
+      return candidateA;
+    }
+    // Near-ties: decide by midpoint between the two caret boundaries. This is
+    // stable for narrow glyphs where subpixel jitter and integer mouse coords
+    // would otherwise make left/right clicks ambiguous.
+    const mid = (xA + xB) / 2;
+    return relativeX >= mid ? candidateA : candidateB;
+  })();
+
+  const endX = caretX(row.endOffset);
+  // Normalize within runs of *source-only* offsets that collapse to the same DOM
+  // caret position (e.g. "[" in a markdown link). Multiple cursor offsets may map
+  // to the same code unit offset; in that case clicks should prefer the earliest
+  // cursor offset in that collapsed run.
+  //
+  // IMPORTANT: do not collapse offsets purely by X distance — engines may report
+  // identical X for distinct, measurable caret boundaries (notably around trailing
+  // spaces at inline boundaries in WebKit). Use code-unit equality as the signal
+  // that the offsets are truly indistinguishable in the DOM.
+  {
+    const baseMeasuredX = measureCaretXOnRow(closestOffset);
+    if (baseMeasuredX !== null) {
+      const baseCodeUnit = cursorOffsetToCodeUnit(
+        lineInfo.cursorToCodeUnit,
+        closestOffset,
+      );
+      const COLLAPSE_EPS_PX = 0.25;
+      while (closestOffset > row.startOffset) {
+        const prev = closestOffset - 1;
+        const prevCodeUnit = cursorOffsetToCodeUnit(lineInfo.cursorToCodeUnit, prev);
+        if (prevCodeUnit !== baseCodeUnit) {
+          break;
+        }
+        const prevMeasuredX = measureCaretXOnRow(prev);
+        if (prevMeasuredX === null) {
+          break;
+        }
+        if (Math.abs(prevMeasuredX - baseMeasuredX) > COLLAPSE_EPS_PX) {
+          break;
+        }
+        closestOffset = prev;
       }
     }
   }
 
-  // Also check the right edge of the last character
-  if (row.endOffset > row.startOffset) {
-    const lastCharOffset = row.endOffset - 1;
-    const codeUnitStart = cursorOffsetToCodeUnit(
-      lineInfo.cursorToCodeUnit,
-      lastCharOffset,
-    );
-    const codeUnitEnd = cursorOffsetToCodeUnit(
-      lineInfo.cursorToCodeUnit,
-      row.endOffset,
-    );
-    const startPos = resolvePosition(codeUnitStart);
-    const endPos = resolvePosition(codeUnitEnd);
+  const boundaryX = caretX(closestOffset);
+  // If the click lands on the "left" side of the chosen caret boundary, treat it
+  // as selecting the right edge of the previous character (backward affinity).
+  // This preserves expected wrapper behavior at boundaries (e.g. bold continues
+  // when clicking the right side of a bold character).
+  const choseRightEdge =
+    closestOffset > row.startOffset && relativeX < boundaryX - 0.01;
 
-    // If start and end are in different text nodes and start is at the end of its node,
-    // the character is in the end node, so measure from the start of end node
-    if (
-      startPos.node !== endPos.node &&
-      startPos.node instanceof Text &&
-      endPos.node instanceof Text &&
-      startPos.offset === startPos.node.length &&
-      endPos.offset > 0
-    ) {
-      scratchRange.setStart(endPos.node, 0);
-      scratchRange.setEnd(endPos.node, endPos.offset);
-    } else {
-      scratchRange.setStart(startPos.node, startPos.offset);
-      scratchRange.setEnd(endPos.node, endPos.offset);
-    }
-
-    const rects = scratchRange.getClientRects();
-    if (rects.length > 0) {
-      lastCharRightX = rects[0].right - containerRect.left + scroll.left;
-      const distance = Math.abs(relativeX - lastCharRightX);
-      // Use <= to prefer the position after the character (like the loop does)
-      if (distance <= closestDistance) {
-        closestOffset = row.endOffset;
-        choseRightEdge = true;
-      }
-    }
-  }
-
-  // Determine if caret should have backward affinity:
-  // - When we chose based on a right edge of a character (to stick to that character)
-  // - When clicking past the last character (within the row)
-  // EXCEPT: at end of the logical line, prefer forward affinity (v1 parity: exit formatting)
-  // The isEndOfLine exception only applies when we're actually at the end position,
-  // not when we're between characters mid-line
+  // Determine if caret should have backward affinity when clicking past the end
+  // of a wrapped visual row (i.e. beyond the row-end caret). EXCEPT: at end of
+  // the logical line, prefer forward affinity (v1 parity: exit formatting).
   const isEndOfLine = row.endOffset === lineInfo.cursorLength;
   const atLineEnd = closestOffset === row.endOffset && isEndOfLine;
   const pastRowEnd =
-    (choseRightEdge && !atLineEnd) ||
-    (closestOffset === row.endOffset && !atLineEnd) ||
-    (lastCharRightX !== null && relativeX > lastCharRightX && !atLineEnd);
+    (!atLineEnd && choseRightEdge) ||
+    (!atLineEnd &&
+      closestOffset === row.endOffset &&
+      row.endOffset < lineInfo.cursorLength &&
+      relativeX > endX + 0.5);
   return {
     cursorOffset: lineStartOffset + closestOffset,
     pastRowEnd,

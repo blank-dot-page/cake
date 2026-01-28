@@ -1,9 +1,13 @@
 import { createRef, useState } from "react";
-import { describe, expect, it } from "vitest";
-import { render } from "vitest-browser-react";
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render } from "vitest-browser-react";
 import { CakeEditor, type CakeEditorRef } from "../index";
 
-function renderEditor({
+afterEach(async () => {
+  await cleanup();
+});
+
+async function renderEditor({
   value,
   selection,
 }: {
@@ -11,7 +15,7 @@ function renderEditor({
   selection?: { start: number; end: number };
 }) {
   const ref = createRef<CakeEditorRef>();
-  render(
+  await render(
     <CakeEditor
       ref={ref}
       value={value}
@@ -35,7 +39,7 @@ describe("page load caret positioning (replicates editor.client.tsx runCaretInit
    */
   it("applyUpdate positions caret at end after mount (page load scenario)", async () => {
     // Step 1: Mount editor with content, no initial selection
-    const ref = renderEditor({ value: "Hello world" });
+    const ref = await renderEditor({ value: "Hello world" });
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     // Initial selection should be at 0
@@ -91,7 +95,7 @@ describe("page load caret positioning (replicates editor.client.tsx runCaretInit
       );
     };
 
-    render(<TestComponent />);
+    await render(<TestComponent />);
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     // Initial state: selection is null in React, engine has {0,0}

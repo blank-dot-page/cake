@@ -10,3 +10,4 @@ test-results/
 .paseo/
 .vercel
 .env*.local
+.vitest*

@@ -32,7 +32,9 @@ describe("link shortcut (Cmd+Shift+U)", () => {
 
     expect(harness.engine.getValue()).toBe("hello [world]()");
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    // Popover opens after the engine schedules it on the next animation frame.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const popover = document.querySelector(".cake-link-popover");
     expect(popover).not.toBeNull();
 

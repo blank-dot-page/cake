@@ -4,6 +4,7 @@ import {
   createOffsetToXMeasurer,
   cursorOffsetToDomOffset,
   getLineElement,
+  groupDomRectsByRow,
   measureLayoutModelRangeFromDom,
   resolveDomPosition,
   toLayoutRect,
@@ -236,7 +237,20 @@ export function getCaretRect(params: {
       fwdRange.setEnd(fwdEnd.node, fwdEnd.offset);
       const fwdRects = fwdRange.getClientRects();
       if (fwdRects.length > 0) {
-        forwardRect = fwdRects[0];
+        // Like backward probing, prefer a rect with actual width. At wrap
+        // boundaries WebKit can include a zero-width marker rect; for forward
+        // probing we want the fragment on the *next* row (largest top).
+        let bestRect = fwdRects[0];
+        for (let i = 1; i < fwdRects.length; i += 1) {
+          const rect = fwdRects[i];
+          if (
+            rect.width > 0 &&
+            (bestRect.width === 0 || rect.top > bestRect.top)
+          ) {
+            bestRect = rect;
+          }
+        }
+        forwardRect = bestRect;
       }
     }
 
@@ -250,8 +264,49 @@ export function getCaretRect(params: {
 
     if (atWrapBoundary) {
       if (affinity === "backward" && backwardRect) {
-        probeRect = backwardRect;
-        useRightEdge = true;
+        // In WebKit, collapsed ranges at a wrap boundary can report their rect on
+        // the *next* visual row. Even a 1-char backward range can be ambiguous
+        // at whitespace-wrapping points. When we intentionally keep backward
+        // affinity (e.g. "end of visual row"), anchor the caret to the previous
+        // row's line box fragment and use its right edge.
+        if (forwardRect) {
+          const startPos = resolveDomPosition(
+            lineElement,
+            cursorOffsetToDomOffset(lineInfo.cursorToCodeUnit, 0),
+          );
+          const endPos = resolveDomPosition(
+            lineElement,
+            cursorOffsetToDomOffset(lineInfo.cursorToCodeUnit, lineInfo.cursorLength),
+          );
+          const lineRange = document.createRange();
+          lineRange.setStart(startPos.node, startPos.offset);
+          lineRange.setEnd(endPos.node, endPos.offset);
+          const rowRects = groupDomRectsByRow(Array.from(lineRange.getClientRects()));
+          // Pick the closest row strictly above the next-row top.
+          const ROW_EPS_PX = 1;
+          let previousRow: DOMRect | null = null;
+          for (const rowRect of rowRects) {
+            if (rowRect.top < forwardRect.top - ROW_EPS_PX) {
+              previousRow = rowRect;
+            } else {
+              break;
+            }
+          }
+          if (previousRow) {
+            caretRect = new DOMRect(
+              previousRow.right,
+              previousRow.top,
+              0,
+              previousRow.height,
+            );
+          } else {
+            probeRect = backwardRect;
+            useRightEdge = true;
+          }
+        } else {
+          probeRect = backwardRect;
+          useRightEdge = true;
+        }
       } else if (forwardRect) {
         probeRect = forwardRect;
         useRightEdge = false;
@@ -272,6 +327,42 @@ export function getCaretRect(params: {
     if (probeRect && probeRect.height > 0) {
       const left = useRightEdge ? probeRect.right : probeRect.left;
       caretRect = new DOMRect(left, probeRect.top, 0, probeRect.height);
+    }
+
+    // WebKit can report the collapsed caret at a wrap boundary as belonging to
+    // the *next* visual row even when we explicitly want backward affinity
+    // (e.g. "end of visual row"). Anchor the caret to the previous row fragment
+    // when a forward-probe indicates there is a next row.
+    if (affinity === "backward" && forwardRect) {
+      const startPos = resolveDomPosition(
+        lineElement,
+        cursorOffsetToDomOffset(lineInfo.cursorToCodeUnit, 0),
+      );
+      const endPos = resolveDomPosition(
+        lineElement,
+        cursorOffsetToDomOffset(lineInfo.cursorToCodeUnit, lineInfo.cursorLength),
+      );
+      const lineRange = document.createRange();
+      lineRange.setStart(startPos.node, startPos.offset);
+      lineRange.setEnd(endPos.node, endPos.offset);
+      const rowRects = groupDomRectsByRow(Array.from(lineRange.getClientRects()));
+      const ROW_EPS_PX = 1;
+      let previousRow: DOMRect | null = null;
+      for (const rowRect of rowRects) {
+        if (rowRect.top < forwardRect.top - ROW_EPS_PX) {
+          previousRow = rowRect;
+        } else {
+          break;
+        }
+      }
+      if (previousRow && caretRect.top >= forwardRect.top - ROW_EPS_PX) {
+        caretRect = new DOMRect(
+          previousRow.right,
+          previousRow.top,
+          0,
+          previousRow.height,
+        );
+      }
     }
   }
 

@@ -1,7 +1,7 @@
 import { createRef, useEffect, useRef, useState } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
-import { render } from "vitest-browser-react";
+import { cleanup, render } from "vitest-browser-react";
 import { CakeEditor, type CakeEditorRef } from "../index";
 import type {
   CakeExtension,
@@ -10,6 +10,10 @@ import type {
 } from "../core/runtime";
 import { CursorSourceBuilder } from "../core/mapping/cursor-source-map";
 import type { Inline } from "../core/types";
+
+afterEach(async () => {
+  await cleanup();
+});
 
 const HELLO_KIND = "hello-inline";
 
@@ -204,7 +208,8 @@ function generateLongContent(lines: number): string {
 describe("cake overlay extensions", () => {
   it("renders a hello popover anchored to inline extension (scroll-aware)", async () => {
     const markdown = `${generateLongContent(50)}\n\n[[hello]]\n\n${generateLongContent(5)}`;
-    renderEditor(markdown);
+    const { renderResult } = renderEditor(markdown);
+    await renderResult;
 
     const cake = getCakeContainer();
     cake.scrollTop = cake.scrollHeight;

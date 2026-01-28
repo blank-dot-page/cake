@@ -385,9 +385,27 @@ function handleDeleteBackward(state: RuntimeState): EditResult | null {
     return null;
   }
 
-  const cursorSourcePos = map.cursorToSource(cursorPos, "backward");
-  const lineInfo = getLineInfo(source, cursorSourcePos);
-  const prefixLength = getListPrefixLength(lineInfo.line);
+  // At boundaries where source-only tokens exist (e.g. list marker + a link
+  // label that starts with a source-only "["), mapping a cursor position back
+  // to source with a fixed bias can land "inside" the list prefix.
+  // Probe both sides so Backspace can reliably treat the caret as being at the
+  // list content start when that's what the DOM position represents.
+  const cursorSourcePosBackward = map.cursorToSource(cursorPos, "backward");
+  const cursorSourcePosForward = map.cursorToSource(cursorPos, "forward");
+  const lineInfoBackward = getLineInfo(source, cursorSourcePosBackward);
+  const lineInfoForward = getLineInfo(source, cursorSourcePosForward);
+
+  // Prefer the forward-mapped info when it indicates we're exactly at the
+  // content start (i.e. after the list marker + space).
+  const forwardPrefixLength = getListPrefixLength(lineInfoForward.line);
+  const backwardPrefixLength = getListPrefixLength(lineInfoBackward.line);
+  const lineInfo =
+    forwardPrefixLength !== null &&
+    lineInfoForward.offsetInLine === forwardPrefixLength
+      ? lineInfoForward
+      : lineInfoBackward;
+  const prefixLength =
+    lineInfo === lineInfoForward ? forwardPrefixLength : backwardPrefixLength;
 
   if (prefixLength === null) {
     // Not a list line - check if we're merging with a list

@@ -1,12 +1,16 @@
 import { createRef } from "react";
-import { describe, expect, it } from "vitest";
-import { render } from "vitest-browser-react";
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render } from "vitest-browser-react";
 import { CakeEditor, type CakeEditorRef } from "../index";
 import { createRuntime } from "../core/runtime";
 
-function renderEditor({ value }: { value: string }) {
+afterEach(async () => {
+  await cleanup();
+});
+
+async function renderEditor({ value }: { value: string }) {
   const ref = createRef<CakeEditorRef>();
-  render(
+  await render(
     <CakeEditor
       ref={ref}
       value={value}
@@ -56,7 +60,7 @@ async function assertBundledRoundtrip(value: string): Promise<void> {
 
 describe("cake formatting interactions", () => {
   it("Cmd+A then Cmd+B on *italics* does not surface markers; delete-all leaves empty doc", async () => {
-    const ref = renderEditor({ value: "*italics*" });
+    const ref = await renderEditor({ value: "*italics*" });
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     ref.current?.focus();
@@ -84,7 +88,7 @@ describe("cake formatting interactions", () => {
   });
 
   it("copy/paste with selection preserves bold wrapper (no dangling markers)", async () => {
-    const ref = renderEditor({ value: "text" });
+    const ref = await renderEditor({ value: "text" });
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     ref.current?.focus();
@@ -102,7 +106,7 @@ describe("cake formatting interactions", () => {
   });
 
   it("pasting a link over bold selection produces a bold link (markers stay balanced)", async () => {
-    const ref = renderEditor({ value: "text" });
+    const ref = await renderEditor({ value: "text" });
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     ref.current?.focus();
@@ -122,7 +126,7 @@ describe("cake formatting interactions", () => {
   });
 
   it("pasting over mixed-format selection never leaks wrapper markers", async () => {
-    const ref = renderEditor({ value: "**a**b" });
+    const ref = await renderEditor({ value: "**a**b" });
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     ref.current?.focus();

@@ -423,7 +423,7 @@ describe("Cake formatting parity (browser)", () => {
     await h.typeText("world");
     await tick();
 
-    await h.clickAt(0, 0);
+    await h.clickLeftOf(0, 0);
     for (let i = 0; i < 11; i += 1) {
       await h.pressKey("ArrowRight", { shift: true });
     }

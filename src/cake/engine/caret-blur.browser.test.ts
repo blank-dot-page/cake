@@ -28,13 +28,19 @@ describe("caret visibility on blur", () => {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.style.position = "absolute";
-    checkbox.style.top = "260px";
-    checkbox.style.left = "0";
+    // Keep it within the viewport across engines so a click reliably focuses it.
+    checkbox.style.top = "10px";
+    checkbox.style.left = "10px";
     checkbox.style.zIndex = "9999";
     document.body.appendChild(checkbox);
 
-    await userEvent.click(checkbox);
+    // In WebKit headless, clicking doesn't always move focus reliably; focus
+    // shift is what matters for caret visibility.
+    checkbox.focus();
     expect(document.activeElement).toBe(checkbox);
+    // Focus/blur handlers schedule overlay updates in a microtask + rAF.
+    // Give it two frames to ensure it has applied.
+    await nextFrame();
     await nextFrame();
 
     // The editor no longer has focus; caret should be hidden.
