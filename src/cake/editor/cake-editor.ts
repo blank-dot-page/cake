@@ -3990,11 +3990,12 @@ export class CakeEditor {
       return;
     }
 
-    // Let image file drops bubble to the image-drop extension
+    // Block browser's native image drop behavior (which inserts <img> into DOM).
+    // Extensions can listen on the container to handle image uploads themselves.
     const dataTransfer = event.dataTransfer;
     const hasImageFile = this.dataTransferHasImageFile(dataTransfer);
     if (hasImageFile) {
-      // Don't prevent default or stop propagation - let the extension handle it
+      event.preventDefault();
       this.textDragState = null;
       return;
     }
