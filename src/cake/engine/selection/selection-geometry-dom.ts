@@ -206,7 +206,19 @@ export function getCaretRect(params: {
       backRange.setEnd(backEnd.node, backEnd.offset);
       const backRects = backRange.getClientRects();
       if (backRects.length > 0) {
-        backwardRect = backRects[backRects.length - 1];
+        // When a range spans a wrap boundary, getClientRects() returns multiple rects:
+        // one for the character on the previous row (with width) and a zero-width
+        // rect at the wrap point. For backward probing, we want the rect with
+        // actual width that represents the character, not the zero-width wrap marker.
+        // If multiple rects have width, prefer the one with the smallest top (previous row).
+        let bestRect = backRects[backRects.length - 1];
+        for (let i = 0; i < backRects.length; i += 1) {
+          const rect = backRects[i];
+          if (rect.width > 0 && (bestRect.width === 0 || rect.top < bestRect.top)) {
+            bestRect = rect;
+          }
+        }
+        backwardRect = bestRect;
       }
     }
 

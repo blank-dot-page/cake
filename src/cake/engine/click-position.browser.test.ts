@@ -1,5 +1,4 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { page } from "vitest/browser";
 import { createTestHarness, type TestHarness } from "../test/harness";
 
 describe("CakeEngine click positioning", () => {
@@ -319,9 +318,6 @@ describe("CakeEngine click positioning", () => {
       // Wait to ensure any async selection updates have settled
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Take screenshot for visual verification
-      await page.screenshot({ path: "click-position-test.png" });
-
       // Caret should be placed AFTER that character (at the break point)
       expect(harness.selection.start).toBe(lastCharOnFirstRow + 1);
       expect(harness.selection.end).toBe(lastCharOnFirstRow + 1);
@@ -440,9 +436,6 @@ describe("CakeEngine click positioning", () => {
       // Wait to ensure any async selection updates have settled
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Take screenshot for visual verification
-      await page.screenshot({ path: "click-margin-test.png" });
-
       // Caret should be placed at the end of the first visual row
       expect(harness.selection.start).toBe(lastCharOnFirstRow + 1);
       expect(harness.selection.end).toBe(lastCharOnFirstRow + 1);
@@ -495,8 +488,6 @@ describe("CakeEngine click positioning", () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Take screenshot for visual verification
-      await page.screenshot({ path: "click-empty-space-test.png" });
-
       // Caret should be placed at the end of the first visual row
       expect(harness.selection.start).toBe(lastCharOnFirstRow + 1);
       expect(harness.selection.end).toBe(lastCharOnFirstRow + 1);
@@ -554,9 +545,6 @@ describe("CakeEngine click positioning", () => {
 
       // Wait to ensure any async selection updates have settled
       await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Take screenshot for visual verification
-      await page.screenshot({ path: "click-empty-space-line-height-test.png" });
 
       console.log("selection after click:", JSON.stringify(harness.selection));
 
@@ -633,9 +621,6 @@ describe("CakeEngine click positioning", () => {
 
       // Wait to ensure any async selection updates have settled
       await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Take screenshot for visual verification
-      await page.screenshot({ path: "click-line-height-gap-test.png" });
 
       console.log("selection after click:", JSON.stringify(harness.selection));
 

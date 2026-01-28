@@ -100,11 +100,17 @@ export function createTestHarness(
   document.body.appendChild(container);
 
   let styleElement: HTMLStyleElement | null = null;
-  if (options.css) {
-    styleElement = document.createElement("style");
-    styleElement.textContent = options.css;
-    document.head.appendChild(styleElement);
-  }
+  const caretStyles = `
+    .cake-caret {
+      width: 3px !important;
+      animation: none !important;
+      background-color: #000 !important;
+      display: block !important;
+    }
+  `;
+  styleElement = document.createElement("style");
+  styleElement.textContent = caretStyles + (options.css ?? "");
+  document.head.appendChild(styleElement);
 
   const extensions = options.extensions ?? bundledExtensions;
   const engine = new CakeEngine({

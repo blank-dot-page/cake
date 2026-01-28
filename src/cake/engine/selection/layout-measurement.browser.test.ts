@@ -267,4 +267,187 @@ describe("Layout measurement with variable-width fonts", () => {
     // Document the expected failure
     expect(measured0.endOffset).toBe(actual0.endOffset);
   });
+
+  it("row rect.top values match caret positions with line-height: 2", () => {
+    // This tests whether row.rect.top aligns with where the caret would be
+    // The bug: with line-height: 2, there's extra spacing and row.rect.top
+    // might not match the caret's top position
+    container = document.createElement("div");
+    container.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 300px;
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 2;
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    document.body.appendChild(container);
+
+    const lineDiv = document.createElement("div");
+    lineDiv.setAttribute("data-line-index", "0");
+    const text = "This is a fairly long line that will wrap into two rows";
+    lineDiv.textContent = text;
+    container.appendChild(lineDiv);
+
+    const textNode = lineDiv.firstChild as Text;
+    const actualRows = measureActualRowBoundaries(textNode);
+
+    console.log("=== LINE-HEIGHT: 2 TEST ===");
+    console.log("Text:", text);
+    console.log("Actual rows from DOM:", actualRows);
+
+    const lines = [createLineInfo(text, 0)];
+    const layout = measureLayoutModelFromDom({
+      lines,
+      root: container,
+      container,
+    });
+
+    console.log(
+      "Measured rows:",
+      layout?.lines[0]?.rows.map((r) => ({
+        startOffset: r.startOffset,
+        endOffset: r.endOffset,
+        rectTop: r.rect.top,
+      })),
+    );
+
+    expect(layout).not.toBeNull();
+    expect(layout!.lines[0].rows.length).toBeGreaterThanOrEqual(2);
+
+    // Now simulate what happens when we position caret at end of first row
+    // and check if the caret Y matches row.rect.top
+    const firstRowEndOffset = layout!.lines[0].rows[0].endOffset;
+    const range = document.createRange();
+
+    // Get caret position at end of first row
+    range.setStart(textNode, firstRowEndOffset);
+    range.setEnd(textNode, firstRowEndOffset);
+    const caretRects = range.getClientRects();
+    const caretRect = caretRects[0] || range.getBoundingClientRect();
+
+    console.log("Caret at end of first row:");
+    console.log("  offset:", firstRowEndOffset);
+    console.log("  caretRect.top:", caretRect.top);
+    console.log("  row[0].rect.top:", layout!.lines[0].rows[0].rect.top);
+    console.log("  row[1].rect.top:", layout!.lines[0].rows[1].rect.top);
+
+    // The key question: does the caret Y match row[0].rect.top?
+    // Or does it match row[1].rect.top? (which would cause the bug)
+    const distanceToRow0 = Math.abs(
+      caretRect.top - layout!.lines[0].rows[0].rect.top,
+    );
+    const distanceToRow1 = Math.abs(
+      caretRect.top - layout!.lines[0].rows[1].rect.top,
+    );
+
+    console.log("Distance to row 0:", distanceToRow0);
+    console.log("Distance to row 1:", distanceToRow1);
+    console.log(
+      "Closest row:",
+      distanceToRow0 < distanceToRow1 ? "row 0 (correct)" : "row 1 (BUG!)",
+    );
+
+    // The caret should be closer to row 0
+    expect(distanceToRow0).toBeLessThan(distanceToRow1);
+  });
+
+  it("row rect.top matches caret position at row BOUNDARY with line-height: 2", () => {
+    // Test the exact boundary between rows - this is where the bug might occur
+    // At offset 32 (end of row 0 / start of row 1), the caret could be on either row
+    // depending on affinity and how the browser reports the position
+    container = document.createElement("div");
+    container.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 300px;
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 2;
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    document.body.appendChild(container);
+
+    const lineDiv = document.createElement("div");
+    lineDiv.setAttribute("data-line-index", "0");
+    const text = "This is a fairly long line that will wrap into two rows";
+    lineDiv.textContent = text;
+    container.appendChild(lineDiv);
+
+    const textNode = lineDiv.firstChild as Text;
+
+    const lines = [createLineInfo(text, 0)];
+    const layout = measureLayoutModelFromDom({
+      lines,
+      root: container,
+      container,
+    });
+
+    expect(layout).not.toBeNull();
+    expect(layout!.lines[0].rows.length).toBeGreaterThanOrEqual(2);
+
+    const boundaryOffset = layout!.lines[0].rows[0].endOffset;
+    console.log("=== ROW BOUNDARY TEST (line-height: 2) ===");
+    console.log("Boundary offset:", boundaryOffset);
+
+    // Test caret at boundary with FORWARD affinity (should be on row 1)
+    const rangeForward = document.createRange();
+    rangeForward.setStart(textNode, boundaryOffset);
+    rangeForward.setEnd(textNode, boundaryOffset);
+    const forwardRect = rangeForward.getBoundingClientRect();
+
+    // Test caret at boundary with BACKWARD affinity
+    // To get backward affinity, we need to measure the character before
+    const rangeBackward = document.createRange();
+    rangeBackward.setStart(textNode, boundaryOffset - 1);
+    rangeBackward.setEnd(textNode, boundaryOffset);
+    const backwardRects = rangeBackward.getClientRects();
+    const backwardRect = backwardRects[backwardRects.length - 1]; // Last rect = right edge
+
+    console.log("Forward caret at boundary:");
+    console.log("  rect.top:", forwardRect.top);
+    console.log("Backward caret at boundary (right edge of prev char):");
+    console.log("  rect.top:", backwardRect?.top);
+    console.log("Row 0 rect.top:", layout!.lines[0].rows[0].rect.top);
+    console.log("Row 1 rect.top:", layout!.lines[0].rows[1].rect.top);
+
+    // Check which row the forward caret would match
+    const forwardDistToRow0 = Math.abs(
+      forwardRect.top - layout!.lines[0].rows[0].rect.top,
+    );
+    const forwardDistToRow1 = Math.abs(
+      forwardRect.top - layout!.lines[0].rows[1].rect.top,
+    );
+    console.log("Forward caret distance to row 0:", forwardDistToRow0);
+    console.log("Forward caret distance to row 1:", forwardDistToRow1);
+    console.log(
+      "Forward caret closest to:",
+      forwardDistToRow0 < forwardDistToRow1 ? "row 0" : "row 1",
+    );
+
+    if (backwardRect) {
+      const backwardDistToRow0 = Math.abs(
+        backwardRect.top - layout!.lines[0].rows[0].rect.top,
+      );
+      const backwardDistToRow1 = Math.abs(
+        backwardRect.top - layout!.lines[0].rows[1].rect.top,
+      );
+      console.log("Backward caret distance to row 0:", backwardDistToRow0);
+      console.log("Backward caret distance to row 1:", backwardDistToRow1);
+      console.log(
+        "Backward caret closest to:",
+        backwardDistToRow0 < backwardDistToRow1 ? "row 0" : "row 1",
+      );
+    }
+
+    // At the boundary offset, the zero-width range gives a rect at the end of row 0.
+    // This is correct browser behavior - the offset is AT the boundary, not past it.
+    // To be on row 1, the offset would need to be AFTER the boundary (offset + 1).
+    expect(forwardDistToRow0).toBeLessThanOrEqual(forwardDistToRow1);
+  });
 });
