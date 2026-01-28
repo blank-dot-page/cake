@@ -3686,10 +3686,7 @@ export class CakeEngine {
       indicator.style.position = "absolute";
       indicator.style.left = "0";
       indicator.style.right = "0";
-      indicator.style.height = "2px";
-      indicator.style.background = "var(--accent-color, #0066cc)";
       indicator.style.pointerEvents = "none";
-      indicator.style.zIndex = "1000";
       this.dropIndicator = indicator;
     }
 
