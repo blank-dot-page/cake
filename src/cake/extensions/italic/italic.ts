@@ -1,5 +1,6 @@
 import {
   defineExtension,
+  type EditCommand,
   type ParseInlineResult,
   type SerializeInlineResult,
 } from "../../core/runtime";
@@ -8,14 +9,24 @@ import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 
 const ITALIC_KIND = "italic";
 
-export const italicExtension = defineExtension({
+/** Semantic command to toggle italic formatting */
+type ToggleItalicCommand = { type: "toggle-italic" };
+
+export const italicExtension = defineExtension<ToggleItalicCommand>({
   name: "italic",
   toggleInline: { kind: ITALIC_KIND, markers: ["*", "_"] },
   keybindings: [
-    { key: "i", meta: true, command: { type: "toggle-inline", marker: "*" } },
-    { key: "i", ctrl: true, command: { type: "toggle-inline", marker: "*" } },
+    { key: "i", meta: true, command: { type: "toggle-italic" } },
+    { key: "i", ctrl: true, command: { type: "toggle-italic" } },
   ],
   inlineWrapperAffinity: [{ kind: ITALIC_KIND, inclusive: true }],
+  onEdit(command) {
+    // Handle semantic command by delegating to toggle-inline
+    if (command.type === "toggle-italic") {
+      return { type: "toggle-inline", marker: "*" } as EditCommand;
+    }
+    return null;
+  },
   parseInline(source, start, end, context): ParseInlineResult {
     const char = source[start];
     // Support both * and _ for italic (like v1)

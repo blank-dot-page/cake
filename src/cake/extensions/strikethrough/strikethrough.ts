@@ -1,5 +1,6 @@
 import {
   defineExtension,
+  type EditCommand,
   type ParseInlineResult,
   type SerializeInlineResult,
 } from "../../core/runtime";
@@ -8,7 +9,10 @@ import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 
 const STRIKE_KIND = "strikethrough";
 
-export const strikethroughExtension = defineExtension({
+/** Semantic command to toggle strikethrough formatting */
+type ToggleStrikethroughCommand = { type: "toggle-strikethrough" };
+
+export const strikethroughExtension = defineExtension<ToggleStrikethroughCommand>({
   name: "strikethrough",
   toggleInline: { kind: STRIKE_KIND, markers: ["~~"] },
   keybindings: [
@@ -16,16 +20,23 @@ export const strikethroughExtension = defineExtension({
       key: "x",
       meta: true,
       shift: true,
-      command: { type: "toggle-inline", marker: "~~" },
+      command: { type: "toggle-strikethrough" },
     },
     {
       key: "x",
       ctrl: true,
       shift: true,
-      command: { type: "toggle-inline", marker: "~~" },
+      command: { type: "toggle-strikethrough" },
     },
   ],
   inlineWrapperAffinity: [{ kind: STRIKE_KIND, inclusive: true }],
+  onEdit(command) {
+    // Handle semantic command by delegating to toggle-inline
+    if (command.type === "toggle-strikethrough") {
+      return { type: "toggle-inline", marker: "~~" } as EditCommand;
+    }
+    return null;
+  },
   parseInline(source, start, end, context): ParseInlineResult {
     if (source.slice(start, start + 2) !== "~~") {
       return null;

@@ -2,7 +2,6 @@ import { createRef } from "react";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 import { CakeEditor, type CakeEditorRef } from "../index";
-import { toggleBold } from "../../codemirror/markdown-commands";
 import { createRuntime } from "../core/runtime";
 
 function renderEditor({ value }: { value: string }) {
@@ -62,7 +61,7 @@ describe("cake formatting interactions", () => {
 
     ref.current?.focus();
     ref.current?.selectAll();
-    expect(ref.current?.executeCommand(toggleBold)).toBe(true);
+    expect(ref.current?.executeCommand({ type: "toggle-bold" })).toBe(true);
 
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
@@ -90,7 +89,7 @@ describe("cake formatting interactions", () => {
 
     ref.current?.focus();
     ref.current?.selectAll();
-    expect(ref.current?.executeCommand(toggleBold)).toBe(true);
+    expect(ref.current?.executeCommand({ type: "toggle-bold" })).toBe(true);
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     // Simulate Cmd+V while the text is still selected.
@@ -108,7 +107,7 @@ describe("cake formatting interactions", () => {
 
     ref.current?.focus();
     ref.current?.selectAll();
-    expect(ref.current?.executeCommand(toggleBold)).toBe(true);
+    expect(ref.current?.executeCommand({ type: "toggle-bold" })).toBe(true);
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     ref.current?.selectAll();

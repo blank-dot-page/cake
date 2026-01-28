@@ -14,6 +14,9 @@ const HEADING_PATTERN = /^(#{1,3}) /;
 
 type HeadingData = { level: number };
 
+/** Semantic command to toggle heading formatting */
+type ToggleHeadingCommand = { type: "toggle-heading"; level?: number };
+
 function findLineStartInSource(source: string, sourceOffset: number): number {
   let lineStart = sourceOffset;
   while (lineStart > 0 && source[lineStart - 1] !== "\n") {
@@ -159,9 +162,102 @@ function shouldExitHeadingOnLineBreak(state: RuntimeState): boolean {
   return sourcePos >= contentStart && sourcePos <= lineEnd;
 }
 
-export const headingExtension = defineExtension({
+function handleToggleHeading(
+  state: RuntimeState,
+  targetLevel: number,
+): EditResult | null {
+  const { source, selection, map, runtime } = state;
+
+  // Get the cursor's source position
+  const cursorPos = Math.min(selection.start, selection.end);
+  const sourcePos = map.cursorToSource(
+    cursorPos,
+    selection.affinity ?? "forward",
+  );
+
+  // Find line boundaries in source
+  const lineStart = findLineStartInSource(source, sourcePos);
+  let lineEnd = source.indexOf("\n", lineStart);
+  if (lineEnd === -1) {
+    lineEnd = source.length;
+  }
+
+  const lineContent = source.slice(lineStart, lineEnd);
+  const headingMatch = lineContent.match(HEADING_PATTERN);
+
+  let newSource: string;
+  let newCursorOffset: number;
+
+  if (headingMatch) {
+    // Line is already a heading
+    const currentLevel = headingMatch[1].length;
+    const existingMarker = headingMatch[0]; // e.g., "# " or "## "
+
+    if (currentLevel === targetLevel) {
+      // Same level - remove the heading
+      newSource =
+        source.slice(0, lineStart) +
+        lineContent.slice(existingMarker.length) +
+        source.slice(lineEnd);
+
+      // Adjust cursor position - move back by marker length
+      const cursorLineOffset = sourcePos - lineStart;
+      if (cursorLineOffset >= existingMarker.length) {
+        newCursorOffset = sourcePos - existingMarker.length;
+      } else {
+        newCursorOffset = lineStart;
+      }
+    } else {
+      // Different level - change the heading level
+      const newMarker = "#".repeat(targetLevel) + " ";
+      newSource =
+        source.slice(0, lineStart) +
+        newMarker +
+        lineContent.slice(existingMarker.length) +
+        source.slice(lineEnd);
+
+      // Adjust cursor position for marker length difference
+      const markerDiff = newMarker.length - existingMarker.length;
+      const cursorLineOffset = sourcePos - lineStart;
+      if (cursorLineOffset >= existingMarker.length) {
+        newCursorOffset = sourcePos + markerDiff;
+      } else {
+        newCursorOffset = lineStart + newMarker.length;
+      }
+    }
+  } else {
+    // Line is not a heading - add the heading marker
+    const newMarker = "#".repeat(targetLevel) + " ";
+    newSource =
+      source.slice(0, lineStart) + newMarker + lineContent + source.slice(lineEnd);
+
+    // Cursor moves forward by marker length
+    newCursorOffset = sourcePos + newMarker.length;
+  }
+
+  // Create new state and map cursor through it
+  const next = runtime.createState(newSource);
+  const caretCursor = next.map.sourceToCursor(newCursorOffset, "forward");
+
+  return {
+    source: newSource,
+    selection: {
+      start: caretCursor.cursorOffset,
+      end: caretCursor.cursorOffset,
+      affinity: "forward",
+    },
+  };
+}
+
+export const headingExtension = defineExtension<ToggleHeadingCommand>({
   name: "heading",
   onEdit(command, state) {
+    // Handle semantic toggle-heading command
+    if (command.type === "toggle-heading") {
+      const level = command.level ?? 1;
+      return handleToggleHeading(state, level);
+    }
+
     if (command.type === "delete-backward") {
       return handleDeleteBackward(state);
     }

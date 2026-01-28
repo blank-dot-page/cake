@@ -436,7 +436,10 @@ export class CakeEngine {
     return this.history.redoStack.length > 0;
   }
 
-  executeCommand(command: EditCommand): boolean {
+  executeCommand(
+    command: EditCommand,
+    options?: { restoreFocus?: boolean },
+  ): boolean {
     // Check for openPopover flag on any command (used by link extension)
     const shouldOpenLinkPopover =
       "openPopover" in command && command.openPopover === true;
@@ -453,6 +456,9 @@ export class CakeEngine {
       queueMicrotask(() => {
         this.openLinkPopoverForSelection(true);
       });
+    }
+    if (options?.restoreFocus) {
+      this.focus();
     }
     return true;
   }
@@ -635,7 +641,9 @@ export class CakeEngine {
     );
     const existingChildren = Array.from(this.contentRoot.childNodes);
     const isManagedChild = (node: Node): boolean =>
-      node instanceof Element && node.hasAttribute("data-line-index");
+      node instanceof Element &&
+      (node.hasAttribute("data-line-index") ||
+        node.hasAttribute("data-block-wrapper"));
     const existingManagedChildren = existingChildren.filter(isManagedChild);
     const preservedChildren = existingChildren.filter((node) => !isManagedChild(node));
     const needsUpdate =

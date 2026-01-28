@@ -5,3 +5,6 @@ export type {
   CakeEditorSelection,
   CakeEditorUpdate,
 } from "./react/CakeEditor";
+
+// Export command types for use with runCommand
+export type { EditCommand, CoreEditCommand, ExtensionCommand } from "./core/runtime";

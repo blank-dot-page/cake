@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type { StateCommand } from "@codemirror/state";
 import type { Selection } from "../core/types";
 import type {
   CakeExtension,
@@ -18,14 +17,6 @@ import {
   bundledExtensions,
   bundledExtensionsWithoutImage,
 } from "../extensions";
-import {
-  toggleBold,
-  toggleItalic,
-  toggleLink,
-  toggleBulletList,
-  toggleNumberedList,
-  toggleStrikethrough,
-} from "../../codemirror/markdown-commands";
 
 function toEngineSelection(selection?: CakeEditorSelection): Selection {
   if (!selection) {
@@ -36,32 +27,6 @@ function toEngineSelection(selection?: CakeEditorSelection): Selection {
     end: selection.end,
     affinity: selection.affinity,
   };
-}
-
-const BOLD_MARKER = "**";
-const ITALIC_MARKER = "*";
-const STRIKETHROUGH_MARKER = "~~";
-
-function mapCommandToEditCommand(command: StateCommand): EditCommand | null {
-  if (command === toggleBold) {
-    return { type: "toggle-inline", marker: BOLD_MARKER };
-  }
-  if (command === toggleItalic) {
-    return { type: "toggle-inline", marker: ITALIC_MARKER };
-  }
-  if (command === toggleStrikethrough) {
-    return { type: "toggle-inline", marker: STRIKETHROUGH_MARKER };
-  }
-  if (command === toggleLink) {
-    return { type: "wrap-link", openPopover: true };
-  }
-  if (command === toggleBulletList) {
-    return { type: "toggle-bullet-list" };
-  }
-  if (command === toggleNumberedList) {
-    return { type: "toggle-numbered-list" };
-  }
-  return null;
 }
 
 export type CakeEditorSelection = {
@@ -101,7 +66,23 @@ export interface CakeEditorRef {
   blur: () => void;
   hasFocus: () => boolean;
   selectAll: () => void;
-  executeCommand: (command: StateCommand) => boolean;
+  /**
+   * Execute a semantic edit command.
+   *
+   * Semantic commands are defined by extensions and allow callers to use
+   * high-level commands like `{ type: "toggle-bold" }` instead of
+   * syntax-specific commands like `{ type: "toggle-inline", marker: "**" }`.
+   *
+   * Available commands depend on which extensions are registered.
+   *
+   * @param command - The command to execute
+   * @param options.restoreFocus - If true, refocus the editor after executing.
+   *   Use this when calling from a toolbar button that steals focus.
+   */
+  executeCommand: (
+    command: EditCommand,
+    options?: { restoreFocus?: boolean },
+  ) => boolean;
   applyUpdate: (update: CakeEditorUpdate) => void;
   getValue: () => string;
   getSelection: () => { start: number; end: number } | null;
@@ -239,15 +220,11 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
         selectAll: () => {
           engineRef.current?.selectAll();
         },
-        executeCommand: (command: StateCommand) => {
+        executeCommand: (command: EditCommand, options?: { restoreFocus?: boolean }) => {
           if (!engineRef.current) {
             return false;
           }
-          const editCommand = mapCommandToEditCommand(command);
-          if (!editCommand) {
-            return false;
-          }
-          return engineRef.current.executeCommand(editCommand);
+          return engineRef.current.executeCommand(command, options);
         },
         applyUpdate: (update: CakeEditorUpdate) => {
           if (!engineRef.current) {
