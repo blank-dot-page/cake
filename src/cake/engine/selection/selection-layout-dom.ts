@@ -857,6 +857,29 @@ export function hitTestFromLayout(params: {
     return measureCaretXOnRow(cursorOffsetInLine) ?? approximateX(cursorOffsetInLine);
   };
 
+  // Check if the click is outside the row's horizontal bounds (i.e. in container padding).
+  // If so, snap directly to the row edge rather than searching for a character.
+  const rowLeftEdge = row.rect.left;
+  const rowRightEdge = row.rect.left + row.rect.width;
+
+  if (relativeX < rowLeftEdge) {
+    // Click is in the left padding area - snap to start of row
+    return {
+      cursorOffset: lineStartOffset + row.startOffset,
+      pastRowEnd: false,
+    };
+  }
+
+  if (relativeX > rowRightEdge) {
+    // Click is in the right padding area - snap to end of row
+    // Use backward affinity (pastRowEnd) when not at the logical line end
+    const isEndOfLine = row.endOffset === lineInfo.cursorLength;
+    return {
+      cursorOffset: lineStartOffset + row.endOffset,
+      pastRowEnd: !isEndOfLine && row.endOffset < lineInfo.cursorLength,
+    };
+  }
+
   // Binary search the insertion point for relativeX among monotonic caret Xs.
   let low = row.startOffset;
   let high = row.endOffset;
@@ -887,12 +910,15 @@ export function hitTestFromLayout(params: {
     if (distA + DIST_EPS_PX < distB) {
       return candidateA;
     }
-    // Near-ties: decide by midpoint between the two caret boundaries. This is
-    // stable for narrow glyphs where subpixel jitter and integer mouse coords
-    // would otherwise make left/right clicks ambiguous.
-    const mid = (xA + xB) / 2;
-    return relativeX >= mid ? candidateA : candidateB;
-  })();
+	    // Near-ties: decide by midpoint between the two caret boundaries. This is
+	    // stable for narrow glyphs where subpixel jitter and integer mouse coords
+	    // would otherwise make left/right clicks ambiguous.
+	    const mid = (xA + xB) / 2;
+	    // Prefer the *earlier* boundary at an exact midpoint tie. This matches
+	    // typical editor caret behavior and avoids center-click instability across
+	    // engines for monospaced glyphs.
+	    return relativeX > mid ? candidateA : candidateB;
+	  })();
 
   const endX = caretX(row.endOffset);
   // Normalize within runs of *source-only* offsets that collapse to the same DOM

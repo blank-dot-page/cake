@@ -457,6 +457,10 @@ export class CakeEngine {
     this.recordHistory(command.type);
     this.state = nextState;
     this.render();
+    // Commands are discrete and often invoked from toolbars; ensure the selection
+    // overlay is updated immediately rather than waiting for the next animation
+    // frame (which can vary across engines in test and headless environments).
+    this.flushOverlayUpdate();
     this.onChange?.(this.state.source, this.state.selection);
     this.scheduleScrollCaretIntoView();
     if (shouldOpenLinkPopover) {
@@ -572,9 +576,9 @@ export class CakeEngine {
   }
 
   private handleFocusIn() {
-    queueMicrotask(() => {
-      this.scheduleOverlayUpdate();
-    });
+    // Focus-in is a discrete event; update selection overlay immediately so
+    // selection/caret visuals don't lag behind across engines.
+    this.flushOverlayUpdate();
   }
 
   private handleFocusOut() {
