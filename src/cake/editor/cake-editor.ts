@@ -3298,6 +3298,17 @@ export class CakeEditor {
     if (!this.isEventTargetInContentRoot(event.target)) {
       return;
     }
+
+    // If click is on the container (padding area), focus the contentRoot.
+    // Without this, clicks in padding don't focus the editor and the caret
+    // won't render even though selection state is updated correctly.
+    // Skip for touch events - let browser handle native selection/focus.
+    const isContainerClick = event.target === this.container;
+    if (isContainerClick && this.contentRoot && event.pointerType !== "touch") {
+      event.preventDefault();
+      this.contentRoot.focus({ preventScroll: true });
+    }
+
     // Reset movement tracking for selection-via-drag detection
     this.hasMovedSincePointerDown = false;
     this.pointerDownPosition = { x: event.clientX, y: event.clientY };

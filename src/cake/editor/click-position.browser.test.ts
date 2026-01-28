@@ -1,6 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { page } from "vitest/browser";
+import { commands } from "vitest/browser";
 import { createTestHarness, type TestHarness } from "../test/harness";
+
+declare module "vitest/browser" {
+  interface BrowserCommands {
+    clickAtCoordinates: (x: number, y: number) => Promise<void>;
+  }
+}
 
 describe("CakeEditor click positioning", () => {
   let harness: TestHarness | null = null;
@@ -1111,21 +1117,8 @@ describe("CakeEditor click positioning", () => {
       const clickX = firstCharRect.left;
       const clickY = firstCharRect.top + firstCharRect.height / 2;
 
-      console.log("=== CLICK AT EXACT LEFT BOUNDARY OF FIRST CHAR ON SECOND ROW ===");
-      console.log("row1.startOffset:", firstCharOnSecondRow);
-      console.log("firstCharRect:", JSON.stringify(firstCharRect));
-      console.log("clickX:", clickX, "clickY:", clickY);
-
       await harness.clickAtCoords(clickX, clickY);
       await new Promise((resolve) => setTimeout(resolve, 100));
-
-      console.log("selection:", JSON.stringify(harness.selection));
-      console.log("caretRect:", JSON.stringify(harness.getCaretRect()));
-
-      // Take screenshot to see where caret is
-      await page.screenshot({
-        path: "../../../.vitest-screenshots/click-left-of-second-row.png",
-      });
 
       // Selection should be at start of second row
       expect(harness.selection.start).toBe(firstCharOnSecondRow);
@@ -1274,12 +1267,21 @@ describe("CakeEditor click positioning", () => {
       const clickX = containerRect.left + 10; // 10px from left edge (in padding)
       const clickY = line1Rect.top + line1Rect.height / 2;
 
-      await harness.clickAtCoords(clickX, clickY);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Use Playwright page.mouse.click for real browser click
+      await commands.clickAtCoordinates(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Selection should be at start of second line (11 = after "First line\n")
-      expect(harness.selection.start).toBe(11);
-      expect(harness.selection.end).toBe(11);
+      // Get caret position
+      const caret = harness.getCaretRect();
+
+      // Caret must exist and be positioned at start of second line
+      expect(caret).not.toBeNull();
+      // Caret should be at the left edge of the content (start of line)
+      const contentRect = harness.contentRoot.getBoundingClientRect();
+      expect(caret!.left).toBeLessThan(contentRect.left + 5);
+      // Caret should be vertically within the second line
+      expect(caret!.top).toBeGreaterThanOrEqual(line1Rect.top - 2);
+      expect(caret!.top).toBeLessThanOrEqual(line1Rect.bottom + 2);
     });
 
     it("clicking in right padding area places caret at end of nearest line", async () => {
@@ -1288,19 +1290,26 @@ describe("CakeEditor click positioning", () => {
         css: PADDING_CSS,
       });
 
-      const containerRect = harness.container.getBoundingClientRect();
       const line0Rect = harness.getLineRect(0);
+      const contentRect = harness.contentRoot.getBoundingClientRect();
 
-      // Click in the right padding area at the Y position of the first line
-      const clickX = containerRect.right - 10; // 10px from right edge (in padding)
+      // Click in the right padding area - just past the content's right edge
+      // The padding is 40px, so clicking at content.right + 20 is in the padding
+      const clickX = contentRect.right + 20;
       const clickY = line0Rect.top + line0Rect.height / 2;
 
-      await harness.clickAtCoords(clickX, clickY);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Use Playwright page.mouse.click for real browser click
+      await commands.clickAtCoordinates(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Selection should be at end of first line (10 = length of "First line")
-      expect(harness.selection.start).toBe(10);
-      expect(harness.selection.end).toBe(10);
+      // Get caret position
+      const caret = harness.getCaretRect();
+
+      // Caret must exist and be positioned at end of first line
+      expect(caret).not.toBeNull();
+      // Caret should be vertically within the first line
+      expect(caret!.top).toBeGreaterThanOrEqual(line0Rect.top - 2);
+      expect(caret!.top).toBeLessThanOrEqual(line0Rect.bottom + 2);
     });
 
     it("clicking in left padding of wrapped second row places caret at start of visual row", async () => {

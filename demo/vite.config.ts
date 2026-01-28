@@ -6,6 +6,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      "@blankdotpage/cake/react": path.resolve(
+        __dirname,
+        "../src/cake/react/index.tsx",
+      ),
       "@blankdotpage/cake": path.resolve(__dirname, "../src/index.ts"),
     },
     dedupe: ["react", "react-dom"],
