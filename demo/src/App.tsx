@@ -146,21 +146,30 @@ export default function App() {
             <div className="toolbarGroup fontSwitcher">
               <button
                 className={`toolbarButton ${fontStyle === "sans" ? "active" : ""}`}
-                onClick={() => setFontStyle("sans")}
+                onClick={() => {
+                  setFontStyle("sans");
+                  editorRef.current?.focus();
+                }}
                 title="Sans-serif font"
               >
                 Sans
               </button>
               <button
                 className={`toolbarButton ${fontStyle === "serif" ? "active" : ""}`}
-                onClick={() => setFontStyle("serif")}
+                onClick={() => {
+                  setFontStyle("serif");
+                  editorRef.current?.focus();
+                }}
                 title="Serif font"
               >
                 Serif
               </button>
               <button
                 className={`toolbarButton ${fontStyle === "mono" ? "active" : ""}`}
-                onClick={() => setFontStyle("mono")}
+                onClick={() => {
+                  setFontStyle("mono");
+                  editorRef.current?.focus();
+                }}
                 title="Monospace font"
               >
                 Mono

@@ -1,7 +1,6 @@
 import { boldExtension } from "./bold/bold";
 import { combinedEmphasisExtension } from "./combined-emphasis/combined-emphasis";
 import { linkExtension } from "./link/link";
-import { pipeLinkExtension } from "./pipe-link/pipe-link";
 import { blockquoteExtension } from "./blockquote/blockquote";
 import { italicExtension } from "./italic/italic";
 import { headingExtension } from "./heading/heading";
@@ -14,7 +13,6 @@ export {
   boldExtension,
   combinedEmphasisExtension,
   linkExtension,
-  pipeLinkExtension,
   blockquoteExtension,
   italicExtension,
   headingExtension,
@@ -32,7 +30,6 @@ export const bundledExtensionsWithoutImage = [
   boldExtension,
   italicExtension,
   strikethroughExtension,
-  pipeLinkExtension,
   linkExtension,
 ];
 

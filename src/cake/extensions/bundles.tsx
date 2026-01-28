@@ -8,7 +8,6 @@ import {
   italicExtension,
   linkExtension,
   listExtension,
-  pipeLinkExtension,
   strikethroughExtension,
 } from "./index";
 
@@ -20,10 +19,6 @@ export const bundledExtensionBundles: CakeExtensionBundle[] = [
   { name: "bold", extensions: [boldExtension] },
   { name: "italic", extensions: [italicExtension] },
   { name: "strikethrough", extensions: [strikethroughExtension] },
-  { name: "pipe-link", extensions: [pipeLinkExtension] },
-  {
-    name: "link",
-    extensions: [linkExtension],
-  },
+  { name: "link", extensions: [linkExtension] },
   { name: "image", extensions: [imageExtension] },
 ];

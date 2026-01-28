@@ -3,6 +3,16 @@ import { createRuntime } from "../../core/runtime";
 import { linkExtension } from "./link";
 
 describe("link extension", () => {
+  it("ignores image syntax when image extension is not loaded", () => {
+    const runtime = createRuntime([linkExtension]);
+    const source = "![alt](http://example.com/image.png)";
+    const state = runtime.createState(source);
+    // Image syntax should be preserved as plain text
+    expect(state.source).toBe(source);
+    // The cursor length should equal the source length (no hidden URL portion)
+    expect(state.map.cursorLength).toBe(source.length);
+  });
+
   it("parses and serializes links", () => {
     const runtime = createRuntime([linkExtension]);
     const source = "[word](url)";

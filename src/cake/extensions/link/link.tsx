@@ -165,6 +165,11 @@ export const linkExtension = defineExtension<LinkCommand>({
       return null;
     }
 
+    // Don't match image syntax ![...](...)
+    if (start > 0 && source[start - 1] === "!") {
+      return null;
+    }
+
     const labelClose = source.indexOf("](", start + 1);
     if (labelClose === -1 || labelClose >= end) {
       return null;
