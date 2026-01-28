@@ -1093,7 +1093,6 @@ export const listExtension = defineExtension<ListCommand>({
     }
 
     const element = document.createElement("div");
-    element.setAttribute("data-block", "paragraph");
     element.setAttribute("data-line-index", String(context.getLineIndex()));
     element.classList.add("cake-line", "is-list");
     context.incrementLineIndex();

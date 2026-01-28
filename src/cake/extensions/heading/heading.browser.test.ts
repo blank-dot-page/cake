@@ -91,18 +91,6 @@ describe("heading extension DOM rendering", () => {
     expect(allLines[2]?.classList.contains("is-heading")).toBe(true);
   });
 
-  test("sets data-heading-level attribute", () => {
-    engine = new CakeEngine({
-      container,
-      value: "## Level 2",
-      extensions: bundledExtensions,
-    });
-
-    const line = container.querySelector(".cake-line") as HTMLElement;
-    expect(line).not.toBeNull();
-    expect(line.dataset.headingLevel).toBe("2");
-  });
-
   test("renders heading with bold content", () => {
     engine = new CakeEngine({
       container,
@@ -144,7 +132,7 @@ describe("heading extension DOM rendering", () => {
       ".cake-line.is-heading",
     ) as HTMLElement;
     expect(line).not.toBeNull();
-    expect(line?.dataset.headingPlaceholder).toBe("Heading 1");
+    expect(line.getAttribute("aria-placeholder")).toBe("Heading 1");
   });
 
   test("empty h2 heading shows placeholder", () => {
@@ -158,7 +146,7 @@ describe("heading extension DOM rendering", () => {
       ".cake-line.is-heading",
     ) as HTMLElement;
     expect(line).not.toBeNull();
-    expect(line?.dataset.headingPlaceholder).toBe("Heading 2");
+    expect(line.getAttribute("aria-placeholder")).toBe("Heading 2");
   });
 
   test("has data-line-index attribute", () => {
@@ -206,7 +194,9 @@ describe("heading extension typing behavior (harness)", () => {
 
     const line = h.getLine(0);
     expect(line.classList.contains("is-heading")).toBe(true);
-    expect((line as HTMLElement).dataset.headingPlaceholder).toBe("Heading 1");
+    expect((line as HTMLElement).getAttribute("aria-placeholder")).toBe(
+      "Heading 1",
+    );
     h.destroy();
   });
 
@@ -237,7 +227,7 @@ describe("heading extension typing behavior (harness)", () => {
     await h.pressKey("Backspace", { meta: true });
 
     expect(h.engine.getValue()).toBe("# ");
-    expect((h.getLine(0) as HTMLElement).dataset.headingPlaceholder).toBe(
+    expect((h.getLine(0) as HTMLElement).getAttribute("aria-placeholder")).toBe(
       "Heading 1",
     );
 
@@ -250,7 +240,7 @@ describe("heading extension typing behavior (harness)", () => {
     expect(h.engine.getValue()).toBe("");
     const line = h.getLine(0) as HTMLElement;
     expect(line.classList.contains("is-heading")).toBe(false);
-    expect(line.dataset.headingPlaceholder).toBeUndefined();
+    expect(line.getAttribute("aria-placeholder")).toBeNull();
     Object.defineProperty(navigator, "platform", {
       value: originalPlatform,
       configurable: true,

@@ -118,7 +118,6 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
     const onSelectionChangeRef = useRef(props.onSelectionChange);
     const lastEmittedValueRef = useRef<string | null>(null);
     const lastEmittedSelectionRef = useRef<Selection | null>(null);
-    const [overlayRoot, setOverlayRoot] = useState<HTMLElement | null>(null);
     const [contentRoot, setContentRoot] = useState<HTMLElement | null>(null);
 
     // Merge bundled extensions with custom extensions
@@ -129,6 +128,9 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
       ...baseExtensions,
       ...(props.extensions ?? []),
     ]);
+    const hasOverlayExtensions = allExtensionsRef.current.some(
+      (ext) => ext.renderOverlay,
+    );
 
     useEffect(() => {
       onChangeRef.current = props.onChange;
@@ -173,13 +175,11 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
       });
 
       engineRef.current = engine;
-      setOverlayRoot(engine.getOverlayRoot());
       setContentRoot(engine.getContentRoot());
 
       return () => {
         engine.destroy();
         engineRef.current = null;
-        setOverlayRoot(null);
         setContentRoot(null);
       };
     }, []);
@@ -315,7 +315,6 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
         ? ({
             container: containerRef.current,
             contentRoot,
-            overlayRoot: overlayRoot ?? undefined,
             toOverlayRect: (rect) => {
               const containerRect =
                 containerRef.current?.getBoundingClientRect();
@@ -356,10 +355,6 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
             },
           } satisfies OverlayExtensionContext)
         : null;
-
-    const hasOverlayExtensions = allExtensionsRef.current.some(
-      (ext) => ext.renderOverlay,
-    );
 
     return (
       <div style={{ position: "relative", height: "100%" }}>

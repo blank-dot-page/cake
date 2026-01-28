@@ -65,14 +65,11 @@ export function renderDocContent(
   }
 
   function getElementKey(element: Element): string {
-    if (element.hasAttribute("data-block")) {
-      const blockType = element.getAttribute("data-block") ?? "unknown";
-      const lineKind =
-        element instanceof HTMLElement ? element.dataset.lineKind : null;
-      if (lineKind && lineKind !== blockType) {
-        return lineKind;
+    if (element.classList.contains("cake-line")) {
+      if (element.hasAttribute("data-block-atom")) {
+        return `block-atom:${element.getAttribute("data-block-atom")}`;
       }
-      return blockType;
+      return "paragraph";
     }
     if (element.hasAttribute("data-block-wrapper")) {
       return `block-wrapper:${element.getAttribute("data-block-wrapper")}`;
@@ -100,11 +97,13 @@ export function renderDocContent(
     if (element.classList.contains("cake-text")) {
       return "text";
     }
-    if (element.hasAttribute("data-inline")) {
-      return `inline-wrapper:${element.getAttribute("data-inline")}`;
-    }
-    if (element.hasAttribute("data-inline-atom")) {
-      return `inline-atom:${element.getAttribute("data-inline-atom")}`;
+    for (const cls of Array.from(element.classList)) {
+      if (cls.startsWith("cake-inline--")) {
+        return `inline-wrapper:${cls.slice("cake-inline--".length)}`;
+      }
+      if (cls.startsWith("cake-inline-atom--")) {
+        return `inline-atom:${cls.slice("cake-inline-atom--".length)}`;
+      }
     }
     return "unknown";
   }
@@ -153,12 +152,14 @@ export function renderDocContent(
         getInlineElementKey(existing) === getInlineKey(inline);
 
       if (canReuse) {
+        existing.removeAttribute("data-inline");
+        existing.classList.add("cake-inline", `cake-inline--${inline.kind}`);
         reconcileInlineChildren(existing, inline.children);
         return [existing];
       }
 
       const element = document.createElement("span");
-      element.setAttribute("data-inline", inline.kind);
+      element.classList.add("cake-inline", `cake-inline--${inline.kind}`);
       for (const child of inline.children) {
         for (const node of reconcileInline(child, null)) {
           element.append(node);
@@ -174,6 +175,11 @@ export function renderDocContent(
         getInlineElementKey(existing) === getInlineKey(inline);
 
       if (canReuse) {
+        existing.removeAttribute("data-inline-atom");
+        existing.classList.add(
+          "cake-inline-atom",
+          `cake-inline-atom--${inline.kind}`,
+        );
         const textNode = existing.firstChild;
         if (textNode instanceof Text) {
           createTextRun(textNode);
@@ -182,7 +188,10 @@ export function renderDocContent(
       }
 
       const element = document.createElement("span");
-      element.setAttribute("data-inline-atom", inline.kind);
+      element.classList.add(
+        "cake-inline-atom",
+        `cake-inline-atom--${inline.kind}`,
+      );
       const node = document.createTextNode(" ");
       createTextRun(node);
       element.append(node);
@@ -242,6 +251,13 @@ export function renderDocContent(
 
       if (canReuse) {
         existing.setAttribute("data-line-index", String(currentLineIndex));
+        existing.removeAttribute("data-block");
+        delete existing.dataset.lineKind;
+        delete existing.dataset.headingLevel;
+        delete existing.dataset.headingPlaceholder;
+        existing.removeAttribute("aria-placeholder");
+        existing.className = "cake-line";
+        existing.removeAttribute("style");
 
         if (block.content.length === 0) {
           const firstChild = existing.firstChild;
@@ -266,10 +282,8 @@ export function renderDocContent(
       }
 
       const element = document.createElement("div");
-      element.setAttribute("data-block", "paragraph");
       element.setAttribute("data-line-index", String(currentLineIndex));
       element.classList.add("cake-line");
-      element.dataset.lineKind = "paragraph";
 
       if (block.content.length === 0) {
         const textNode = document.createTextNode("");
@@ -440,7 +454,7 @@ export function renderDoc(
 
     if (inline.type === "inline-wrapper") {
       const element = document.createElement("span");
-      element.setAttribute("data-inline", inline.kind);
+      element.classList.add("cake-inline", `cake-inline--${inline.kind}`);
       for (const child of inline.children) {
         for (const node of renderInline(child)) {
           element.append(node);
@@ -451,7 +465,10 @@ export function renderDoc(
 
     if (inline.type === "inline-atom") {
       const element = document.createElement("span");
-      element.setAttribute("data-inline-atom", inline.kind);
+      element.classList.add(
+        "cake-inline-atom",
+        `cake-inline-atom--${inline.kind}`,
+      );
       const node = document.createTextNode(" ");
       createTextRun(node);
       element.append(node);
@@ -475,10 +492,8 @@ export function renderDoc(
 
     if (block.type === "paragraph") {
       const element = document.createElement("div");
-      element.setAttribute("data-block", "paragraph");
       element.setAttribute("data-line-index", String(context.getLineIndex()));
       element.classList.add("cake-line");
-      element.dataset.lineKind = "paragraph";
       context.incrementLineIndex();
       if (block.content.length === 0) {
         // Use <br> to maintain line height for empty lines (like v1)

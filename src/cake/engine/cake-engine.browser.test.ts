@@ -143,6 +143,62 @@ describe("CakeEngine (browser)", () => {
     engine.destroy();
   });
 
+  it("preserves non-managed children injected into the content root (e.g. Grammarly)", () => {
+    const container = createContainer();
+    const engine = new CakeEngine({
+      container,
+      value: "",
+    });
+
+    const contentRoot = engine.getContentRoot();
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+    const injected = document.createElement("grammarly-extension");
+    injected.setAttribute("data-test", "1");
+    contentRoot.appendChild(injected);
+
+    const event = new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertText",
+      data: "a",
+    });
+    container.dispatchEvent(event);
+
+    expect(contentRoot.querySelector("grammarly-extension[data-test='1']")).not.toBeNull();
+
+    engine.destroy();
+  });
+
+  it("does not create an extensions overlay root unless requested", () => {
+    const container = createContainer();
+    const engine = new CakeEngine({
+      container,
+      value: "",
+    });
+
+    expect(container.querySelector(".cake-extension-overlay")).toBeNull();
+
+    engine.destroy();
+  });
+
+  it("preserves non-cake siblings in the container across initialization (e.g. Grammarly)", () => {
+    const container = createContainer();
+    const injected = document.createElement("grammarly-extension");
+    injected.setAttribute("data-test", "1");
+    container.appendChild(injected);
+
+    const engine = new CakeEngine({
+      container,
+      value: "",
+    });
+
+    expect(container.querySelector("grammarly-extension[data-test='1']")).not.toBeNull();
+
+    engine.destroy();
+  });
+
   it("handles beforeinput insertReplacementText with targetRanges", () => {
     const container = createContainer();
     let lastValue = "";

@@ -26,7 +26,7 @@ describe("dom selection", () => {
     const { root, map } = renderDoc(state.doc, runtime.extensions);
     document.body.append(root);
 
-    const paragraph = root.querySelector("[data-block='paragraph']");
+    const paragraph = root.querySelector(".cake-line");
     if (!paragraph) {
       throw new Error("Missing paragraph element");
     }
@@ -45,7 +45,7 @@ describe("dom selection", () => {
     const { root, map } = renderDoc(state.doc, runtime.extensions);
     document.body.append(root);
 
-    const paragraph = root.querySelector("[data-block='paragraph']");
+    const paragraph = root.querySelector(".cake-line");
     if (!paragraph) {
       throw new Error("Missing paragraph element");
     }
@@ -64,7 +64,7 @@ describe("dom selection", () => {
     const { root, map } = renderDoc(state.doc, runtime.extensions);
     document.body.append(root);
 
-    const paragraphs = root.querySelectorAll("[data-block='paragraph']");
+    const paragraphs = root.querySelectorAll(".cake-line");
     if (paragraphs.length < 2) {
       throw new Error("Missing paragraph elements");
     }

@@ -296,19 +296,17 @@ export const headingExtension = defineExtension({
     const level = typeof block.data?.level === "number" ? block.data.level : 1;
     const normalizedLevel = Math.max(1, Math.min(3, level));
     const lineElement = document.createElement("div");
-    lineElement.setAttribute("data-block", "paragraph");
     lineElement.setAttribute("data-line-index", String(context.getLineIndex()));
     lineElement.classList.add(
       "cake-line",
       "is-heading",
       `is-heading-${normalizedLevel}`,
     );
-    lineElement.dataset.lineKind = "heading";
-    lineElement.dataset.headingLevel = String(normalizedLevel);
     context.incrementLineIndex();
 
     const paragraph = block.blocks[0];
     if (paragraph?.type === "paragraph" && paragraph.content.length > 0) {
+      lineElement.removeAttribute("aria-placeholder");
       const mergedContent = mergeInlineForRender(paragraph.content);
       for (const inline of mergedContent) {
         for (const node of context.renderInline(inline)) {
@@ -316,7 +314,10 @@ export const headingExtension = defineExtension({
         }
       }
     } else {
-      lineElement.dataset.headingPlaceholder = `Heading ${normalizedLevel}`;
+      lineElement.setAttribute(
+        "aria-placeholder",
+        `Heading ${normalizedLevel}`,
+      );
       const node = document.createTextNode("");
       context.createTextRun(node);
       lineElement.append(node);

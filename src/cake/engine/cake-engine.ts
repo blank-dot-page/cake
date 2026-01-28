@@ -39,6 +39,7 @@ import { htmlToMarkdownForPaste } from "../../cake/clipboard";
 
 type EngineOptions = {
   container: HTMLElement;
+  contentRoot?: HTMLElement;
   value: string;
   selection?: Selection;
   extensions?: CakeExtension[];
@@ -89,12 +90,6 @@ export class CakeEngine {
   private runtime: Runtime;
   private extensions: CakeExtension[];
   private _state!: RuntimeState;
-  private originalCaretRangeFromPoint:
-    | ((x: number, y: number) => Range | null)
-    | null = null;
-  private patchedCaretRangeFromPoint:
-    | ((x: number, y: number) => Range | null)
-    | null = null;
 
   private get state(): RuntimeState {
     return this._state;
@@ -234,6 +229,7 @@ export class CakeEngine {
 
   constructor(options: EngineOptions) {
     this.container = options.container;
+    this.contentRoot = options.contentRoot ?? null;
     this.extensions = options.extensions ?? bundledExtensions;
     this.runtime = createRuntime(this.extensions);
     this.state = this.runtime.createState(
@@ -247,12 +243,10 @@ export class CakeEngine {
 
     this.render();
     this.attachListeners();
-    this.installCaretRangeFromPointShim();
   }
 
   destroy() {
     this.detachListeners();
-    this.uninstallCaretRangeFromPointShim();
     this.clearCaretBlinkTimer();
     if (this.overlayUpdateId !== null) {
       window.cancelAnimationFrame(this.overlayUpdateId);
@@ -299,7 +293,7 @@ export class CakeEngine {
   }
 
   getOverlayRoot() {
-    return this.extensionsRoot;
+    return this.ensureExtensionsRoot();
   }
 
   // Placeholder text is provided by the caller via the container's
@@ -555,108 +549,6 @@ export class CakeEngine {
     this.detachDragListeners();
   }
 
-  private installCaretRangeFromPointShim() {
-    const doc = document as unknown as {
-      caretRangeFromPoint?: (x: number, y: number) => Range | null;
-    };
-    if (typeof doc.caretRangeFromPoint !== "function") {
-      return;
-    }
-    if (this.patchedCaretRangeFromPoint) {
-      return;
-    }
-
-    this.originalCaretRangeFromPoint = doc.caretRangeFromPoint.bind(document);
-
-    const patched = (x: number, y: number): Range | null => {
-      const original = this.originalCaretRangeFromPoint;
-      const range = original ? original(x, y) : null;
-
-      // If the browser returned a range within a line, keep it as-is.
-      const startNode = range?.startContainer ?? null;
-      const startLine =
-        startNode instanceof HTMLElement
-          ? startNode.closest("[data-line-index]")
-          : startNode?.parentElement?.closest("[data-line-index]");
-      if (startLine) {
-        return range;
-      }
-
-      // Only patch results for points inside this editor container.
-      const rect = this.container.getBoundingClientRect();
-      const isInside =
-        x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-      if (!isInside || !this.domMap) {
-        return range;
-      }
-
-      // Resolve the caret position using caretPositionFromPoint when available,
-      // falling back to the original caretRangeFromPoint.
-      const docAny = document as unknown as {
-        caretPositionFromPoint?: (
-          x: number,
-          y: number,
-        ) => {
-          offsetNode: Node;
-          offset: number;
-        } | null;
-      };
-      let node: Node | null = null;
-      let offset = 0;
-      if (typeof docAny.caretPositionFromPoint === "function") {
-        const pos = docAny.caretPositionFromPoint(x, y);
-        node = pos?.offsetNode ?? null;
-        offset = pos?.offset ?? 0;
-      } else if (original) {
-        const fallback = original(x, y);
-        node = fallback?.startContainer ?? null;
-        offset = fallback?.startOffset ?? 0;
-      }
-
-      let resolved: { node: Text; offset: number } | null = null;
-      if (node instanceof Text) {
-        resolved = { node, offset };
-      } else if (node instanceof Element) {
-        resolved = resolveTextPoint(node, offset);
-      }
-      if (!resolved) {
-        return range;
-      }
-      const cursor = this.domMap.cursorAtDom(resolved.node, resolved.offset);
-      if (!cursor) {
-        return range;
-      }
-      const domPoint = this.domMap.domAtCursor(
-        cursor.cursorOffset,
-        cursor.affinity,
-      );
-      if (!domPoint) {
-        return range;
-      }
-      const fixed = document.createRange();
-      fixed.setStart(domPoint.node, domPoint.offset);
-      fixed.setEnd(domPoint.node, domPoint.offset);
-      return fixed;
-    };
-
-    this.patchedCaretRangeFromPoint = patched;
-    doc.caretRangeFromPoint = patched;
-  }
-
-  private uninstallCaretRangeFromPointShim() {
-    if (!this.originalCaretRangeFromPoint || !this.patchedCaretRangeFromPoint) {
-      return;
-    }
-    const doc = document as unknown as {
-      caretRangeFromPoint?: (x: number, y: number) => Range | null;
-    };
-    if (doc.caretRangeFromPoint === this.patchedCaretRangeFromPoint) {
-      doc.caretRangeFromPoint = this.originalCaretRangeFromPoint;
-    }
-    this.originalCaretRangeFromPoint = null;
-    this.patchedCaretRangeFromPoint = null;
-  }
-
   private render() {
     const perfEnabled = this.container.dataset.cakePerf === "1";
     let perfStart = 0;
@@ -679,14 +571,40 @@ export class CakeEngine {
       }
       this.contentRoot = document.createElement("div");
       this.contentRoot.className = "cake-content";
-      // On touch devices, add touch mode class immediately to use native caret
-      if (this.isTouchDevice()) {
-        this.contentRoot.classList.add("cake-touch-mode");
-      }
-      this.updateContentRootAttributes();
+    }
+    // On touch devices, add touch mode class immediately to use native caret
+    if (this.isTouchDevice()) {
+      this.contentRoot.classList.add("cake-touch-mode");
+    }
+    this.updateContentRootAttributes();
+    if (!this.overlayRoot) {
       const overlay = this.ensureOverlayRoot();
-      const extensionsRoot = this.ensureExtensionsRoot();
-      this.container.replaceChildren(this.contentRoot, overlay, extensionsRoot);
+      const extensionsRoot = this.extensionsRoot;
+      const existingContainerChildren = Array.from(this.container.childNodes);
+      const isCakeManagedContainerChild = (node: Node): boolean =>
+        node instanceof Element &&
+        (node.classList.contains("cake-content") ||
+          node.classList.contains("cake-selection-overlay") ||
+          node.classList.contains("cake-extension-overlay") ||
+          node.classList.contains("cake-placeholder"));
+      const preservedContainerChildren = existingContainerChildren.filter(
+        (node) => !isCakeManagedContainerChild(node),
+      );
+      // If contentRoot was provided externally (React), append siblings;
+      // otherwise replace container children.
+      if (this.contentRoot.parentElement === this.container) {
+        this.container.append(overlay);
+        if (extensionsRoot && !extensionsRoot.isConnected) {
+          this.container.append(extensionsRoot);
+        }
+      } else {
+        this.container.replaceChildren(
+          this.contentRoot,
+          overlay,
+          ...(extensionsRoot ? [extensionsRoot] : []),
+          ...preservedContainerChildren,
+        );
+      }
       this.attachDragListeners();
     }
     if (perfEnabled) {
@@ -698,11 +616,17 @@ export class CakeEngine {
       this.contentRoot,
     );
     const existingChildren = Array.from(this.contentRoot.childNodes);
+    const isManagedChild = (node: Node): boolean =>
+      node instanceof Element && node.hasAttribute("data-line-index");
+    const existingManagedChildren = existingChildren.filter(isManagedChild);
+    const preservedChildren = existingChildren.filter((node) => !isManagedChild(node));
     const needsUpdate =
-      content.length !== existingChildren.length ||
-      content.some((node, i) => node !== existingChildren[i]);
+      content.length !== existingManagedChildren.length ||
+      content.some((node, i) => node !== existingManagedChildren[i]);
     if (needsUpdate) {
-      this.contentRoot.replaceChildren(...content);
+      // Preserve non-managed direct children so browser extensions (e.g. Grammarly)
+      // can inject helper elements without getting deleted on every render.
+      this.contentRoot.replaceChildren(...content, ...preservedChildren);
     }
     this.domMap = map;
     if (perfEnabled) {
@@ -1551,36 +1475,9 @@ export class CakeEngine {
 
   private handleBeforeInput(event: InputEvent) {
     if (this.readOnly || this.isComposing || event.isComposing) {
-      if (
-        event.inputType === "insertReplacementText" ||
-        event.inputType === "insertText"
-      ) {
-        console.log("[SPELLCHECK] beforeinput ignored (readonly/composing)", {
-          inputType: event.inputType,
-          data: event.data,
-          cancelable: event.cancelable,
-          isComposing: this.isComposing,
-          eventIsComposing: event.isComposing,
-          readOnly: this.readOnly,
-        });
-      }
       return;
     }
     if (!this.isEventTargetInContentRoot(event.target)) {
-      if (
-        event.inputType === "insertReplacementText" ||
-        event.inputType === "insertText"
-      ) {
-        console.log(
-          "[SPELLCHECK] beforeinput ignored (target outside editor)",
-          {
-            inputType: event.inputType,
-            data: event.data,
-            cancelable: event.cancelable,
-            target: event.target,
-          },
-        );
-      }
       return;
     }
 
@@ -1588,71 +1485,16 @@ export class CakeEngine {
     // skip beforeinput processing to avoid double-applying the edit.
     if (this.keydownHandledBeforeInput) {
       this.keydownHandledBeforeInput = false;
-      if (
-        event.inputType === "insertReplacementText" ||
-        event.inputType === "insertText"
-      ) {
-        console.log(
-          "[SPELLCHECK] beforeinput skipped (keydownHandledBeforeInput)",
-          {
-            inputType: event.inputType,
-            data: event.data,
-            cancelable: event.cancelable,
-          },
-        );
-      }
       event.preventDefault();
       return;
     }
 
     const intent = this.resolveBeforeInputIntent(event);
     if (!intent) {
-      if (
-        event.inputType === "insertReplacementText" ||
-        event.inputType === "insertText"
-      ) {
-        console.log("[SPELLCHECK] beforeinput: no intent", {
-          inputType: event.inputType,
-          data: event.data,
-          cancelable: event.cancelable,
-        });
-      }
       return;
     }
 
-    if (
-      event.inputType === "insertReplacementText" ||
-      (event.inputType === "insertText" && intent.type === "replace-text")
-    ) {
-      const selection = this.state.selection;
-      const focus =
-        selection.start === selection.end
-          ? selection.start
-          : Math.max(selection.start, selection.end);
-      const preview = this.state.source.slice(
-        Math.max(0, focus - 24),
-        Math.min(this.state.source.length, focus + 24),
-      );
-      console.log("[SPELLCHECK] beforeinput: resolved intent", {
-        inputType: event.inputType,
-        data: event.data,
-        cancelable: event.cancelable,
-        intent,
-        currentSelection: this.state.selection,
-        sourcePreviewAroundFocus: preview,
-      });
-    }
-
     event.preventDefault();
-    if (
-      event.inputType === "insertReplacementText" ||
-      (event.inputType === "insertText" && intent.type === "replace-text")
-    ) {
-      console.log("[SPELLCHECK] beforeinput: after preventDefault", {
-        inputType: event.inputType,
-        defaultPrevented: event.defaultPrevented,
-      });
-    }
     this.markBeforeInputHandled();
     this.suppressSelectionChangeForTick();
     this.applyInputIntent(intent);
@@ -1701,22 +1543,9 @@ export class CakeEngine {
       return;
     }
     if (!this.isEventTargetInContentRoot(event.target)) {
-      if (event.inputType === "insertReplacementText") {
-        console.log("[SPELLCHECK] input ignored (target outside editor)", {
-          inputType: event.inputType,
-          data: event.data,
-          target: event.target,
-        });
-      }
       return;
     }
     if (this.beforeInputHandled) {
-      if (event.inputType === "insertReplacementText") {
-        console.log("[SPELLCHECK] input ignored (handled via beforeinput)", {
-          inputType: event.inputType,
-          data: event.data,
-        });
-      }
       return;
     }
 
@@ -1886,52 +1715,16 @@ export class CakeEngine {
     | { status: "none" }
     | { status: "invalid" }
     | { status: "valid"; selection: Selection } {
-    const debug = event.inputType === "insertReplacementText";
     if (!event.getTargetRanges) {
-      if (debug) {
-        console.log("[SPELLCHECK][targetRanges] missing getTargetRanges()", {
-          inputType: event.inputType,
-          data: event.data,
-          cancelable: event.cancelable,
-        });
-      }
       return { status: "none" };
     }
 
     const ranges = event.getTargetRanges();
     if (!ranges || ranges.length === 0) {
-      if (debug) {
-        console.log("[SPELLCHECK][targetRanges] no ranges", {
-          inputType: event.inputType,
-          data: event.data,
-          cancelable: event.cancelable,
-        });
-      }
       return { status: "none" };
     }
 
     const range = ranges[0];
-    // Only log insertText targetRanges when they're actually present (that
-    // indicates a spellcheck/Grammarly-like replacement flow).
-    if (debug || event.inputType === "insertText") {
-      console.log("[SPELLCHECK][targetRanges] raw range", {
-        inputType: event.inputType,
-        data: event.data,
-        cancelable: event.cancelable,
-        startContainer:
-          range.startContainer instanceof Element
-            ? range.startContainer.tagName
-            : range.startContainer.nodeName,
-        startOffset: range.startOffset,
-        endContainer:
-          range.endContainer instanceof Element
-            ? range.endContainer.tagName
-            : range.endContainer.nodeName,
-        endOffset: range.endOffset,
-        startContained: this.container.contains(range.startContainer),
-        endContained: this.container.contains(range.endContainer),
-      });
-    }
     // If range points outside the editor, it's invalid
     if (
       !this.container.contains(range.startContainer) ||
@@ -1942,15 +1735,6 @@ export class CakeEngine {
     const start = this.cursorFromDom(range.startContainer, range.startOffset);
     const end = this.cursorFromDom(range.endContainer, range.endOffset);
     if (!start || !end) {
-      if (debug || event.inputType === "insertText") {
-        console.log("[SPELLCHECK][targetRanges] cursorFromDom failed", {
-          inputType: event.inputType,
-          data: event.data,
-          cancelable: event.cancelable,
-          start,
-          end,
-        });
-      }
       return { status: "invalid" };
     }
 
@@ -2888,9 +2672,7 @@ export class CakeEngine {
       return this.state.source;
     }
     const blocks = Array.from(
-      this.contentRoot.querySelectorAll<HTMLElement>(
-        '[data-block="paragraph"]',
-      ),
+      this.contentRoot.querySelectorAll<HTMLElement>(".cake-line"),
     );
     if (blocks.length === 0) {
       return this.contentRoot.textContent ?? "";
@@ -3211,6 +2993,9 @@ export class CakeEngine {
     root.style.zIndex = "50";
     root.style.overflow = "hidden";
     this.extensionsRoot = root;
+    if (this.overlayRoot && !root.isConnected) {
+      this.container.append(root);
+    }
     return root;
   }
 
