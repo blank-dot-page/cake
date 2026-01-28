@@ -39,6 +39,7 @@ export type InsertCommand = { type: "insert"; text: string };
 export type ApplyEditCommand =
   | InsertCommand
   | { type: "insert-line-break" }
+  | { type: "insert-hard-line-break" }
   | { type: "delete-backward" }
   | { type: "delete-forward" };
 
@@ -76,6 +77,7 @@ export function isStructuralEdit(
     command.type === "delete-backward" ||
     command.type === "delete-forward" ||
     command.type === "insert-line-break" ||
+    command.type === "insert-hard-line-break" ||
     command.type === "exit-block-wrapper"
   );
 }
@@ -87,6 +89,7 @@ export function isApplyEditCommand(
   return (
     command.type === "insert" ||
     command.type === "insert-line-break" ||
+    command.type === "insert-hard-line-break" ||
     command.type === "delete-backward" ||
     command.type === "delete-forward"
   );
@@ -756,11 +759,12 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     const replaceText =
       command.type === "insert"
         ? command.text
-        : command.type === "insert-line-break"
+        : command.type === "insert-line-break" ||
+            command.type === "insert-hard-line-break"
           ? "\n"
           : command.type === "exit-block-wrapper"
             ? "\n"
-          : "";
+            : "";
 
     const range =
       command.type === "delete-backward" && cursorStart === cursorEnd

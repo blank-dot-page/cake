@@ -23,6 +23,55 @@ function findLineStartInSource(source: string, sourceOffset: number): number {
   return lineStart;
 }
 
+function isInsideBlockquote(source: string, sourcePos: number): boolean {
+  const lineStart = findLineStartInSource(source, sourcePos);
+  const lineContent = source.slice(
+    lineStart,
+    source.indexOf("\n", lineStart) === -1
+      ? source.length
+      : source.indexOf("\n", lineStart),
+  );
+  return BLOCKQUOTE_PATTERN.test(lineContent);
+}
+
+function handleExitBlockquote(state: RuntimeState): EditResult | null {
+  const { source, selection, map, runtime } = state;
+
+  const cursorPos = Math.min(selection.start, selection.end);
+  const sourcePos = map.cursorToSource(
+    cursorPos,
+    selection.affinity ?? "forward",
+  );
+
+  // Only handle if we're inside a blockquote
+  if (!isInsideBlockquote(source, sourcePos)) {
+    return null;
+  }
+
+  // Find the end of the current line
+  let lineEnd = source.indexOf("\n", sourcePos);
+  if (lineEnd === -1) {
+    lineEnd = source.length;
+  }
+
+  // Insert a newline after the current line (exits the blockquote)
+  const newSource = source.slice(0, lineEnd) + "\n" + source.slice(lineEnd);
+
+  // Position cursor at the start of the new line (after the blockquote)
+  const next = runtime.createState(newSource);
+  const newCursorOffset = lineEnd + 1;
+  const caretCursor = next.map.sourceToCursor(newCursorOffset, "forward");
+
+  return {
+    source: newSource,
+    selection: {
+      start: caretCursor.cursorOffset,
+      end: caretCursor.cursorOffset,
+      affinity: "forward",
+    },
+  };
+}
+
 function handleToggleBlockquote(state: RuntimeState): EditResult | null {
   const { source, selection, map, runtime } = state;
 
@@ -88,6 +137,10 @@ export const blockquoteExtension = defineExtension<ToggleBlockquoteCommand>({
   onEdit(command, state) {
     if (command.type === "toggle-blockquote") {
       return handleToggleBlockquote(state);
+    }
+    // Handle insert-hard-line-break (Cmd+Enter) to exit blockquote
+    if (command.type === "insert-hard-line-break") {
+      return handleExitBlockquote(state);
     }
     return null;
   },

@@ -1,15 +1,5 @@
 import { useRef, useState } from "react";
 import { CakeEditor, CakeEditorRef } from "@blankdotpage/cake";
-import {
-  toggleBold,
-  toggleItalic,
-  toggleStrikethrough,
-  toggleLink,
-  toggleHeading,
-  toggleBulletList,
-  toggleNumberedList,
-  toggleQuote,
-} from "../../src/codemirror/markdown-commands";
 
 type FontStyle = "sans" | "serif" | "mono";
 
@@ -50,7 +40,12 @@ export default function App() {
             <div className="toolbarGroup">
               <button
                 className="toolbarButton"
-                onClick={() => editorRef.current?.executeCommand(toggleBold)}
+                onClick={() =>
+                  editorRef.current?.executeCommand(
+                    { type: "toggle-bold" },
+                    { restoreFocus: true },
+                  )
+                }
                 title="Bold (Cmd+B)"
                 disabled={!hasSelection}
               >
@@ -58,7 +53,12 @@ export default function App() {
               </button>
               <button
                 className="toolbarButton"
-                onClick={() => editorRef.current?.executeCommand(toggleItalic)}
+                onClick={() =>
+                  editorRef.current?.executeCommand(
+                    { type: "toggle-italic" },
+                    { restoreFocus: true },
+                  )
+                }
                 title="Italic (Cmd+I)"
                 disabled={!hasSelection}
               >
@@ -67,7 +67,10 @@ export default function App() {
               <button
                 className="toolbarButton"
                 onClick={() =>
-                  editorRef.current?.executeCommand(toggleStrikethrough)
+                  editorRef.current?.executeCommand(
+                    { type: "toggle-strikethrough" },
+                    { restoreFocus: true },
+                  )
                 }
                 title="Strikethrough (Cmd+Shift+X)"
                 disabled={!hasSelection}
@@ -76,7 +79,12 @@ export default function App() {
               </button>
               <button
                 className="toolbarButton"
-                onClick={() => editorRef.current?.executeCommand(toggleLink)}
+                onClick={() =>
+                  editorRef.current?.executeCommand(
+                    { type: "wrap-link", openPopover: true },
+                    { restoreFocus: true },
+                  )
+                }
                 title="Link (Cmd+Shift+U)"
                 disabled={!hasSelection}
               >
@@ -87,14 +95,24 @@ export default function App() {
             <div className="toolbarGroup">
               <button
                 className="toolbarButton"
-                onClick={() => editorRef.current?.executeCommand(toggleHeading)}
+                onClick={() =>
+                  editorRef.current?.executeCommand(
+                    { type: "toggle-heading" },
+                    { restoreFocus: true },
+                  )
+                }
                 title="Heading"
               >
                 H1
               </button>
               <button
                 className="toolbarButton"
-                onClick={() => editorRef.current?.executeCommand(toggleQuote)}
+                onClick={() =>
+                  editorRef.current?.executeCommand(
+                    { type: "toggle-blockquote" },
+                    { restoreFocus: true },
+                  )
+                }
                 title="Quote"
               >
                 Quote
@@ -102,7 +120,10 @@ export default function App() {
               <button
                 className="toolbarButton"
                 onClick={() =>
-                  editorRef.current?.executeCommand(toggleBulletList)
+                  editorRef.current?.executeCommand(
+                    { type: "toggle-bullet-list" },
+                    { restoreFocus: true },
+                  )
                 }
                 title="Bullet List (Cmd+Shift+8)"
               >
@@ -111,7 +132,10 @@ export default function App() {
               <button
                 className="toolbarButton"
                 onClick={() =>
-                  editorRef.current?.executeCommand(toggleNumberedList)
+                  editorRef.current?.executeCommand(
+                    { type: "toggle-numbered-list" },
+                    { restoreFocus: true },
+                  )
                 }
                 title="Numbered List (Cmd+Shift+7)"
               >

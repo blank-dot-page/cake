@@ -307,3 +307,11 @@ body {
   font-family: "SF Mono", "Fira Code", "Monaco", Consolas, monospace;
   font-size: 14px;
 }
+
+.main blockquote {
+  margin: 0;
+  padding: 8px 16px;
+  background: rgba(18, 18, 18, 0.04);
+  border-left: 2px solid rgba(18, 18, 18, 0.2);
+  border-radius: 0 4px 4px 0;
+}

@@ -141,6 +141,33 @@ describe("semantic commands", () => {
       expect(result).toBe(true);
       expect(h.engine.getValue()).toBe("> ");
     });
+
+    test("cmd+enter exits blockquote and allows typing outside", async () => {
+      h = createTestHarness("> hello world");
+      await h.focus();
+      await h.clickAt(5, 0); // Inside the blockquote
+
+      // Use keyboard shortcut
+      await h.pressKey("Enter", { meta: true });
+
+      // Type on the new line
+      await h.typeText("outside");
+
+      expect(h.engine.getValue()).toBe("> hello world\noutside");
+      // Second line should NOT be a blockquote
+      expect(h.getLine(1).closest("blockquote")).toBeNull();
+    });
+
+    test("cmd+enter on plain text just inserts newline", async () => {
+      h = createTestHarness("hello world");
+      await h.focus();
+      await h.clickAt(5, 0); // After "hello"
+
+      await h.pressKey("Enter", { meta: true });
+
+      // Should just insert a newline (no blockquote to exit)
+      expect(h.engine.getValue()).toBe("hello\n world");
+    });
   });
 
   describe("toggle-heading", () => {
@@ -446,6 +473,46 @@ describe("focus restoration", () => {
 
     // Focus should stay on button
     expect(document.activeElement).toBe(boldButton);
+  });
+
+  test("restoreFocus restores DOM selection to non-collapsed range", async () => {
+    h = createTestHarness("hello world");
+
+    toolbar = document.createElement("div");
+    toolbar.style.position = "absolute";
+    toolbar.style.top = "250px";
+    const boldButton = document.createElement("button");
+    boldButton.textContent = "Bold";
+    toolbar.appendChild(boldButton);
+    document.body.appendChild(toolbar);
+
+    await h.focus();
+    await h.doubleClick(0, 0); // Select "hello"
+
+    // Verify selection before blur
+    const selBefore = h.engine.getSelection();
+    expect(selBefore.start).toBe(0);
+    expect(selBefore.end).toBe(5);
+
+    // Click toolbar - steals focus
+    boldButton.focus();
+    boldButton.click();
+
+    // Execute with restoreFocus
+    h.engine.executeCommand({ type: "toggle-bold" }, { restoreFocus: true });
+
+    // Editor should be refocused
+    expect(document.activeElement).toBe(h.contentRoot);
+
+    // DOM selection should be a range (not collapsed caret)
+    const domSel = window.getSelection();
+    expect(domSel?.rangeCount).toBeGreaterThan(0);
+    const domRange = domSel!.getRangeAt(0);
+    expect(domRange.collapsed).toBe(false);
+
+    // Selection rects should be visible
+    const rects = h.getSelectionRects();
+    expect(rects.length).toBeGreaterThan(0);
   });
 });
 
