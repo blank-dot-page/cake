@@ -1144,7 +1144,6 @@ describe("CakeEngine click positioning", () => {
       const rows = harness.getVisualRows();
       expect(rows.length).toBeGreaterThanOrEqual(2);
 
-      const row0 = rows[0];
       const row1 = rows[1];
       const firstCharRect = harness.getCharRect(row1.startOffset);
 
@@ -1153,41 +1152,8 @@ describe("CakeEngine click positioning", () => {
       const clickX = firstCharRect.left - 10; // 10px into the padding
       const clickY = firstCharRect.top + firstCharRect.height / 2;
 
-      console.log("=== CLICK IN MARGIN AT SECOND ROW Y ===");
-      console.log("row0:", JSON.stringify(row0));
-      console.log("row1:", JSON.stringify(row1));
-      console.log("firstCharRect:", JSON.stringify(firstCharRect));
-      // Debug: check char rects around the boundary
-      for (let i = 18; i <= 23; i++) {
-        const r = harness.getCharRect(i);
-        console.log(`char ${i} rect: top=${r.top} bottom=${r.bottom} left=${r.left}`);
-      }
-      // Also check if the test expectation is correct
-      console.log(
-        `Expected row1.startOffset=${row1.startOffset}, row0.endOffset=${row0.endOffset}`,
-      );
-      console.log("clickX:", clickX, "(left of first char)");
-      console.log("clickY:", clickY);
-
-      // Test what caretPositionFromPoint returns at this position
-      const position = document.caretPositionFromPoint?.(clickX, clickY);
-      console.log(
-        "caretPositionFromPoint:",
-        position
-          ? `node=${position.offsetNode.nodeName}, offset=${position.offset}`
-          : "null",
-      );
-
       await harness.clickAtCoords(clickX, clickY);
       await new Promise((resolve) => setTimeout(resolve, 100));
-
-      console.log("selection:", JSON.stringify(harness.selection));
-      console.log("caretRect:", JSON.stringify(harness.getCaretRect()));
-
-      // Take screenshot
-      await page.screenshot({
-        path: "../../../.vitest-screenshots/click-margin-second-row.png",
-      });
 
       // Selection should be at start of second row
       expect(harness.selection.start).toBe(row1.startOffset);
@@ -1195,6 +1161,261 @@ describe("CakeEngine click positioning", () => {
 
       // Caret should be visually on the second row
       harness.assertCaretAtStartOfVisualRow(1);
+    });
+  });
+
+  describe("clicking in container padding", () => {
+    const PADDING_CSS = `
+      .cake {
+        font-family: "Cousine", monospace;
+        line-height: 2;
+        padding: 40px;
+        box-sizing: border-box;
+      }
+      .cake-content {
+        width: 200px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        background-color: rgba(0, 255, 0, 0.1);
+      }
+    `;
+
+    it("clicking in top-left padding area places caret at start of first line", async () => {
+      harness = createTestHarness({
+        value: "Hello world",
+        css: PADDING_CSS,
+      });
+
+      const containerRect = harness.container.getBoundingClientRect();
+
+      // Click in the top-left padding area (above and left of the content)
+      const clickX = containerRect.left + 10; // In left padding
+      const clickY = containerRect.top + 10; // In top padding
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Selection should be at start of first line (click was left of content)
+      expect(harness.selection.start).toBe(0);
+      expect(harness.selection.end).toBe(0);
+    });
+
+    it("clicking in top-right padding area places caret at end of first line", async () => {
+      harness = createTestHarness({
+        value: "Hello world",
+        css: PADDING_CSS,
+      });
+
+      const containerRect = harness.container.getBoundingClientRect();
+
+      // Click in the top-right padding area (above and right of the content)
+      const clickX = containerRect.right - 10; // In right padding
+      const clickY = containerRect.top + 10; // In top padding
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Selection should be at end of first line (click was right of content)
+      // "Hello world" has 11 characters, so end position is 11
+      expect(harness.selection.start).toBe(11);
+      expect(harness.selection.end).toBe(11);
+    });
+
+    it("clicking in bottom-left padding area places caret at start of last line", async () => {
+      harness = createTestHarness({
+        value: "Hello world",
+        css: PADDING_CSS,
+      });
+
+      const containerRect = harness.container.getBoundingClientRect();
+
+      // Click in the bottom-left padding area (below and left of the content)
+      const clickX = containerRect.left + 10; // In left padding
+      const clickY = containerRect.bottom - 10; // In bottom padding
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Selection should be at start of last line (click was left of content)
+      expect(harness.selection.start).toBe(0);
+      expect(harness.selection.end).toBe(0);
+    });
+
+    it("clicking in bottom-right padding area places caret at end of last line", async () => {
+      harness = createTestHarness({
+        value: "Hello world",
+        css: PADDING_CSS,
+      });
+
+      const containerRect = harness.container.getBoundingClientRect();
+
+      // Click in the bottom-right padding area (below and right of the content)
+      const clickX = containerRect.right - 10; // In right padding
+      const clickY = containerRect.bottom - 10; // In bottom padding
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Selection should be at end of last line (click was right of content)
+      expect(harness.selection.start).toBe(11);
+      expect(harness.selection.end).toBe(11);
+    });
+
+    it("clicking in left padding area places caret at start of nearest line", async () => {
+      harness = createTestHarness({
+        value: "First line\nSecond line",
+        css: PADDING_CSS,
+      });
+
+      const containerRect = harness.container.getBoundingClientRect();
+      const line1Rect = harness.getLineRect(1);
+
+      // Click in the left padding area at the Y position of the second line
+      const clickX = containerRect.left + 10; // 10px from left edge (in padding)
+      const clickY = line1Rect.top + line1Rect.height / 2;
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Selection should be at start of second line (11 = after "First line\n")
+      expect(harness.selection.start).toBe(11);
+      expect(harness.selection.end).toBe(11);
+    });
+
+    it("clicking in right padding area places caret at end of nearest line", async () => {
+      harness = createTestHarness({
+        value: "First line\nSecond line",
+        css: PADDING_CSS,
+      });
+
+      const containerRect = harness.container.getBoundingClientRect();
+      const line0Rect = harness.getLineRect(0);
+
+      // Click in the right padding area at the Y position of the first line
+      const clickX = containerRect.right - 10; // 10px from right edge (in padding)
+      const clickY = line0Rect.top + line0Rect.height / 2;
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Selection should be at end of first line (10 = length of "First line")
+      expect(harness.selection.start).toBe(10);
+      expect(harness.selection.end).toBe(10);
+    });
+
+    it("clicking in left padding of wrapped second row places caret at start of visual row", async () => {
+      harness = createTestHarness({
+        value: "d".repeat(100),
+        css: PADDING_CSS,
+      });
+
+      const containerRect = harness.container.getBoundingClientRect();
+      const rows = harness.getVisualRows();
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+
+      const row1 = rows[1];
+
+      // Click in the left padding at the Y position of the second visual row
+      const clickX = containerRect.left + 5; // 5px from left edge (deep in padding)
+      const clickY = row1.top + (row1.bottom - row1.top) / 2;
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Selection should be at start of second visual row
+      expect(harness.selection.start).toBe(row1.startOffset);
+      expect(harness.selection.end).toBe(row1.startOffset);
+
+      // Visually the caret should be at the start of row1
+      harness.assertCaretAtStartOfVisualRow(1);
+    });
+
+    it("clicking in right padding of wrapped first row places caret at end of visual row", async () => {
+      harness = createTestHarness({
+        value: "d".repeat(100),
+        css: PADDING_CSS,
+      });
+
+      const containerRect = harness.container.getBoundingClientRect();
+      const rows = harness.getVisualRows();
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+
+      const row0 = rows[0];
+      const row1 = rows[1];
+
+      // Click in the right padding at the Y position of the first visual row
+      const clickX = containerRect.right - 5; // 5px from right edge (deep in padding)
+      const clickY = row0.top + (row0.bottom - row0.top) / 2;
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Selection should be at the end of first visual row. For wrapped lines without
+      // newlines, this is the same offset as the start of the second row (row1.startOffset)
+      // but with backward affinity so the caret renders at the end of row0.
+      expect(harness.selection.start).toBe(row1.startOffset);
+      expect(harness.selection.end).toBe(row1.startOffset);
+      expect(harness.selection.affinity).toBe("backward");
+
+      // Visually the caret should be at the end of row0, not start of row1
+      harness.assertCaretAtEndOfVisualRow(0);
+    });
+
+    it("clicking in left padding of wrapped third row places caret at start of that row", async () => {
+      harness = createTestHarness({
+        value: "d".repeat(100),
+        css: PADDING_CSS,
+      });
+
+      const containerRect = harness.container.getBoundingClientRect();
+      const rows = harness.getVisualRows();
+      expect(rows.length).toBeGreaterThanOrEqual(3);
+
+      const row2 = rows[2];
+
+      // Click in the left padding at the Y position of the third visual row
+      const clickX = containerRect.left + 5;
+      const clickY = row2.top + (row2.bottom - row2.top) / 2;
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Selection should be at start of third visual row
+      expect(harness.selection.start).toBe(row2.startOffset);
+      expect(harness.selection.end).toBe(row2.startOffset);
+
+      // Visually the caret should be at the start of row2
+      harness.assertCaretAtStartOfVisualRow(2);
+    });
+
+    it("clicking in right padding of wrapped second row places caret at end of that row", async () => {
+      harness = createTestHarness({
+        value: "d".repeat(100),
+        css: PADDING_CSS,
+      });
+
+      const containerRect = harness.container.getBoundingClientRect();
+      const rows = harness.getVisualRows();
+      expect(rows.length).toBeGreaterThanOrEqual(3);
+
+      const row1 = rows[1];
+      const row2 = rows[2];
+
+      // Click in the right padding at the Y position of the second visual row
+      const clickX = containerRect.right - 5;
+      const clickY = row1.top + (row1.bottom - row1.top) / 2;
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Selection should be at the end of second visual row (same offset as start of row2)
+      // but with backward affinity so the caret renders at the end of row1
+      expect(harness.selection.start).toBe(row2.startOffset);
+      expect(harness.selection.end).toBe(row2.startOffset);
+      expect(harness.selection.affinity).toBe("backward");
+
+      // Visually the caret should be at the end of row1, not start of row2
+      harness.assertCaretAtEndOfVisualRow(1);
     });
   });
 
