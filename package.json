@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./react": {
+      "types": "./dist/cake/react/index.d.ts",
+      "import": "./dist/cake/react/index.js"
+    },
     "./extensions/*": {
       "types": "./dist/cake/extensions/*/index.d.ts",
       "import": "./dist/cake/extensions/*/index.js"

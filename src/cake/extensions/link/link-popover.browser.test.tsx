@@ -2,7 +2,8 @@ import { createRef, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
-import { CakeEditor, type CakeEditorRef } from "../../index";
+import { CakeEditor, type CakeEditorRef } from "../../react/index";
+import { bundledExtensions } from "../../extensions";
 
 function renderEditor(markdown: string) {
   const ref = createRef<CakeEditorRef>();
@@ -12,6 +13,7 @@ function renderEditor(markdown: string) {
       value={markdown}
       onChange={() => undefined}
       placeholder=""
+      extensions={bundledExtensions}
       style={{ height: 300, overflow: "auto" }}
     />,
   );
@@ -34,6 +36,7 @@ function ControlledEditor({ initialValue }: { initialValue: string }) {
         setSelection({ start, end, affinity })
       }
       placeholder=""
+      extensions={bundledExtensions}
       style={{ height: 300, overflow: "auto" }}
     />
   );
@@ -144,6 +147,7 @@ describe("cake link popover", () => {
             setValue(newValue);
           }}
           placeholder=""
+          extensions={bundledExtensions}
           style={{ height: 300, overflow: "auto" }}
         />
       );

@@ -13,10 +13,6 @@ import type {
   OverlayExtensionContext,
 } from "../core/runtime";
 import { CakeEngine } from "../engine/cake-engine";
-import {
-  bundledExtensions,
-  bundledExtensionsWithoutImage,
-} from "../extensions";
 
 function toEngineSelection(selection?: CakeEditorSelection): Selection {
   if (!selection) {
@@ -55,9 +51,8 @@ export interface CakeEditorProps {
   spellCheck?: boolean;
   className?: string;
   style?: React.CSSProperties;
-  extensions?: CakeExtension[];
+  extensions: CakeExtension[];
   onBlur?: (event?: FocusEvent) => void;
-  disableImageExtension?: boolean;
 }
 
 export interface CakeEditorRef {
@@ -101,15 +96,8 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
     const lastEmittedSelectionRef = useRef<Selection | null>(null);
     const [contentRoot, setContentRoot] = useState<HTMLElement | null>(null);
 
-    // Merge bundled extensions with custom extensions
-    const baseExtensions = props.disableImageExtension
-      ? bundledExtensionsWithoutImage
-      : bundledExtensions;
-    const allExtensionsRef = useRef<CakeExtension[]>([
-      ...baseExtensions,
-      ...(props.extensions ?? []),
-    ]);
-    const hasOverlayExtensions = allExtensionsRef.current.some(
+    const extensionsRef = useRef<CakeExtension[]>(props.extensions);
+    const hasOverlayExtensions = extensionsRef.current.some(
       (ext) => ext.renderOverlay,
     );
 
@@ -132,7 +120,7 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
         container,
         value: props.value,
         selection: props.selection ?? undefined,
-        extensions: allExtensionsRef.current,
+        extensions: extensionsRef.current,
         readOnly: props.disabled ?? false,
         spellCheckEnabled: props.spellCheck ?? false,
         onChange: (value, selection) => {
@@ -345,7 +333,7 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
           }}
         />
         {overlayContext && hasOverlayExtensions
-          ? allExtensionsRef.current.map((extension) =>
+          ? extensionsRef.current.map((extension) =>
               extension.renderOverlay ? (
                 <Fragment key={extension.name}>
                   {extension.renderOverlay(overlayContext)}

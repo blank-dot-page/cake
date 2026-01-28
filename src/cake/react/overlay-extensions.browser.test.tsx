@@ -2,7 +2,7 @@ import { createRef, useEffect, useRef, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { cleanup, render } from "vitest-browser-react";
-import { CakeEditor, type CakeEditorRef } from "../index";
+import { CakeEditor, type CakeEditorRef } from "./index";
 import type {
   CakeExtension,
   ParseInlineResult,

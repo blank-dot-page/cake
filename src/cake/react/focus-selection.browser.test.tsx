@@ -1,7 +1,8 @@
 import { createRef, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "vitest-browser-react";
-import { CakeEditor, type CakeEditorRef } from "../index";
+import { CakeEditor, type CakeEditorRef } from "./index";
+import { bundledExtensions } from "../extensions";
 
 afterEach(async () => {
   await cleanup();
@@ -22,6 +23,7 @@ async function renderEditor({
       selection={selection}
       onChange={() => undefined}
       placeholder=""
+      extensions={bundledExtensions}
       style={{ height: 160, overflow: "auto" }}
     />,
   );
@@ -90,6 +92,7 @@ describe("page load caret positioning (replicates editor.client.tsx runCaretInit
           onSelectionChange={handleSelectionChange}
           onChange={() => undefined}
           placeholder=""
+          extensions={bundledExtensions}
           style={{ height: 160, overflow: "auto" }}
         />
       );

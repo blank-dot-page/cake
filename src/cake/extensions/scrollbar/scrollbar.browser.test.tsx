@@ -2,7 +2,8 @@ import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
-import { CakeEditor, type CakeEditorRef } from "../../index";
+import { CakeEditor, type CakeEditorRef } from "../../react/index";
+import { bundledExtensions } from "../../extensions";
 import { scrollbarExtension } from "./index";
 
 const TRACK_PADDING = 8;
@@ -17,7 +18,7 @@ async function renderScrollbarEditor(markdown: string, height = 200) {
         value={markdown}
         onChange={() => undefined}
         placeholder=""
-        extensions={[scrollbarExtension]}
+        extensions={[...bundledExtensions, scrollbarExtension]}
         style={{ height: "100%", overflow: "auto" }}
       />
     </div>,
