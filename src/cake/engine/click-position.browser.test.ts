@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { page } from "vitest/browser";
 import { createTestHarness, type TestHarness } from "../test/harness";
 
 describe("CakeEngine click positioning", () => {
@@ -1066,6 +1067,125 @@ describe("CakeEngine click positioning", () => {
       expect(harness.selection.start).toBe(row1.startOffset);
 
       // Caret should be visually at START of SECOND row
+      harness.assertCaretAtStartOfVisualRow(1);
+    });
+  });
+
+  describe("clicking at start of second visual row", () => {
+    const WRAP_CSS = `
+      .cake {
+        font-family: "Cousine", monospace;
+        line-height: 2;
+        padding: 20px;
+      }
+      .cake-content {
+        width: 200px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    `;
+
+    it("clicking at left edge of first char on second visual row places caret at start of row", async () => {
+      harness = createTestHarness({
+        value: "d".repeat(100),
+        css: WRAP_CSS,
+      });
+
+      const rows = harness.getVisualRows();
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+
+      const row1 = rows[1];
+      const firstCharOnSecondRow = row1.startOffset;
+      const firstCharRect = harness.getCharRect(firstCharOnSecondRow);
+
+      // Click EXACTLY at the left boundary of the first character on second row
+      // (not +1 inside like clickLeftOf does)
+      const clickX = firstCharRect.left;
+      const clickY = firstCharRect.top + firstCharRect.height / 2;
+
+      console.log("=== CLICK AT EXACT LEFT BOUNDARY OF FIRST CHAR ON SECOND ROW ===");
+      console.log("row1.startOffset:", firstCharOnSecondRow);
+      console.log("firstCharRect:", JSON.stringify(firstCharRect));
+      console.log("clickX:", clickX, "clickY:", clickY);
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("selection:", JSON.stringify(harness.selection));
+      console.log("caretRect:", JSON.stringify(harness.getCaretRect()));
+
+      // Take screenshot to see where caret is
+      await page.screenshot({
+        path: "../../../.vitest-screenshots/click-left-of-second-row.png",
+      });
+
+      // Selection should be at start of second row
+      expect(harness.selection.start).toBe(firstCharOnSecondRow);
+      expect(harness.selection.end).toBe(firstCharOnSecondRow);
+
+      // Caret should be visually on the second row, not the first
+      harness.assertCaretAtStartOfVisualRow(1);
+    });
+
+    it("clicking in left margin area at second row Y position places caret at start of row", async () => {
+      harness = createTestHarness({
+        value: "d".repeat(100),
+        css: WRAP_CSS,
+      });
+
+      const rows = harness.getVisualRows();
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+
+      const row0 = rows[0];
+      const row1 = rows[1];
+      const firstCharRect = harness.getCharRect(row1.startOffset);
+
+      // Click in the left padding area (inside .cake but outside .cake-content)
+      // at the same Y position as the second row
+      const clickX = firstCharRect.left - 10; // 10px into the padding
+      const clickY = firstCharRect.top + firstCharRect.height / 2;
+
+      console.log("=== CLICK IN MARGIN AT SECOND ROW Y ===");
+      console.log("row0:", JSON.stringify(row0));
+      console.log("row1:", JSON.stringify(row1));
+      console.log("firstCharRect:", JSON.stringify(firstCharRect));
+      // Debug: check char rects around the boundary
+      for (let i = 18; i <= 23; i++) {
+        const r = harness.getCharRect(i);
+        console.log(`char ${i} rect: top=${r.top} bottom=${r.bottom} left=${r.left}`);
+      }
+      // Also check if the test expectation is correct
+      console.log(
+        `Expected row1.startOffset=${row1.startOffset}, row0.endOffset=${row0.endOffset}`,
+      );
+      console.log("clickX:", clickX, "(left of first char)");
+      console.log("clickY:", clickY);
+
+      // Test what caretPositionFromPoint returns at this position
+      const position = document.caretPositionFromPoint?.(clickX, clickY);
+      console.log(
+        "caretPositionFromPoint:",
+        position
+          ? `node=${position.offsetNode.nodeName}, offset=${position.offset}`
+          : "null",
+      );
+
+      await harness.clickAtCoords(clickX, clickY);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("selection:", JSON.stringify(harness.selection));
+      console.log("caretRect:", JSON.stringify(harness.getCaretRect()));
+
+      // Take screenshot
+      await page.screenshot({
+        path: "../../../.vitest-screenshots/click-margin-second-row.png",
+      });
+
+      // Selection should be at start of second row
+      expect(harness.selection.start).toBe(row1.startOffset);
+      expect(harness.selection.end).toBe(row1.startOffset);
+
+      // Caret should be visually on the second row
       harness.assertCaretAtStartOfVisualRow(1);
     });
   });

@@ -27,7 +27,10 @@ import {
   visibleOffsetToCursorOffset,
 } from "./selection/visible-text";
 import type { SelectionRect } from "./selection/selection-geometry";
-import { measureLayoutModelFromDom } from "./selection/selection-layout-dom";
+import {
+  hitTestFromLayout,
+  measureLayoutModelFromDom,
+} from "./selection/selection-layout-dom";
 import { moveSelectionVertically as moveSelectionVerticallyInLayout } from "./selection/selection-navigation";
 import { isMacPlatform } from "../shared/platform";
 import {
@@ -292,6 +295,10 @@ export class CakeEngine {
 
   getContentRoot() {
     return this.contentRoot;
+  }
+
+  getLines() {
+    return getDocLines(this.state.doc);
   }
 
   getOverlayRoot() {
@@ -3219,97 +3226,25 @@ export class CakeEngine {
     clientX: number,
     clientY: number,
   ): { cursorOffset: number; affinity: Affinity } | null {
-    let node: Node | null = null;
-    let offset = 0;
-    let pastRowEnd = false;
-    const position = caretPositionFromPoint(clientX, clientY);
-    if (position) {
-      node = position.offsetNode;
-      offset = position.offset;
-    } else {
-      const range = caretRangeFromPoint(clientX, clientY);
-      if (range) {
-        node = range.startContainer;
-        offset = range.startOffset;
-      }
-    }
-
-    if (!node || !this.container.contains(node)) {
-      const closestLine = this.findClosestLineByY(clientY);
-      const textNode = closestLine ? findFirstTextNode(closestLine) : null;
-      if (textNode) {
-        node = textNode;
-        const hit = findOffsetInTextNode(textNode, clientX, clientY);
-        offset = hit.offset;
-        pastRowEnd = hit.pastRowEnd;
-      }
-    }
-
-    if (!node || !this.container.contains(node)) {
+    if (!this.contentRoot) {
       return null;
     }
 
-    // Check if click is in a gap between lines. This happens when the browser
-    // returns a node from a different line than where the click Y is closest to.
-    // We need to find the closest line by Y and use its text node instead.
-    const lineElement =
-      node instanceof Element
-        ? node.closest(".cake-line")
-        : node.parentElement?.closest(".cake-line");
+    const lines = getDocLines(this.state.doc);
+    const hit = hitTestFromLayout({
+      clientX,
+      clientY,
+      root: this.contentRoot,
+      container: this.container,
+      lines,
+    });
 
-    if (lineElement) {
-      const lineRect = lineElement.getBoundingClientRect();
-      const isClickOutsideLine =
-        clientY < lineRect.top || clientY > lineRect.bottom;
-
-      if (isClickOutsideLine) {
-        // Click is in a gap - find the closest line by Y
-        const closestLine = this.findClosestLineByY(clientY);
-        if (closestLine && closestLine !== lineElement) {
-          const textNode = findFirstTextNode(closestLine);
-          if (textNode) {
-            node = textNode;
-            const hit = findOffsetInTextNode(textNode, clientX, clientY);
-            offset = hit.offset;
-            pastRowEnd = hit.pastRowEnd;
-          }
-        }
-      }
-    }
-
-    if (node instanceof Element) {
-      const resolved = resolveTextPoint(node, offset);
-      if (resolved) {
-        node = resolved.node;
-        offset = resolved.offset;
-      }
-    }
-
-    if (node instanceof Text) {
-      const hit = findOffsetInTextNode(node, clientX, clientY);
-      offset = hit.offset;
-      pastRowEnd = hit.pastRowEnd;
-    }
-
-    if (!pastRowEnd) {
-      const lineElement =
-        node instanceof Element
-          ? node.closest(".cake-line")
-          : node.parentElement?.closest(".cake-line");
-      if (lineElement) {
-        const lineRect = lineElement.getBoundingClientRect();
-        pastRowEnd = clientX > lineRect.right;
-      }
-    }
-
-    const cursor = this.cursorFromDom(node, offset);
-    if (!cursor) {
+    if (!hit) {
       return null;
     }
-    if (!pastRowEnd) {
-      return cursor;
-    }
-    return { cursorOffset: cursor.cursorOffset, affinity: "backward" };
+
+    const affinity: Affinity = hit.pastRowEnd ? "backward" : "forward";
+    return { cursorOffset: hit.cursorOffset, affinity };
   }
 
   private handlePointerDown(event: PointerEvent) {
@@ -4262,252 +4197,6 @@ function findTextNodeAtOrAfter(
     }
   }
   return null;
-}
-
-type TextNodeHitResult = {
-  offset: number;
-  pastRowEnd: boolean;
-};
-
-function findOffsetInTextNode(
-  textNode: Text,
-  clientX: number,
-  clientY: number,
-): TextNodeHitResult {
-  const text = textNode.textContent ?? "";
-  if (text.length === 0) {
-    return { offset: 0, pastRowEnd: false };
-  }
-
-  let closestOffset = 0;
-  let closestDistance = Infinity;
-  let closestYDistance = Infinity;
-  let closestCaretX = 0;
-  let closestRowTop = 0;
-  // Track if we selected via right-edge logic (offset i+1 from char i's right edge)
-  // This means we're at the end of a visual row and need backward affinity
-  let selectedViaRightEdge = false;
-
-  const rowInfo: Map<
-    number,
-    {
-      startOffset: number;
-      endOffset: number;
-      left: number;
-      right: number;
-      top: number;
-      bottom: number;
-    }
-  > = new Map();
-
-  const range = document.createRange();
-
-  let lastCharRect: DOMRect | null = null;
-
-  for (let i = 0; i <= text.length; i += 1) {
-    if (i < text.length) {
-      range.setStart(textNode, i);
-      range.setEnd(textNode, i + 1);
-    } else {
-      range.setStart(textNode, i);
-      range.setEnd(textNode, i);
-    }
-
-    let rects = range.getClientRects();
-    // For collapsed range at end of text, browsers may return no rects.
-    // Use the last character's right edge as a fallback.
-    if (rects.length === 0 && i === text.length && lastCharRect) {
-      // Create a synthetic rect at the right edge of the last character
-      const syntheticRect = new DOMRect(
-        lastCharRect.right,
-        lastCharRect.top,
-        0,
-        lastCharRect.height,
-      );
-      rects = [syntheticRect] as unknown as DOMRectList;
-    }
-    if (rects.length === 0) {
-      continue;
-    }
-    if (i < text.length) {
-      lastCharRect = rects[0];
-    }
-
-    let bestRect = rects[0];
-    for (let r = 1; r < rects.length; r += 1) {
-      const rect = rects[r];
-      const bestCenterY = bestRect.top + bestRect.height / 2;
-      const rectCenterY = rect.top + rect.height / 2;
-      if (Math.abs(clientY - rectCenterY) < Math.abs(clientY - bestCenterY)) {
-        bestRect = rect;
-      }
-    }
-
-    const rowKey = Math.round(bestRect.top);
-    if (!rowInfo.has(rowKey)) {
-      rowInfo.set(rowKey, {
-        startOffset: i,
-        endOffset: i,
-        left: bestRect.left,
-        right: bestRect.right,
-        top: bestRect.top,
-        bottom: bestRect.bottom,
-      });
-    } else {
-      const row = rowInfo.get(rowKey);
-      if (row) {
-        row.startOffset = Math.min(row.startOffset, i);
-        row.endOffset = Math.max(row.endOffset, i);
-        row.left = Math.min(row.left, bestRect.left);
-        row.right = Math.max(row.right, bestRect.right);
-        row.top = Math.min(row.top, bestRect.top);
-        row.bottom = Math.max(row.bottom, bestRect.bottom);
-      }
-    }
-
-    const centerY = bestRect.top + bestRect.height / 2;
-    const yDistance = Math.abs(clientY - centerY);
-    // Check if click is within the row's bounds (not just close to center)
-    const isWithinRowBounds =
-      clientY >= bestRect.top && clientY <= bestRect.bottom;
-    const isSameRow = isWithinRowBounds;
-    // Compare to left edge of each character boundary, not center.
-    // This matches v1 behavior: clicking past the midpoint of a character
-    // means the next boundary (i+1) is closer than the current one (i).
-    const caretX = bestRect.left;
-    const xDistance = Math.abs(clientX - caretX);
-
-    if (isSameRow) {
-      // Use <= so that when distances are equal, the later offset wins.
-      // This ensures clicking near the right edge of a character places the
-      // cursor after it, which is important for clicking at the end of inline
-      // elements like links where the user wants to type after the element.
-      if (xDistance <= closestDistance) {
-        closestDistance = xDistance;
-        closestOffset = i;
-        closestCaretX = caretX;
-        closestRowTop = bestRect.top;
-        // Also update closestYDistance to prevent characters on other rows
-        // from overriding our same-row match
-        closestYDistance = yDistance;
-        selectedViaRightEdge = false;
-      }
-
-      // Also consider the right edge of this character as a candidate position
-      // for offset i+1. This handles the case where position i+1 is on a different
-      // visual row (word-break wrapped text) but should be selectable from the
-      // current row by clicking near the right edge of the last character.
-      if (i < text.length) {
-        const rightEdgeX = bestRect.right;
-        const rightEdgeDistance = Math.abs(clientX - rightEdgeX);
-        if (rightEdgeDistance < closestDistance) {
-          closestDistance = rightEdgeDistance;
-          closestOffset = i + 1;
-          closestCaretX = rightEdgeX;
-          closestRowTop = bestRect.top;
-          closestYDistance = yDistance;
-          selectedViaRightEdge = true;
-        }
-      }
-    } else if (
-      yDistance < closestYDistance ||
-      (yDistance === closestYDistance && xDistance < closestDistance)
-    ) {
-      // When Y distances are equal (click on boundary between rows), also compare X
-      closestYDistance = yDistance;
-      closestDistance = xDistance;
-      closestOffset = i;
-      closestCaretX = caretX;
-      closestRowTop = bestRect.top;
-    }
-  }
-
-  let closestRow: {
-    startOffset: number;
-    endOffset: number;
-    left: number;
-    right: number;
-    top: number;
-    bottom: number;
-  } | null = null;
-
-  for (const row of rowInfo.values()) {
-    if (clientY >= row.top && clientY <= row.bottom) {
-      closestRow = row;
-      break;
-    }
-  }
-
-  if (!closestRow) {
-    let smallestDistance = Infinity;
-    for (const row of rowInfo.values()) {
-      const centerY = row.top + (row.bottom - row.top) / 2;
-      const distance = Math.abs(clientY - centerY);
-      if (distance < smallestDistance) {
-        smallestDistance = distance;
-        closestRow = row;
-      }
-    }
-  }
-
-  if (closestRow) {
-    if (clientX < closestRow.left) {
-      closestOffset = closestRow.startOffset;
-      closestCaretX = closestRow.left;
-      closestRowTop = closestRow.top;
-    } else if (clientX > closestRow.right) {
-      // When clicking past the right edge of a row, place the caret AFTER
-      // the last character on that row (endOffset + 1), not ON the last character.
-      // This is important for wrapped lines where the user clicks in the margin.
-      closestOffset = Math.min(closestRow.endOffset + 1, text.length);
-      closestCaretX = closestRow.right;
-      closestRowTop = closestRow.top;
-    } else if (clientY < closestRow.top || clientY > closestRow.bottom) {
-      // Click Y is in a gap (outside the row bounds), but X is within the row.
-      // Find the character with the closest X position within this row.
-      let bestXDistance = Infinity;
-      const range = document.createRange();
-      for (let i = closestRow.startOffset; i <= closestRow.endOffset; i += 1) {
-        if (i < text.length) {
-          range.setStart(textNode, i);
-          range.setEnd(textNode, i + 1);
-        } else {
-          range.setStart(textNode, i);
-          range.setEnd(textNode, i);
-        }
-        const rects = range.getClientRects();
-        if (rects.length === 0) continue;
-        const rect = rects[0];
-        const xDist = Math.abs(clientX - rect.left);
-        if (xDist <= bestXDistance) {
-          bestXDistance = xDist;
-          closestOffset = i;
-          closestCaretX = rect.left;
-          closestRowTop = closestRow.top;
-        }
-      }
-    }
-  }
-
-  // pastRowEnd indicates the click was at or past the right edge of the row's text,
-  // which means we should use backward affinity to render the caret at the
-  // end of this row rather than the start of the next row.
-  // This is true when:
-  // 1. Click was past the row's right edge (in empty space or margin)
-  // 2. We selected offset i+1 by being closer to char i's right edge
-  const pastRowEnd =
-    selectedViaRightEdge ||
-    (closestRow !== null && clientX > closestRow.right);
-
-  if (
-    Math.abs(clientX - closestCaretX) <= 2 &&
-    closestOffset < text.length &&
-    text[closestOffset] === "\n"
-  ) {
-    closestOffset = Math.max(0, closestOffset - 1);
-  }
-
-  return { offset: closestOffset, pastRowEnd };
 }
 
 function caretPositionFromPoint(

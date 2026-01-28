@@ -76,6 +76,71 @@ body {
 
 .editorCard {
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e0ddd8;
+  background: #fafaf9;
+  flex-shrink: 0;
+}
+
+.toolbarGroup {
+  display: flex;
+  gap: 4px;
+}
+
+.toolbarDivider {
+  width: 1px;
+  height: 20px;
+  background: #e0ddd8;
+}
+
+.toolbarButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: #121212;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.toolbarButton:hover:not(:disabled) {
+  background: #f0efed;
+  border-color: #e0ddd8;
+}
+
+.toolbarButton:active:not(:disabled) {
+  background: #e6e4e1;
+}
+
+.toolbarButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbarButton.active {
+  background: #e6e4e1;
+  border-color: #d0cdc8;
+}
+
+.fontSwitcher .toolbarButton {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .sidebar {
@@ -227,4 +292,18 @@ body {
   color: rgb(71, 135, 238);
   text-decoration: underline;
   text-decoration-thickness: 1px;
+}
+
+/* Font style variations */
+.main .cake.font-sans .cake-content {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+}
+
+.main .cake.font-serif .cake-content {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.main .cake.font-mono .cake-content {
+  font-family: "SF Mono", "Fira Code", "Monaco", Consolas, monospace;
+  font-size: 14px;
 }

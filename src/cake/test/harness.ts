@@ -5,6 +5,7 @@ import { CakeEngine } from "../engine/cake-engine";
 import type { Selection } from "../core/types";
 import type { CakeExtension, OverlayExtensionContext } from "../core/runtime";
 import { bundledExtensions } from "../extensions";
+import { measureLayoutModelFromDom } from "../engine/selection/selection-layout-dom";
 
 export interface SelectionRectInfo {
   top: number;
@@ -92,6 +93,7 @@ export function createTestHarness(
       : valueOrOptions;
 
   const container = document.createElement("div");
+  container.className = "cake";
   container.style.width = "400px";
   container.style.height = "200px";
   container.style.position = "absolute";
@@ -236,6 +238,12 @@ export function createTestHarness(
         const range = document.createRange();
         range.setStart(textNode, remaining);
         range.setEnd(textNode, remaining + 1);
+        // Use getClientRects()[0] instead of getBoundingClientRect() because
+        // at wrap boundaries, getBoundingClientRect() can span multiple rows
+        const rects = range.getClientRects();
+        if (rects.length > 0 && rects[0]) {
+          return rects[0];
+        }
         return range.getBoundingClientRect();
       }
       remaining -= len;
@@ -251,8 +259,6 @@ export function createTestHarness(
     side: "left" | "right" | "center",
     lineIndex = 0,
   ): Promise<void> {
-    const line = getLine(lineIndex);
-    const lineRect = line.getBoundingClientRect();
     const charRect = getCharRect(offset, lineIndex);
 
     let clickX: number;
@@ -265,10 +271,12 @@ export function createTestHarness(
     }
     const clickY = charRect.top + charRect.height / 2;
 
-    await userEvent.click(line, {
+    // Click on container to go through the engine's hit testing
+    const containerRect = container.getBoundingClientRect();
+    await userEvent.click(container, {
       position: {
-        x: clickX - lineRect.left,
-        y: clickY - lineRect.top,
+        x: clickX - containerRect.left,
+        y: clickY - containerRect.top,
       },
     });
   }
@@ -297,9 +305,9 @@ export function createTestHarness(
     clientX: number,
     clientY: number,
   ): Promise<void> {
-    const contentRoot = getContentRoot();
-    const rect = contentRoot.getBoundingClientRect();
-    await userEvent.click(contentRoot, {
+    // Click on container (not contentRoot) to handle margin clicks properly
+    const rect = container.getBoundingClientRect();
+    await userEvent.click(container, {
       position: {
         x: clientX - rect.left,
         y: clientY - rect.top,
@@ -333,51 +341,66 @@ export function createTestHarness(
   }
 
   function getVisualRows(lineIndex = 0): VisualRowInfo[] {
-    const textNodes = getTextNodes(lineIndex);
-    if (textNodes.length === 0) {
+    const lines = engine.getLines();
+    const root = engine.getContentRoot();
+    if (!root) {
+      return [];
+    }
+    const layout = measureLayoutModelFromDom({
+      lines,
+      root,
+      container,
+    });
+
+    if (!layout) {
       return [];
     }
 
-    const rows: VisualRowInfo[] = [];
-    let currentRowTop: number | null = null;
-    let currentRow: VisualRowInfo | null = null;
-    let globalOffset = 0;
+    const lineLayout = layout.lines[lineIndex];
+    if (!lineLayout) {
+      return [];
+    }
 
-    for (const textNode of textNodes) {
-      const text = textNode.data;
-      for (let i = 0; i < text.length; i++) {
-        const range = document.createRange();
-        range.setStart(textNode, i);
-        range.setEnd(textNode, i + 1);
-        const rect = range.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
 
-        if (currentRowTop === null || Math.abs(rect.top - currentRowTop) > 5) {
-          if (currentRow) {
-            rows.push(currentRow);
-          }
-          currentRowTop = rect.top;
-          currentRow = {
-            startOffset: globalOffset,
-            endOffset: globalOffset,
-            top: rect.top,
-            bottom: rect.bottom,
-            left: rect.left,
-            right: rect.right,
-          };
-        } else if (currentRow) {
-          currentRow.endOffset = globalOffset;
-          currentRow.right = Math.max(currentRow.right, rect.right);
-          currentRow.bottom = Math.max(currentRow.bottom, rect.bottom);
-        }
-        globalOffset++;
+    return lineLayout.rows.map((row) => {
+      // Use actual character positions for left/right bounds
+      const startCharOffset = row.startOffset;
+      const endCharOffset = row.endOffset > row.startOffset ? row.endOffset - 1 : row.startOffset;
+
+      // Measure first character's left position
+      let left = row.rect.left + containerRect.left;
+      try {
+        const firstCharRect = getCharRect(lineLayout.lineStartOffset + startCharOffset, lineIndex);
+        left = firstCharRect.left;
+      } catch {
+        // Fall back to layout model rect if char measurement fails
       }
-    }
 
-    if (currentRow) {
-      rows.push(currentRow);
-    }
+      // Measure last character's right position
+      let right = row.rect.left + row.rect.width + containerRect.left;
+      try {
+        const lastCharRect = getCharRect(lineLayout.lineStartOffset + endCharOffset, lineIndex);
+        right = lastCharRect.right;
+      } catch {
+        // Fall back to layout model rect if char measurement fails
+      }
 
-    return rows;
+      // Note: Layout model endOffset is exclusive, but old harness used inclusive.
+      // Convert to inclusive by subtracting 1 (unless it's an empty row).
+      const inclusiveEndOffset = row.endOffset > row.startOffset
+        ? row.endOffset - 1
+        : row.startOffset;
+
+      return {
+        startOffset: lineLayout.lineStartOffset + row.startOffset,
+        endOffset: lineLayout.lineStartOffset + inclusiveEndOffset,
+        top: row.rect.top + containerRect.top,
+        bottom: row.rect.top + row.rect.height + containerRect.top,
+        left,
+        right,
+      };
+    });
   }
 
   function assertCaretOnVisualRow(rowIndex: number, lineIndex = 0): void {

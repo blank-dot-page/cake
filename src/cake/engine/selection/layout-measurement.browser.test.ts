@@ -451,3 +451,207 @@ describe("Layout measurement with variable-width fonts", () => {
     expect(forwardDistToRow0).toBeLessThanOrEqual(forwardDistToRow1);
   });
 });
+
+describe("Layout model row bounds never overlap", () => {
+  let container: HTMLDivElement | null = null;
+
+  afterEach(() => {
+    if (container) {
+      document.body.removeChild(container);
+      container = null;
+    }
+  });
+
+  function assertNoRowOverlap(
+    rows: Array<{ rect: { top: number; height: number } }>,
+    testName: string,
+  ) {
+    for (let i = 0; i < rows.length - 1; i++) {
+      const current = rows[i];
+      const next = rows[i + 1];
+      const currentBottom = current.rect.top + current.rect.height;
+      const nextBottom = next.rect.top + next.rect.height;
+
+      console.log(
+        `${testName} - Row ${i}: top=${current.rect.top}, bottom=${currentBottom}`,
+      );
+      console.log(
+        `${testName} - Row ${i + 1}: top=${next.rect.top}, bottom=${nextBottom}`,
+      );
+
+      // Row i's bottom should be <= Row i+1's top (no overlap)
+      expect(currentBottom).toBeLessThanOrEqual(next.rect.top);
+    }
+  }
+
+  it("rows do not overlap with line-height: 1", () => {
+    container = document.createElement("div");
+    container.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 200px;
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 1;
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    document.body.appendChild(container);
+
+    const lineDiv = document.createElement("div");
+    lineDiv.setAttribute("data-line-index", "0");
+    const text = "d".repeat(100);
+    lineDiv.textContent = text;
+    container.appendChild(lineDiv);
+
+    const lines = [createLineInfo(text, 0)];
+    const layout = measureLayoutModelFromDom({
+      lines,
+      root: container,
+      container,
+    });
+
+    expect(layout).not.toBeNull();
+    expect(layout!.lines[0].rows.length).toBeGreaterThanOrEqual(2);
+
+    assertNoRowOverlap(layout!.lines[0].rows, "line-height: 1");
+  });
+
+  it("rows do not overlap with line-height: 1.5", () => {
+    container = document.createElement("div");
+    container.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 200px;
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    document.body.appendChild(container);
+
+    const lineDiv = document.createElement("div");
+    lineDiv.setAttribute("data-line-index", "0");
+    const text = "d".repeat(100);
+    lineDiv.textContent = text;
+    container.appendChild(lineDiv);
+
+    const lines = [createLineInfo(text, 0)];
+    const layout = measureLayoutModelFromDom({
+      lines,
+      root: container,
+      container,
+    });
+
+    expect(layout).not.toBeNull();
+    expect(layout!.lines[0].rows.length).toBeGreaterThanOrEqual(2);
+
+    assertNoRowOverlap(layout!.lines[0].rows, "line-height: 1.5");
+  });
+
+  it("rows do not overlap with line-height: 2", () => {
+    container = document.createElement("div");
+    container.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 200px;
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 2;
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    document.body.appendChild(container);
+
+    const lineDiv = document.createElement("div");
+    lineDiv.setAttribute("data-line-index", "0");
+    const text = "d".repeat(100);
+    lineDiv.textContent = text;
+    container.appendChild(lineDiv);
+
+    const lines = [createLineInfo(text, 0)];
+    const layout = measureLayoutModelFromDom({
+      lines,
+      root: container,
+      container,
+    });
+
+    expect(layout).not.toBeNull();
+    expect(layout!.lines[0].rows.length).toBeGreaterThanOrEqual(2);
+
+    assertNoRowOverlap(layout!.lines[0].rows, "line-height: 2");
+  });
+
+  it("rows do not overlap with padding on container", () => {
+    container = document.createElement("div");
+    container.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 200px;
+      padding: 20px;
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    document.body.appendChild(container);
+
+    const lineDiv = document.createElement("div");
+    lineDiv.setAttribute("data-line-index", "0");
+    const text = "d".repeat(100);
+    lineDiv.textContent = text;
+    container.appendChild(lineDiv);
+
+    const lines = [createLineInfo(text, 0)];
+    const layout = measureLayoutModelFromDom({
+      lines,
+      root: container,
+      container,
+    });
+
+    expect(layout).not.toBeNull();
+    expect(layout!.lines[0].rows.length).toBeGreaterThanOrEqual(2);
+
+    assertNoRowOverlap(layout!.lines[0].rows, "with padding");
+  });
+
+  it("rows do not overlap with variable-width font", () => {
+    container = document.createElement("div");
+    container.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 200px;
+      font-family: "Times New Roman", serif;
+      font-size: 16px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    document.body.appendChild(container);
+
+    const lineDiv = document.createElement("div");
+    lineDiv.setAttribute("data-line-index", "0");
+    const text = "The quick brown fox jumps over the lazy dog repeatedly";
+    lineDiv.textContent = text;
+    container.appendChild(lineDiv);
+
+    const lines = [createLineInfo(text, 0)];
+    const layout = measureLayoutModelFromDom({
+      lines,
+      root: container,
+      container,
+    });
+
+    expect(layout).not.toBeNull();
+    expect(layout!.lines[0].rows.length).toBeGreaterThanOrEqual(2);
+
+    assertNoRowOverlap(layout!.lines[0].rows, "variable-width font");
+  });
+});

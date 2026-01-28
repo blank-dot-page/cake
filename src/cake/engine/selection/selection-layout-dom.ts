@@ -145,8 +145,24 @@ function measureCharacterRect(params: {
   );
   const startPosition = params.resolveDomPosition(startCodeUnit);
   const endPosition = params.resolveDomPosition(endCodeUnit);
-  params.range.setStart(startPosition.node, startPosition.offset);
-  params.range.setEnd(endPosition.node, endPosition.offset);
+
+  // If start and end are in different text nodes and end is at offset 0 of next node,
+  // try measuring within the end node instead (the character lives there)
+  if (
+    startPosition.node !== endPosition.node &&
+    startPosition.node instanceof Text &&
+    endPosition.node instanceof Text &&
+    startPosition.offset === startPosition.node.length &&
+    endPosition.offset > 0
+  ) {
+    // The character is in the end node, measure from offset 0 to endPosition.offset
+    params.range.setStart(endPosition.node, 0);
+    params.range.setEnd(endPosition.node, endPosition.offset);
+  } else {
+    params.range.setStart(startPosition.node, startPosition.offset);
+    params.range.setEnd(endPosition.node, endPosition.offset);
+  }
+
   const rects = params.range.getClientRects();
   if (rects.length > 0) {
     return rects[0] ?? null;
@@ -533,4 +549,220 @@ export function cursorOffsetToDomOffset(
   offset: number,
 ): number {
   return cursorOffsetToCodeUnit(cursorToCodeUnit, offset);
+}
+
+export type HitTestResult = {
+  cursorOffset: number;
+  pastRowEnd: boolean;
+};
+
+export function hitTestFromLayout(params: {
+  clientX: number;
+  clientY: number;
+  root: HTMLElement;
+  container: HTMLElement;
+  lines: LineInfo[];
+}): HitTestResult | null {
+  const { clientX, clientY, root, container, lines } = params;
+  const layout = measureLayoutModelFromDom({ lines, root, container });
+  if (!layout || layout.lines.length === 0) {
+    return null;
+  }
+
+  const containerRect = container.getBoundingClientRect();
+  const scroll = { top: container.scrollTop, left: container.scrollLeft };
+
+  // Convert client coordinates to container-relative coordinates
+  const relativeX = clientX - containerRect.left + scroll.left;
+  const relativeY = clientY - containerRect.top + scroll.top;
+
+  // Collect all rows from all lines with their document offsets
+  const allRows: Array<{
+    lineIndex: number;
+    lineStartOffset: number;
+    row: LayoutRow;
+    centerY: number;
+  }> = [];
+
+  for (const lineLayout of layout.lines) {
+    for (const row of lineLayout.rows) {
+      const centerY = row.rect.top + row.rect.height / 2;
+      allRows.push({
+        lineIndex: lineLayout.lineIndex,
+        lineStartOffset: lineLayout.lineStartOffset,
+        row,
+        centerY,
+      });
+    }
+  }
+
+  if (allRows.length === 0) {
+    return null;
+  }
+
+  // Find the closest row by Y center distance
+  let targetRowInfo = allRows[0];
+  let smallestCenterDistance = Math.abs(relativeY - targetRowInfo.centerY);
+  for (let i = 1; i < allRows.length; i++) {
+    const rowInfo = allRows[i];
+    const distance = Math.abs(relativeY - rowInfo.centerY);
+    if (distance < smallestCenterDistance) {
+      smallestCenterDistance = distance;
+      targetRowInfo = rowInfo;
+    }
+  }
+
+  const { lineIndex, lineStartOffset, row } = targetRowInfo;
+  const lineInfo = lines[lineIndex];
+  if (!lineInfo) {
+    return null;
+  }
+
+  const lineElement = getLineElement(root, lineIndex);
+  if (!lineElement) {
+    return null;
+  }
+
+  // Find the closest character offset by X within the target row
+  const resolvePosition = createDomPositionResolver(lineElement);
+  const scratchRange = document.createRange();
+
+  let closestOffset = row.startOffset;
+  let closestDistance = Infinity;
+  let firstCharX: number | null = null;
+  let lastCharRightX: number | null = null;
+
+  // Track whether we chose based on a right edge (for backward affinity)
+  let choseRightEdge = false;
+
+  // Note: endOffset is exclusive (it's the start of the next row)
+  for (let offset = row.startOffset; offset < row.endOffset; offset++) {
+    const codeUnitStart = cursorOffsetToCodeUnit(
+      lineInfo.cursorToCodeUnit,
+      offset,
+    );
+    const codeUnitEnd = cursorOffsetToCodeUnit(
+      lineInfo.cursorToCodeUnit,
+      offset + 1,
+    );
+    const startPos = resolvePosition(codeUnitStart);
+    const endPos = resolvePosition(codeUnitEnd);
+
+    // If start and end are in different text nodes and start is at the end of its node,
+    // the character is in the end node, so measure from the start of end node
+    if (
+      startPos.node !== endPos.node &&
+      startPos.node instanceof Text &&
+      endPos.node instanceof Text &&
+      startPos.offset === startPos.node.length &&
+      endPos.offset > 0
+    ) {
+      scratchRange.setStart(endPos.node, 0);
+      scratchRange.setEnd(endPos.node, endPos.offset);
+    } else {
+      scratchRange.setStart(startPos.node, startPos.offset);
+      scratchRange.setEnd(endPos.node, endPos.offset);
+    }
+
+    const rects = scratchRange.getClientRects();
+    if (rects.length === 0) {
+      continue;
+    }
+
+    const charLeftX = rects[0].left - containerRect.left + scroll.left;
+    const charRightX = rects[0].right - containerRect.left + scroll.left;
+    const distanceToLeft = Math.abs(relativeX - charLeftX);
+    const distanceToRight = Math.abs(relativeX - charRightX);
+
+    // Track first character's X position
+    if (firstCharX === null) {
+      firstCharX = charLeftX;
+    }
+
+    // Check left edge (cursor position = offset, forward affinity)
+    if (distanceToLeft < closestDistance) {
+      closestDistance = distanceToLeft;
+      closestOffset = offset;
+      choseRightEdge = false;
+    } else if (distanceToLeft === closestDistance && relativeX >= charLeftX) {
+      // When tied with a previous right edge at the same position, prefer left edge
+      // if click is to the right of the boundary (forward affinity)
+      closestOffset = offset;
+      choseRightEdge = false;
+    }
+
+    // Check right edge (cursor position = offset + 1, backward affinity)
+    // Only check if this is not the last character (last char right edge is handled separately)
+    if (offset < row.endOffset - 1) {
+      if (distanceToRight < closestDistance) {
+        closestDistance = distanceToRight;
+        closestOffset = offset + 1;
+        choseRightEdge = true;
+      } else if (distanceToRight === closestDistance && relativeX < charRightX) {
+        // When tied with a previous left edge at the same position, prefer right edge
+        // if click is to the left of the boundary (backward affinity)
+        closestOffset = offset + 1;
+        choseRightEdge = true;
+      }
+    }
+  }
+
+  // Also check the right edge of the last character
+  if (row.endOffset > row.startOffset) {
+    const lastCharOffset = row.endOffset - 1;
+    const codeUnitStart = cursorOffsetToCodeUnit(
+      lineInfo.cursorToCodeUnit,
+      lastCharOffset,
+    );
+    const codeUnitEnd = cursorOffsetToCodeUnit(
+      lineInfo.cursorToCodeUnit,
+      row.endOffset,
+    );
+    const startPos = resolvePosition(codeUnitStart);
+    const endPos = resolvePosition(codeUnitEnd);
+
+    // If start and end are in different text nodes and start is at the end of its node,
+    // the character is in the end node, so measure from the start of end node
+    if (
+      startPos.node !== endPos.node &&
+      startPos.node instanceof Text &&
+      endPos.node instanceof Text &&
+      startPos.offset === startPos.node.length &&
+      endPos.offset > 0
+    ) {
+      scratchRange.setStart(endPos.node, 0);
+      scratchRange.setEnd(endPos.node, endPos.offset);
+    } else {
+      scratchRange.setStart(startPos.node, startPos.offset);
+      scratchRange.setEnd(endPos.node, endPos.offset);
+    }
+
+    const rects = scratchRange.getClientRects();
+    if (rects.length > 0) {
+      lastCharRightX = rects[0].right - containerRect.left + scroll.left;
+      const distance = Math.abs(relativeX - lastCharRightX);
+      // Use <= to prefer the position after the character (like the loop does)
+      if (distance <= closestDistance) {
+        closestOffset = row.endOffset;
+        choseRightEdge = true;
+      }
+    }
+  }
+
+  // Determine if caret should have backward affinity:
+  // - When we chose based on a right edge of a character (to stick to that character)
+  // - When clicking past the last character (within the row)
+  // EXCEPT: at end of the logical line, prefer forward affinity (v1 parity: exit formatting)
+  // The isEndOfLine exception only applies when we're actually at the end position,
+  // not when we're between characters mid-line
+  const isEndOfLine = row.endOffset === lineInfo.cursorLength;
+  const atLineEnd = closestOffset === row.endOffset && isEndOfLine;
+  const pastRowEnd =
+    (choseRightEdge && !atLineEnd) ||
+    (closestOffset === row.endOffset && !atLineEnd) ||
+    (lastCharRightX !== null && relativeX > lastCharRightX && !atLineEnd);
+  return {
+    cursorOffset: lineStartOffset + closestOffset,
+    pastRowEnd,
+  };
 }
