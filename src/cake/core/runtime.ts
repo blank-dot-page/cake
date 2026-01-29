@@ -2002,10 +2002,48 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     const isWrapped =
       canUnwrap &&
       (isSelectionWrappedByAdjacentMarkers || isWrappedBySelectionText);
-
     let newSource: string;
 
-    if (isWrapped) {
+    if (canUnwrap && !isWrapped) {
+      const edits: Array<{ from: number; to: number; insert: string }> = [];
+      const startBackward = map.cursorToSource(cursorStart, "backward");
+      const startForward = map.cursorToSource(cursorStart, "forward");
+      const endBackward = map.cursorToSource(cursorEnd, "backward");
+      const endForward = map.cursorToSource(cursorEnd, "forward");
+
+      const startGap = source.slice(startBackward, startForward);
+      const openIndex = startGap.lastIndexOf(openMarker);
+      if (openIndex !== -1) {
+        edits.push({
+          from: startBackward + openIndex,
+          to: startBackward + openIndex + openLen,
+          insert: "",
+        });
+      } else {
+        edits.push({ from: startBackward, to: startBackward, insert: closeMarker });
+      }
+
+      const endGap = source.slice(endBackward, endForward);
+      const closeIndex = endGap.indexOf(closeMarker);
+      if (closeIndex !== -1) {
+        edits.push({
+          from: endBackward + closeIndex,
+          to: endBackward + closeIndex + closeLen,
+          insert: "",
+        });
+      } else {
+        edits.push({ from: endForward, to: endForward, insert: openMarker });
+      }
+
+      edits.sort((a, b) => b.from - a.from);
+      newSource = source;
+      for (const edit of edits) {
+        newSource =
+          newSource.slice(0, edit.from) +
+          edit.insert +
+          newSource.slice(edit.to);
+      }
+    } else if (isWrapped) {
       // Unwrap
       if (isSelectionWrappedByAdjacentMarkers) {
         newSource =

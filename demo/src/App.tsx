@@ -7,7 +7,7 @@ type FontStyle = "sans" | "serif" | "mono";
 export default function App() {
   const editorRef = useRef<CakeEditorRef>(null);
   const [value, setValue] = useState(
-    "# Cake Demo\n\nTry **bold**, *italic*, ~~strike~~, and [links](https://example.com).",
+    "# Cake Demo\n\nTry **bold**, *italic*, ~~strike~~, <u>underline</u>, and [links](https://example.com).",
   );
   const [spellCheck, setSpellCheck] = useState(false);
   const [fontStyle, setFontStyle] = useState<FontStyle>("sans");
@@ -77,6 +77,19 @@ export default function App() {
                 disabled={!hasSelection}
               >
                 <s>S</s>
+              </button>
+              <button
+                className="toolbarButton"
+                onClick={() =>
+                  editorRef.current?.executeCommand(
+                    { type: "toggle-underline" },
+                    { restoreFocus: true },
+                  )
+                }
+                title="Underline (Cmd+U)"
+                disabled={!hasSelection}
+              >
+                <u>U</u>
               </button>
               <button
                 className="toolbarButton"

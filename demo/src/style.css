@@ -294,6 +294,12 @@ body {
   text-decoration-thickness: 1px;
 }
 
+.main .cake-underline {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
 /* Font style variations */
 .main .cake.font-sans .cake-content {
   font-family: "Space Grotesk", system-ui, sans-serif;
