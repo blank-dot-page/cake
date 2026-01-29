@@ -8,6 +8,7 @@ import { imageExtension } from "./image/image";
 import { plainTextListExtension } from "./list/list";
 import { scrollbarExtension } from "./scrollbar";
 import { strikethroughExtension } from "./strikethrough/strikethrough";
+import { underlineExtension } from "./underline/underline";
 
 export {
   boldExtension,
@@ -20,6 +21,7 @@ export {
   plainTextListExtension,
   scrollbarExtension,
   strikethroughExtension,
+  underlineExtension,
 };
 
 export const bundledExtensionsWithoutImage = [
@@ -30,6 +32,7 @@ export const bundledExtensionsWithoutImage = [
   boldExtension,
   italicExtension,
   strikethroughExtension,
+  underlineExtension,
   linkExtension,
 ];
 

@@ -132,7 +132,10 @@ export type CakeExtension = {
    * This keeps the core runtime syntax-agnostic while still allowing extension-
    * specific toggle behavior at wrapper boundaries.
    */
-  toggleInline?: { kind: string; markers: string[] };
+  toggleInline?: {
+    kind: string;
+    markers: Array<string | { open: string; close: string }>;
+  };
   parseBlock?: (
     source: string,
     start: number,
@@ -232,14 +235,21 @@ export type Runtime = {
 const defaultSelection: Selection = { start: 0, end: 0, affinity: "forward" };
 
 export function createRuntime(extensions: CakeExtension[]): Runtime {
-  const toggleMarkerToKind = new Map<string, string>();
+  const toggleMarkerToSpec = new Map<
+    string,
+    { kind: string; open: string; close: string }
+  >();
   for (const extension of extensions) {
     const toggle = extension.toggleInline;
     if (!toggle) {
       continue;
     }
     for (const marker of toggle.markers) {
-      toggleMarkerToKind.set(marker, toggle.kind);
+      const spec =
+        typeof marker === "string"
+          ? { kind: toggle.kind, open: marker, close: marker }
+          : { kind: toggle.kind, open: marker.open, close: marker.close };
+      toggleMarkerToSpec.set(spec.open, spec);
     }
   }
   const inclusiveAtEndByKind = new Map<string, boolean>();
@@ -1735,60 +1745,65 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     const source = state.source;
     const map = state.map;
 
+    const markerSpec = toggleMarkerToSpec.get(marker);
+    if (!markerSpec) {
+      return state;
+    }
+
+    const { kind: markerKind, open: openMarker, close: closeMarker } = markerSpec;
+    const openLen = openMarker.length;
+    const closeLen = closeMarker.length;
+
     if (selection.start === selection.end) {
       const caret = selection.start;
-      const markerLen = marker.length;
 
       // When the caret is at the end boundary of an inline wrapper, toggling the
       // wrapper should "exit" it (so the next character types outside). This is
       // best expressed in cursor space by flipping affinity to "forward" when we
       // are leaving a wrapper of the requested kind.
-      const markerKind = toggleMarkerToKind.get(marker) ?? null;
-      if (markerKind) {
-        const around = marksAroundCursor(state.doc, caret);
-        if (
-          isMarksPrefix(around.right, around.left) &&
-          around.left.length > around.right.length
-        ) {
-          const exiting = around.left.slice(around.right.length);
-          if (exiting.some((mark) => mark.kind === markerKind)) {
-            if (exiting.length > 1) {
-              const placeholder = "\u200B";
-              const insertAtForward = map.cursorToSource(caret, "forward");
-              const insertAtBackward = map.cursorToSource(caret, "backward");
-              const between = source.slice(insertAtBackward, insertAtForward);
-              const markerIndex = between.indexOf(marker);
-              if (markerIndex !== -1) {
-                const insertAt = insertAtBackward + markerIndex + markerLen;
-                const nextSource =
-                  source.slice(0, insertAt) +
-                  placeholder +
-                  source.slice(insertAt);
-                const next = createState(nextSource);
-                const placeholderStart = insertAt;
-                const startCursor = next.map.sourceToCursor(
-                  placeholderStart,
-                  "forward",
-                );
-                return {
-                  ...next,
-                  selection: {
-                    start: startCursor.cursorOffset,
-                    end: startCursor.cursorOffset,
-                    affinity: "forward",
-                  },
-                };
-              }
+      const around = marksAroundCursor(state.doc, caret);
+      if (
+        isMarksPrefix(around.right, around.left) &&
+        around.left.length > around.right.length
+      ) {
+        const exiting = around.left.slice(around.right.length);
+        if (exiting.some((mark) => mark.kind === markerKind)) {
+          if (exiting.length > 1) {
+            const placeholder = "\u200B";
+            const insertAtForward = map.cursorToSource(caret, "forward");
+            const insertAtBackward = map.cursorToSource(caret, "backward");
+            const between = source.slice(insertAtBackward, insertAtForward);
+            const markerIndex = between.indexOf(closeMarker);
+            if (markerIndex !== -1) {
+              const insertAt = insertAtBackward + markerIndex + closeLen;
+              const nextSource =
+                source.slice(0, insertAt) +
+                placeholder +
+                source.slice(insertAt);
+              const next = createState(nextSource);
+              const placeholderStart = insertAt;
+              const startCursor = next.map.sourceToCursor(
+                placeholderStart,
+                "forward",
+              );
+              return {
+                ...next,
+                selection: {
+                  start: startCursor.cursorOffset,
+                  end: startCursor.cursorOffset,
+                  affinity: "forward",
+                },
+              };
             }
-            return {
-              ...state,
-              selection: {
-                start: caret,
-                end: caret,
-                affinity: "forward",
-              },
-            };
           }
+          return {
+            ...state,
+            selection: {
+              start: caret,
+              end: caret,
+              affinity: "forward",
+            },
+          };
         }
       }
 
@@ -1820,18 +1835,18 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
       const nextSource =
         placeholderPos !== null
           ? source.slice(0, insertAt) +
-            marker +
+            openMarker +
             placeholder +
-            marker +
+            closeMarker +
             source.slice(insertAt + placeholder.length)
           : source.slice(0, insertAt) +
-            marker +
+            openMarker +
             placeholder +
-            marker +
+            closeMarker +
             source.slice(insertAt);
       const next = createState(nextSource);
 
-      const placeholderStart = insertAt + markerLen;
+      const placeholderStart = insertAt + openLen;
       const startCursor = next.map.sourceToCursor(placeholderStart, "forward");
 
       return {
@@ -1851,28 +1866,20 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
 
     const selectedText = source.slice(from, to);
 
-    const markerLen = marker.length;
-    const markerKind = toggleMarkerToKind.get(marker) ?? null;
     const linesForSelection = flattenDocToLines(state.doc);
-    const commonMarks = markerKind
-      ? commonMarksAcrossSelection(
-          linesForSelection,
-          cursorStart,
-          cursorEnd,
-          state.doc,
-        )
-      : [];
-    const hasCommonMark =
-      markerKind !== null && commonMarks.some((mark) => mark.kind === markerKind);
-    const canUnwrap = markerKind ? hasCommonMark : true;
+    const commonMarks = commonMarksAcrossSelection(
+      linesForSelection,
+      cursorStart,
+      cursorEnd,
+      state.doc,
+    );
+    const hasCommonMark = commonMarks.some((mark) => mark.kind === markerKind);
+    const canUnwrap = hasCommonMark;
 
     const startLoc = resolveCursorToLine(linesForSelection, cursorStart);
     const endLoc = resolveCursorToLine(linesForSelection, cursorEnd);
 
-    if (
-      markerKind &&
-      (startLoc.lineIndex !== endLoc.lineIndex || selectedText.includes("\n"))
-    ) {
+    if (startLoc.lineIndex !== endLoc.lineIndex || selectedText.includes("\n")) {
       const edits: Array<{ from: number; to: number; insert: string }> = [];
 
       const segments = (() => {
@@ -1937,25 +1944,25 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
 
         if (canUnwrap) {
           if (
-            segmentFrom >= markerLen &&
-            source.slice(segmentFrom - markerLen, segmentFrom) === marker
+            segmentFrom >= openLen &&
+            source.slice(segmentFrom - openLen, segmentFrom) === openMarker
           ) {
             edits.push({
-              from: segmentFrom - markerLen,
+              from: segmentFrom - openLen,
               to: segmentFrom,
               insert: "",
             });
           }
-          if (source.slice(segmentTo, segmentTo + markerLen) === marker) {
+          if (source.slice(segmentTo, segmentTo + closeLen) === closeMarker) {
             edits.push({
               from: segmentTo,
-              to: segmentTo + markerLen,
+              to: segmentTo + closeLen,
               insert: "",
             });
           }
         } else {
-          edits.push({ from: segmentFrom, to: segmentFrom, insert: marker });
-          edits.push({ from: segmentTo, to: segmentTo, insert: marker });
+          edits.push({ from: segmentFrom, to: segmentFrom, insert: openMarker });
+          edits.push({ from: segmentTo, to: segmentTo, insert: closeMarker });
         }
       }
 
@@ -1985,18 +1992,16 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     }
 
     const isSelectionWrappedByAdjacentMarkers =
-      markerLen > 0 &&
-      from >= markerLen &&
-      source.slice(from - markerLen, from) === marker &&
-      source.slice(to, to + markerLen) === marker;
+      from >= openLen &&
+      source.slice(from - openLen, from) === openMarker &&
+      source.slice(to, to + closeLen) === closeMarker;
     const isWrappedBySelectionText =
-      selectedText.startsWith(marker) &&
-      selectedText.endsWith(marker) &&
-      selectedText.length >= markerLen * 2;
+      selectedText.startsWith(openMarker) &&
+      selectedText.endsWith(closeMarker) &&
+      selectedText.length >= openLen + closeLen;
     const isWrapped =
       canUnwrap &&
-      (isSelectionWrappedByAdjacentMarkers ||
-        (markerKind ? isWrappedBySelectionText : isWrappedBySelectionText));
+      (isSelectionWrappedByAdjacentMarkers || isWrappedBySelectionText);
 
     let newSource: string;
 
@@ -2004,16 +2009,16 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
       // Unwrap
       if (isSelectionWrappedByAdjacentMarkers) {
         newSource =
-          source.slice(0, from - markerLen) +
+          source.slice(0, from - openLen) +
           selectedText +
-          source.slice(to + markerLen);
+          source.slice(to + closeLen);
       } else {
-        const unwrapped = selectedText.slice(markerLen, -markerLen);
+        const unwrapped = selectedText.slice(openLen, -closeLen);
         newSource = source.slice(0, from) + unwrapped + source.slice(to);
       }
     } else {
       // Wrap
-      const wrapped = marker + selectedText + marker;
+      const wrapped = openMarker + selectedText + closeMarker;
       newSource = source.slice(0, from) + wrapped + source.slice(to);
     }
 
