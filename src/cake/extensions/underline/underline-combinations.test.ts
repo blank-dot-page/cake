@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRuntime } from "../../core/runtime";
+import { createRuntimeForTests } from "../../core/runtime";
 import { boldExtension } from "../bold/bold";
 import { italicExtension } from "../italic/italic";
 import { strikethroughExtension } from "../strikethrough/strikethrough";
@@ -23,7 +23,7 @@ const allExtensions = [
 ];
 
 describe("underline combinations with other extensions", () => {
-  const runtime = createRuntime(allExtensions);
+  const runtime = createRuntimeForTests(allExtensions);
 
   describe("underline + bold", () => {
     it("parses bold inside underline", () => {

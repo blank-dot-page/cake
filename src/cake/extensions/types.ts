@@ -1,4 +1,4 @@
-import type { CakeExtension } from "../core/runtime";
+import type { CakeExtension } from "../editor/extension-types";
 
 export type CakeExtensionBundle = {
   name: string;

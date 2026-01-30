@@ -14,9 +14,9 @@ This document describes the **new extensions system** and how **all existing bui
 An extension is a single function:
 
 ```ts
-import type { CakeExtension } from "…/core/runtime";
+import type { CakeExtension } from "…/editor/extension-types";
 
-export const myExtension: CakeExtension = (host) => {
+export const myExtension: CakeExtension = (editor) => {
   // register capabilities
   return () => {
     // optional teardown (unregister handlers, unmount UI, etc.)
@@ -24,34 +24,34 @@ export const myExtension: CakeExtension = (host) => {
 };
 ```
 
-Extensions register behavior through `host`:
+Extensions register behavior through `editor`:
 
-- `host.register*` — parsing, serialization, normalization, edit middleware, paste handlers, keybindings
-- `host.registerInlineRenderer` / `host.registerBlockRenderer` — DOM renderers for blocks/inlines
-- `host.registerUI` — mount React UI (overlays/popovers/etc.)
+- `editor.register*` — parsing, serialization, normalization, edit middleware, paste handlers, keybindings
+- `editor.registerInlineRenderer` / `editor.registerBlockRenderer` — DOM renderers for blocks/inlines
+- `editor.registerUI` — mount React UI (overlays/popovers/etc.)
 
 ## Registration API
 
 Use these registration calls (each returns an **unregister** function):
 
-- `host.registerParseBlock(fn)`
-- `host.registerParseInline(fn)`
-- `host.registerSerializeBlock(fn)`
-- `host.registerSerializeInline(fn)`
-- `host.registerNormalizeBlock(fn)`
-- `host.registerNormalizeInline(fn)`
-- `host.registerOnEdit(fn)`
-- `host.registerOnPasteText(fn)`
-- `host.registerKeybindings(bindings)`
-- `host.registerInlineWrapperAffinity(specs)`
-- `host.registerToggleInline({ kind, markers })`
+- `editor.registerParseBlock(fn)`
+- `editor.registerParseInline(fn)`
+- `editor.registerSerializeBlock(fn)`
+- `editor.registerSerializeInline(fn)`
+- `editor.registerNormalizeBlock(fn)`
+- `editor.registerNormalizeInline(fn)`
+- `editor.registerOnEdit(fn)`
+- `editor.registerOnPasteText(fn)`
+- `editor.registerKeybindings(bindings)`
+- `editor.registerInlineWrapperAffinity(specs)`
+- `editor.registerToggleInline({ kind, markers })`
 
 ## DOM Rendering API
 
 Register DOM renderers (each returns an **unregister** function):
 
-- `host.registerInlineRenderer(fn)`
-- `host.registerBlockRenderer(fn)`
+- `editor.registerInlineRenderer(fn)`
+- `editor.registerBlockRenderer(fn)`
 
 These replace `extension.renderInline` / `extension.renderBlock`.
 
@@ -60,15 +60,15 @@ These replace `extension.renderInline` / `extension.renderBlock`.
 Mount a React component:
 
 ```ts
-host.registerUI(MyUIComponent);
+editor.registerUI(MyUIComponent);
 ```
 
 Mounted UI components receive the editor instance:
 
 ```ts
-import type { CakeEditorUI } from "…/core/runtime";
+import type { CakeEditor } from "…/editor/cake-editor";
 
-function MyUIComponent({ editor }: { editor: CakeEditorUI }) {
+function MyUIComponent({ editor }: { editor: CakeEditor }) {
   const container = editor.getContainer();
   const contentRoot = editor.getContentRoot();
   if (!contentRoot) return null;
@@ -106,20 +106,20 @@ import { bundledExtensions } from "…/cake/extensions";
 
 Old extension property → new registration
 
-- `parseBlock` → `host.registerParseBlock`
-- `parseInline` → `host.registerParseInline`
-- `serializeBlock` → `host.registerSerializeBlock`
-- `serializeInline` → `host.registerSerializeInline`
-- `normalizeBlock` → `host.registerNormalizeBlock`
-- `normalizeInline` → `host.registerNormalizeInline`
-- `onEdit` → `host.registerOnEdit`
-- `onPasteText` → `host.registerOnPasteText`
-- `keybindings` → `host.registerKeybindings`
-- `inlineWrapperAffinity` → `host.registerInlineWrapperAffinity`
-- `toggleInline` → `host.registerToggleInline`
-- `renderBlock` → `host.registerBlockRenderer`
-- `renderInline` → `host.registerInlineRenderer`
-- `renderOverlay` → `host.registerUI(Component)`
+- `parseBlock` → `editor.registerParseBlock`
+- `parseInline` → `editor.registerParseInline`
+- `serializeBlock` → `editor.registerSerializeBlock`
+- `serializeInline` → `editor.registerSerializeInline`
+- `normalizeBlock` → `editor.registerNormalizeBlock`
+- `normalizeInline` → `editor.registerNormalizeInline`
+- `onEdit` → `editor.registerOnEdit`
+- `onPasteText` → `editor.registerOnPasteText`
+- `keybindings` → `editor.registerKeybindings`
+- `inlineWrapperAffinity` → `editor.registerInlineWrapperAffinity`
+- `toggleInline` → `editor.registerToggleInline`
+- `renderBlock` → `editor.registerBlockRenderer`
+- `renderInline` → `editor.registerInlineRenderer`
+- `renderOverlay` → `editor.registerUI(Component)`
 
 ## Built-in Extensions: Completed Migration
 
@@ -131,8 +131,8 @@ All built-ins under `src/cake/extensions/` were migrated to the new API:
 - `bold`, `italic`, `strikethrough`, `underline` — register toggle markers, affinities, keybindings, edit middleware, parse/serialize/normalize, inline renderers
 - `combined-emphasis` — registers a parse-only inline rule that yields nested wrappers
 - `image` — registers `parseBlock`, `serializeBlock`, `normalizeBlock`, block renderer
-- `link` — registers parse/serialize/normalize + edit/paste + inline renderer, and mounts `CakeLinkPopover` via `host.registerUI`
-- `scrollbar` — mounts a React UI component via `host.registerUI`
+- `link` — registers parse/serialize/normalize + edit/paste + inline renderer, and mounts `CakeLinkPopover` via `editor.registerUI`
+- `scrollbar` — mounts a React UI component via `editor.registerUI`
 
 ## Runtime / DOM Rendering Notes
 

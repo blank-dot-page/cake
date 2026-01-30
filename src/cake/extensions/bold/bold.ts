@@ -12,23 +12,23 @@ const BOLD_KIND = "bold";
 /** Semantic command to toggle bold formatting */
 type ToggleBoldCommand = { type: "toggle-bold" };
 
-export const boldExtension: CakeExtension = (host) => {
+export const boldExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    host.registerToggleInline({ kind: BOLD_KIND, markers: ["**"] }),
+    editor.registerToggleInline({ kind: BOLD_KIND, markers: ["**"] }),
   );
   disposers.push(
-    host.registerKeybindings([
+    editor.registerKeybindings([
       { key: "b", meta: true, command: { type: "toggle-bold" } },
       { key: "b", ctrl: true, command: { type: "toggle-bold" } },
     ]),
   );
   disposers.push(
-    host.registerInlineWrapperAffinity([{ kind: BOLD_KIND, inclusive: true }]),
+    editor.registerInlineWrapperAffinity([{ kind: BOLD_KIND, inclusive: true }]),
   );
   disposers.push(
-    host.registerOnEdit((command) => {
+    editor.registerOnEdit((command) => {
       // Handle semantic command by delegating to toggle-inline
       if (command.type === "toggle-bold") {
         return { type: "toggle-inline", marker: "**" } as EditCommand;
@@ -37,7 +37,7 @@ export const boldExtension: CakeExtension = (host) => {
     }),
   );
   disposers.push(
-    host.registerParseInline(
+    editor.registerParseInline(
       (source, start, end, context): ParseInlineResult => {
         // Combined emphasis: ***text*** (bold + italic). Parse as nested wrappers so
         // serialization remains stable and matches v1 output.
@@ -91,7 +91,7 @@ export const boldExtension: CakeExtension = (host) => {
     ),
   );
   disposers.push(
-    host.registerSerializeInline(
+    editor.registerSerializeInline(
       (inline, context): SerializeInlineResult | null => {
         if (inline.type !== "inline-wrapper" || inline.kind !== BOLD_KIND) {
           return null;
@@ -109,7 +109,7 @@ export const boldExtension: CakeExtension = (host) => {
     ),
   );
   disposers.push(
-    host.registerNormalizeInline((inline): Inline | null => {
+    editor.registerNormalizeInline((inline): Inline | null => {
       if (inline.type !== "inline-wrapper" || inline.kind !== BOLD_KIND) {
         return inline;
       }
@@ -122,7 +122,7 @@ export const boldExtension: CakeExtension = (host) => {
     }),
   );
   disposers.push(
-    host.registerInlineRenderer((inline, context) => {
+    editor.registerInlineRenderer((inline, context) => {
       if (inline.type !== "inline-wrapper" || inline.kind !== BOLD_KIND) {
         return null;
       }

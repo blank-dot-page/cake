@@ -6,7 +6,9 @@ import type {
   ParagraphBlock,
   Selection,
 } from "./types";
-import type { ComponentType } from "react";
+import type { CakeExtension } from "../editor/extension-types";
+
+export type { CakeExtension, CakeUIComponent } from "../editor/extension-types";
 import {
   CursorSourceBuilder,
   type CursorSourceMap,
@@ -125,82 +127,11 @@ export type DomBlockRenderer = (
   context: DomRenderContext,
 ) => Node | Node[] | null;
 
-export type CakeEditorUI = {
-  getContainer(): HTMLElement;
-  getContentRoot(): HTMLElement | null;
-  getOverlayRoot(): HTMLElement;
-  getSelection(): Selection;
-  insertText(text: string): void;
-  replaceText(oldText: string, newText: string): void;
-  executeCommand(
-    command: EditCommand,
-    options?: { restoreFocus?: boolean },
-  ): boolean;
-};
-
-export type CakeUIComponent = ComponentType<{ editor: CakeEditorUI }>;
-
 export type ToggleInlineSpec = {
   kind: string;
   markers: Array<string | { open: string; close: string }>;
 };
 
-export type CakeExtensionHost = {
-  registerInlineWrapperAffinity(specs: InlineWrapperAffinity[]): () => void;
-  registerToggleInline(spec: ToggleInlineSpec): () => void;
-  registerParseBlock(
-    fn: (
-      source: string,
-      start: number,
-      context: ExtensionContext,
-    ) => ParseBlockResult,
-  ): () => void;
-  registerParseInline(
-    fn: (
-      source: string,
-      start: number,
-      end: number,
-      context: ExtensionContext,
-    ) => ParseInlineResult,
-  ): () => void;
-  registerSerializeBlock(
-    fn: (
-      block: Block,
-      context: ExtensionContext,
-    ) => SerializeBlockResult | null,
-  ): () => void;
-  registerSerializeInline(
-    fn: (
-      inline: Inline,
-      context: ExtensionContext,
-    ) => SerializeInlineResult | null,
-  ): () => void;
-  registerNormalizeBlock(fn: (block: Block) => Block | null): () => void;
-  registerNormalizeInline(fn: (inline: Inline) => Inline | null): () => void;
-  registerOnEdit(
-    fn: (
-      command: EditCommand,
-      state: RuntimeState,
-    ) => EditResult | EditCommand | null,
-  ): () => void;
-  registerOnPasteText(
-    fn: (text: string, state: RuntimeState) => EditCommand | null,
-  ): () => void;
-  registerKeybindings(bindings: KeyBinding[]): () => void;
-  registerInlineRenderer(fn: DomInlineRenderer): () => void;
-  registerBlockRenderer(fn: DomBlockRenderer): () => void;
-  registerUI(component: CakeUIComponent): () => void;
-};
-
-export type CakeExtension = (host: CakeExtensionHost) => void | (() => void);
-
-export type InstalledExtensions = {
-  runtime: Runtime;
-  keybindings: KeyBinding[];
-  onPasteText: Array<(text: string, state: RuntimeState) => EditCommand | null>;
-  ui: { components: CakeUIComponent[] };
-  dispose(): void;
-};
 
 export type RuntimeState = {
   source: string;
@@ -238,9 +169,7 @@ function removeFromArray<T>(arr: T[], value: T) {
   arr.splice(index, 1);
 }
 
-export function installExtensions(
-  extensions: CakeExtension[],
-): InstalledExtensions {
+export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
   const toggleMarkerToSpec = new Map<
     string,
     { kind: string; open: string; close: string }
@@ -275,23 +204,17 @@ export function installExtensions(
       state: RuntimeState,
     ) => EditResult | EditCommand | null
   > = [];
-  const onPasteTextFns: Array<
-    (text: string, state: RuntimeState) => EditCommand | null
-  > = [];
-  const keybindings: KeyBinding[] = [];
   const domInlineRenderers: DomInlineRenderer[] = [];
   const domBlockRenderers: DomBlockRenderer[] = [];
-  const uiComponents: CakeUIComponent[] = [];
 
-  const host: CakeExtensionHost = {
-    registerInlineWrapperAffinity: (specs) => {
+  const editor = {
+    registerInlineWrapperAffinity: (specs: InlineWrapperAffinity[]) => {
       for (const spec of specs) {
         if (!inclusiveAtEndByKind.has(spec.kind)) {
           inclusiveAtEndByKind.set(spec.kind, spec.inclusive);
         }
       }
       return () => {
-        // Best-effort disposal: remove only kinds that were set by this call.
         for (const spec of specs) {
           const current = inclusiveAtEndByKind.get(spec.kind);
           if (current === spec.inclusive) {
@@ -300,7 +223,7 @@ export function installExtensions(
         }
       };
     },
-    registerToggleInline: (toggle) => {
+    registerToggleInline: (toggle: ToggleInlineSpec) => {
       const added: Array<{ open: string; kind: string; close: string }> = [];
       for (const marker of toggle.markers) {
         const spec =
@@ -323,63 +246,84 @@ export function installExtensions(
         }
       };
     },
-    registerParseBlock: (fn) => {
+    registerParseBlock: (
+      fn: (
+        source: string,
+        start: number,
+        context: ExtensionContext,
+      ) => ParseBlockResult,
+    ) => {
       parseBlockFns.push(fn);
       return () => removeFromArray(parseBlockFns, fn);
     },
-    registerParseInline: (fn) => {
+    registerParseInline: (
+      fn: (
+        source: string,
+        start: number,
+        end: number,
+        context: ExtensionContext,
+      ) => ParseInlineResult,
+    ) => {
       parseInlineFns.push(fn);
       return () => removeFromArray(parseInlineFns, fn);
     },
-    registerSerializeBlock: (fn) => {
+    registerSerializeBlock: (
+      fn: (
+        block: Block,
+        context: ExtensionContext,
+      ) => SerializeBlockResult | null,
+    ) => {
       serializeBlockFns.push(fn);
       return () => removeFromArray(serializeBlockFns, fn);
     },
-    registerSerializeInline: (fn) => {
+    registerSerializeInline: (
+      fn: (
+        inline: Inline,
+        context: ExtensionContext,
+      ) => SerializeInlineResult | null,
+    ) => {
       serializeInlineFns.push(fn);
       return () => removeFromArray(serializeInlineFns, fn);
     },
-    registerNormalizeBlock: (fn) => {
+    registerNormalizeBlock: (fn: (block: Block) => Block | null) => {
       normalizeBlockFns.push(fn);
       return () => removeFromArray(normalizeBlockFns, fn);
     },
-    registerNormalizeInline: (fn) => {
+    registerNormalizeInline: (fn: (inline: Inline) => Inline | null) => {
       normalizeInlineFns.push(fn);
       return () => removeFromArray(normalizeInlineFns, fn);
     },
-    registerOnEdit: (fn) => {
+    registerOnEdit: (
+      fn: (
+        command: EditCommand,
+        state: RuntimeState,
+      ) => EditResult | EditCommand | null,
+    ) => {
       onEditFns.push(fn);
       return () => removeFromArray(onEditFns, fn);
     },
-    registerOnPasteText: (fn) => {
-      onPasteTextFns.push(fn);
-      return () => removeFromArray(onPasteTextFns, fn);
+    registerOnPasteText: () => {
+      return () => {};
     },
-    registerKeybindings: (bindings) => {
-      keybindings.push(...bindings);
-      return () => {
-        for (const binding of bindings) {
-          removeFromArray(keybindings, binding);
-        }
-      };
+    registerKeybindings: () => {
+      return () => {};
     },
-    registerInlineRenderer: (fn) => {
+    registerInlineRenderer: (fn: DomInlineRenderer) => {
       domInlineRenderers.push(fn);
       return () => removeFromArray(domInlineRenderers, fn);
     },
-    registerBlockRenderer: (fn) => {
+    registerBlockRenderer: (fn: DomBlockRenderer) => {
       domBlockRenderers.push(fn);
       return () => removeFromArray(domBlockRenderers, fn);
     },
-    registerUI: (component) => {
-      uiComponents.push(component);
-      return () => removeFromArray(uiComponents, component);
+    registerUI: () => {
+      return () => {};
     },
   };
 
   const extensionDisposers: Array<() => void> = [];
   for (const extension of extensions) {
-    const dispose = extension(host);
+    const dispose = extension(editor as unknown as import("../editor/cake-editor").CakeEditor);
     if (dispose) {
       extensionDisposers.push(dispose);
     }
@@ -399,25 +343,15 @@ export function installExtensions(
     domBlockRenderers,
   });
 
-  return {
-    runtime,
-    keybindings,
-    onPasteText: onPasteTextFns,
-    ui: { components: uiComponents },
-    dispose: () => {
-      extensionDisposers
-        .splice(0)
-        .reverse()
-        .forEach((d) => d());
-    },
-  };
+  extensionDisposers
+    .splice(0)
+    .reverse()
+    .forEach((dispose) => dispose());
+
+  return runtime;
 }
 
-export function createRuntime(extensions: CakeExtension[]): Runtime {
-  return installExtensions(extensions).runtime;
-}
-
-function createRuntimeFromRegistry(registry: {
+export function createRuntimeFromRegistry(registry: {
   toggleMarkerToSpec: Map<
     string,
     { kind: string; open: string; close: string }

@@ -5,8 +5,8 @@ const ITALIC_KIND = "italic";
 
 const MARKERS = ["***", "___"] as const;
 
-export const combinedEmphasisExtension: CakeExtension = (host) => {
-  const dispose = host.registerParseInline(
+export const combinedEmphasisExtension: CakeExtension = (editor) => {
+  const dispose = editor.registerParseInline(
     (source, start, end, context): ParseInlineResult => {
       const marker = MARKERS.find((m) => source.slice(start, start + 3) === m);
       if (!marker) {

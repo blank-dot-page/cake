@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRuntime, type RuntimeState } from "./runtime";
+import { createRuntimeForTests, type RuntimeState } from "./runtime";
 import type { Doc } from "./types";
 
 const cases = [
@@ -27,12 +27,12 @@ const cases = [
 
 async function createBundledRuntime() {
   const { bundledExtensions } = await import("../extensions");
-  return createRuntime(bundledExtensions);
+  return createRuntimeForTests(bundledExtensions);
 }
 
-describe("createRuntime([])", () => {
+describe("createRuntimeForTests([])", () => {
   it("roundtrips literal text without syntax knowledge", () => {
-    const runtime = createRuntime([]);
+    const runtime = createRuntimeForTests([]);
     for (const value of cases) {
       const doc = runtime.parse(value);
       const serialized = runtime.serialize(doc);
@@ -41,7 +41,7 @@ describe("createRuntime([])", () => {
   });
 
   it("delete-backward with range selection deletes range and keeps text after", () => {
-    const runtime = createRuntime([]);
+    const runtime = createRuntimeForTests([]);
     // "hello world test"
     // Position 11 is after "world" (h e l l o   w o r l d)
     const state = runtime.createState("hello world test", {
@@ -57,7 +57,7 @@ describe("createRuntime([])", () => {
   });
 
   it("delete-backward at start of empty line after newline deletes newline", () => {
-    const runtime = createRuntime([]);
+    const runtime = createRuntimeForTests([]);
     // "line one\n" - cursor at position 9 (start of empty second line)
     const state = runtime.createState("line one\n", {
       start: 9,
@@ -75,7 +75,7 @@ describe("createRuntime([])", () => {
   it("delete-backward at start of empty line with bundled extensions", async () => {
     // Dynamic import bundled extensions
     const { bundledExtensions } = await import("../extensions");
-    const runtime = createRuntime(bundledExtensions);
+    const runtime = createRuntimeForTests(bundledExtensions);
     // "line one\n" - cursor at position 9 (start of empty second line)
     const state = runtime.createState("line one\n", {
       start: 9,
@@ -92,7 +92,7 @@ describe("createRuntime([])", () => {
 
   it("delete-backward at list content start preserves link markdown syntax", async () => {
     const { bundledExtensions } = await import("../extensions");
-    const runtime = createRuntime(bundledExtensions);
+    const runtime = createRuntimeForTests(bundledExtensions);
     const value = "- [hello](http://localhost:3000/)\nother text";
     const base = runtime.createState(value);
     const cursor = base.map.sourceToCursor(3, "forward"); // after "- ["
@@ -110,7 +110,7 @@ describe("createRuntime([])", () => {
 
   it("delete-backward with range selection ending at list content start does not delete source-only '['", async () => {
     const { bundledExtensions } = await import("../extensions");
-    const runtime = createRuntime(bundledExtensions);
+    const runtime = createRuntimeForTests(bundledExtensions);
     const value = "- [hello](http://localhost:3000/)\nother text";
     const base = runtime.createState(value);
     const cursor = base.map.sourceToCursor(3, "forward"); // after "- ["
@@ -125,7 +125,7 @@ describe("createRuntime([])", () => {
 
   it("toggle-inline bold splits on '\\n' within a single paragraph text run", async () => {
     const { bundledExtensions } = await import("../extensions");
-    const runtime = createRuntime(bundledExtensions);
+    const runtime = createRuntimeForTests(bundledExtensions);
 
     const doc: Doc = {
       type: "doc",

@@ -1040,11 +1040,11 @@ export type ToggleNumberedListCommand = { type: "toggle-numbered-list" };
 /** All list extension commands */
 export type ListCommand = ToggleBulletListCommand | ToggleNumberedListCommand;
 
-export const plainTextListExtension: CakeExtension = (host) => {
+export const plainTextListExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    host.registerKeybindings([
+    editor.registerKeybindings([
       {
         key: "8",
         meta: true,
@@ -1073,7 +1073,7 @@ export const plainTextListExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerOnEdit((command, state) => {
+    editor.registerOnEdit((command, state) => {
       if (command.type === "insert-line-break") {
         return handleInsertLineBreak(state);
       }
@@ -1103,7 +1103,7 @@ export const plainTextListExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerBlockRenderer(
+    editor.registerBlockRenderer(
       (block: Block, context: DomRenderContext): Node | null => {
         if (block.type !== "paragraph") {
           return null;

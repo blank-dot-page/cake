@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRuntime } from "../core/runtime";
+import { createRuntimeForTests } from "../core/runtime";
 import type { Block, Doc, Inline, Selection } from "../core/types";
 import { graphemeSegments } from "../shared/segmenter";
 import {
@@ -9,7 +9,7 @@ import {
   linkExtension,
 } from "./index";
 
-const runtime = createRuntime([
+const runtime = createRuntimeForTests([
   blockquoteExtension,
   boldExtension,
   italicExtension,

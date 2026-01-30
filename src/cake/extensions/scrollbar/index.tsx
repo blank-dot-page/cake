@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CakeEditorUI, CakeExtension } from "../../core/runtime";
+import type { CakeExtension } from "../../core/runtime";
+import type { CakeEditor } from "../../editor/cake-editor";
 
 type ScrollState = {
   scrollTop: number;
@@ -283,11 +284,11 @@ function ScrollbarOverlay({ container }: { container: HTMLElement }) {
   );
 }
 
-function ScrollbarUI({ editor }: { editor: CakeEditorUI }) {
+function ScrollbarUI({ editor }: { editor: CakeEditor }) {
   return <ScrollbarOverlay container={editor.getContainer()} />;
 }
 
-export const scrollbarExtension: CakeExtension = (host) => {
-  const unmount = host.registerUI(ScrollbarUI);
+export const scrollbarExtension: CakeExtension = (editor) => {
+  const unmount = editor.registerUI(ScrollbarUI);
   return () => unmount();
 };

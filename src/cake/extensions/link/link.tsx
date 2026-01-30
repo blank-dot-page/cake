@@ -32,14 +32,14 @@ export type UnlinkCommand = {
 /** All link extension commands */
 export type LinkCommand = WrapLinkCommand | UnlinkCommand;
 
-export const linkExtension: CakeExtension = (host) => {
+export const linkExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    host.registerInlineWrapperAffinity([{ kind: LINK_KIND, inclusive: false }]),
+    editor.registerInlineWrapperAffinity([{ kind: LINK_KIND, inclusive: false }]),
   );
   disposers.push(
-    host.registerKeybindings([
+    editor.registerKeybindings([
       {
         key: "u",
         meta: true,
@@ -66,7 +66,7 @@ export const linkExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerOnEdit((command, state) => {
+    editor.registerOnEdit((command, state) => {
       if (command.type === "unlink") {
         // Find the link at the given cursor position and remove the link markup
         const cursorPos = command.start;
@@ -150,7 +150,7 @@ export const linkExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerOnPasteText((text, state) => {
+    editor.registerOnPasteText((text, state) => {
       if (!isUrl(text)) {
         return null;
       }
@@ -176,7 +176,7 @@ export const linkExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerParseInline(
+    editor.registerParseInline(
       (source, start, end, context): ParseInlineResult => {
         if (source[start] !== "[") {
           return null;
@@ -219,7 +219,7 @@ export const linkExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerSerializeInline(
+    editor.registerSerializeInline(
       (inline, context): SerializeInlineResult | null => {
         if (inline.type !== "inline-wrapper" || inline.kind !== LINK_KIND) {
           return null;
@@ -241,7 +241,7 @@ export const linkExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerNormalizeInline((inline): Inline | null => {
+    editor.registerNormalizeInline((inline): Inline | null => {
       if (inline.type !== "inline-wrapper" || inline.kind !== LINK_KIND) {
         return inline;
       }
@@ -255,7 +255,7 @@ export const linkExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerInlineRenderer((inline, context) => {
+    editor.registerInlineRenderer((inline, context) => {
       if (inline.type !== "inline-wrapper" || inline.kind !== LINK_KIND) {
         return null;
       }
@@ -273,7 +273,7 @@ export const linkExtension: CakeExtension = (host) => {
     }),
   );
 
-  disposers.push(host.registerUI(CakeLinkPopover));
+  disposers.push(editor.registerUI(CakeLinkPopover));
 
   return () =>
     disposers

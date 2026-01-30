@@ -132,11 +132,11 @@ function handleToggleBlockquote(state: RuntimeState): EditResult | null {
   };
 }
 
-export const blockquoteExtension: CakeExtension = (host) => {
+export const blockquoteExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    host.registerOnEdit((command, state) => {
+    editor.registerOnEdit((command, state) => {
       if (command.type === "toggle-blockquote") {
         return handleToggleBlockquote(state);
       }
@@ -149,7 +149,7 @@ export const blockquoteExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerParseBlock((source, start, context): ParseBlockResult => {
+    editor.registerParseBlock((source, start, context): ParseBlockResult => {
       if (source.slice(start, start + PREFIX.length) !== PREFIX) {
         return null;
       }
@@ -205,7 +205,7 @@ export const blockquoteExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerSerializeBlock(
+    editor.registerSerializeBlock(
       (block, context): SerializeBlockResult | null => {
         if (block.type !== "block-wrapper" || block.kind !== BLOCKQUOTE_KIND) {
           return null;
@@ -227,7 +227,7 @@ export const blockquoteExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerBlockRenderer((block, context) => {
+    editor.registerBlockRenderer((block, context) => {
       if (block.type !== "block-wrapper" || block.kind !== BLOCKQUOTE_KIND) {
         return null;
       }

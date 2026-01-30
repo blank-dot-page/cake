@@ -2,7 +2,7 @@ import { createRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "vitest-browser-react";
 import { CakeEditor, type CakeEditorRef } from "./index";
-import { createRuntime } from "../core/runtime";
+import { createRuntimeForTests } from "../core/runtime";
 import { bundledExtensions } from "../extensions";
 
 afterEach(async () => {
@@ -54,7 +54,7 @@ function dispatchPaste(text: string) {
 
 async function assertBundledRoundtrip(value: string): Promise<void> {
   const { bundledExtensions } = await import("../extensions");
-  const runtime = createRuntime(bundledExtensions);
+  const runtime = createRuntimeForTests(bundledExtensions);
   const state = runtime.createState(value);
   const serialized = runtime.serialize(state.doc);
   expect(serialized.source).toBe(value);

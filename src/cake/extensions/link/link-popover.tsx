@@ -8,7 +8,8 @@ import {
 } from "react";
 import { ExternalLink, Pencil, Unlink } from "lucide-react";
 import { ensureHttpsProtocol } from "../../shared/url";
-import type { CakeEditorUI, EditCommand } from "../../core/runtime";
+import type { EditCommand } from "../../core/runtime";
+import type { CakeEditor } from "../../editor/cake-editor";
 
 type PopoverPosition = { top: number; left: number };
 
@@ -49,7 +50,7 @@ function getPopoverPosition(params: {
   };
 }
 
-export function CakeLinkPopover({ editor }: { editor: CakeEditorUI }) {
+export function CakeLinkPopover({ editor }: { editor: CakeEditor }) {
   const container = editor.getContainer();
   const contentRoot = editor.getContentRoot();
   if (!contentRoot) {

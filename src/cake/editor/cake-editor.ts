@@ -1,15 +1,24 @@
-import type { Affinity, Selection } from "../core/types";
+import type { Affinity, Block, Inline, Selection } from "../core/types";
 import {
   isApplyEditCommand,
-  installExtensions,
   type ApplyEditCommand,
-  type CakeExtension,
   type EditCommand,
   type KeyBinding,
-  type CakeUIComponent,
+  type ParseBlockResult,
+  type ParseInlineResult,
+  type SerializeBlockResult,
+  type SerializeInlineResult,
   type Runtime,
   type RuntimeState,
+  type ToggleInlineSpec,
+  createRuntimeFromRegistry,
+  type DomBlockRenderer,
+  type DomInlineRenderer,
+  type ExtensionContext,
+  type InlineWrapperAffinity,
+  type EditResult,
 } from "../core/runtime";
+import type { CakeExtension, CakeUIComponent } from "./extension-types";
 import { renderDocContent } from "../dom/render";
 import { applyDomSelection, readDomSelection } from "../dom/dom-selection";
 import type { DomMap } from "../dom/dom-map";
@@ -78,6 +87,14 @@ const COMPOSITION_COMMIT_CLEAR_DELAY_MS = 50;
 const HISTORY_GROUPING_INTERVAL_MS = 500;
 const MAX_UNDO_STACK_SIZE = 100;
 
+function removeFromArray<T>(arr: T[], value: T) {
+  const index = arr.indexOf(value);
+  if (index === -1) {
+    return;
+  }
+  arr.splice(index, 1);
+}
+
 type HistoryEntry = {
   source: string;
   selection: Selection;
@@ -93,12 +110,48 @@ type HistoryState = {
 export class CakeEditor {
   private container: HTMLElement;
   private runtime: Runtime;
-  private keybindings: KeyBinding[];
+  private toggleMarkerToSpec = new Map<
+    string,
+    { kind: string; open: string; close: string }
+  >();
+  private inclusiveAtEndByKind = new Map<string, boolean>();
+  private parseBlockFns: Array<
+    (
+      source: string,
+      start: number,
+      context: ExtensionContext,
+    ) => ParseBlockResult
+  > = [];
+  private parseInlineFns: Array<
+    (
+      source: string,
+      start: number,
+      end: number,
+      context: ExtensionContext,
+    ) => ParseInlineResult
+  > = [];
+  private serializeBlockFns: Array<
+    (block: Block, context: ExtensionContext) => SerializeBlockResult | null
+  > = [];
+  private serializeInlineFns: Array<
+    (inline: Inline, context: ExtensionContext) => SerializeInlineResult | null
+  > = [];
+  private normalizeBlockFns: Array<(block: Block) => Block | null> = [];
+  private normalizeInlineFns: Array<(inline: Inline) => Inline | null> = [];
+  private onEditFns: Array<
+    (
+      command: EditCommand,
+      state: RuntimeState,
+    ) => EditResult | EditCommand | null
+  > = [];
+  private keybindings: KeyBinding[] = [];
   private onPasteTextHandlers: Array<
     (text: string, state: RuntimeState) => EditCommand | null
-  >;
-  private uiComponents: CakeUIComponent[];
-  private disposeExtensions: (() => void) | null = null;
+  > = [];
+  private domInlineRenderers: DomInlineRenderer[] = [];
+  private domBlockRenderers: DomBlockRenderer[] = [];
+  private uiComponents: CakeUIComponent[] = [];
+  private extensionDisposers: Array<() => void> = [];
   private _state!: RuntimeState;
 
   private get state(): RuntimeState {
@@ -241,30 +294,184 @@ export class CakeEditor {
   constructor(options: EngineOptions) {
     this.container = options.container;
     this.contentRoot = options.contentRoot ?? null;
-    const installed = installExtensions(
-      options.extensions ?? bundledExtensions,
-    );
-    this.runtime = installed.runtime;
-    this.keybindings = installed.keybindings;
-    this.onPasteTextHandlers = installed.onPasteText;
-    this.uiComponents = installed.ui.components;
-    this.disposeExtensions = installed.dispose;
-    this.state = this.runtime.createState(
-      options.value,
-      options.selection ?? defaultSelection,
-    );
     this.onChange = options.onChange;
     this.onSelectionChange = options.onSelectionChange;
     this.readOnly = options.readOnly ?? false;
     this.spellCheckEnabled = options.spellCheckEnabled ?? true;
 
+    this.runtime = createRuntimeFromRegistry({
+      toggleMarkerToSpec: this.toggleMarkerToSpec,
+      inclusiveAtEndByKind: this.inclusiveAtEndByKind,
+      parseBlockFns: this.parseBlockFns,
+      parseInlineFns: this.parseInlineFns,
+      serializeBlockFns: this.serializeBlockFns,
+      serializeInlineFns: this.serializeInlineFns,
+      normalizeBlockFns: this.normalizeBlockFns,
+      normalizeInlineFns: this.normalizeInlineFns,
+      onEditFns: this.onEditFns,
+      domInlineRenderers: this.domInlineRenderers,
+      domBlockRenderers: this.domBlockRenderers,
+    });
+
+    this.installExtensions(options.extensions ?? bundledExtensions);
+    this.state = this.runtime.createState(
+      options.value,
+      options.selection ?? defaultSelection,
+    );
+
     this.render();
     this.attachListeners();
   }
 
+  installExtensions(extensions: CakeExtension[]) {
+    for (const extension of extensions) {
+      const dispose = extension(this);
+      if (dispose) {
+        this.extensionDisposers.push(dispose);
+      }
+    }
+  }
+
+  registerInlineWrapperAffinity(specs: InlineWrapperAffinity[]) {
+    for (const spec of specs) {
+      if (!this.inclusiveAtEndByKind.has(spec.kind)) {
+        this.inclusiveAtEndByKind.set(spec.kind, spec.inclusive);
+      }
+    }
+    return () => {
+      for (const spec of specs) {
+        const current = this.inclusiveAtEndByKind.get(spec.kind);
+        if (current === spec.inclusive) {
+          this.inclusiveAtEndByKind.delete(spec.kind);
+        }
+      }
+    };
+  }
+
+  registerToggleInline(toggle: ToggleInlineSpec) {
+    const added: Array<{ open: string; kind: string; close: string }> = [];
+    for (const marker of toggle.markers) {
+      const spec =
+        typeof marker === "string"
+          ? { kind: toggle.kind, open: marker, close: marker }
+          : { kind: toggle.kind, open: marker.open, close: marker.close };
+      this.toggleMarkerToSpec.set(spec.open, spec);
+      added.push(spec);
+    }
+    return () => {
+      for (const spec of added) {
+        const current = this.toggleMarkerToSpec.get(spec.open);
+        if (
+          current &&
+          current.kind === spec.kind &&
+          current.close === spec.close
+        ) {
+          this.toggleMarkerToSpec.delete(spec.open);
+        }
+      }
+    };
+  }
+
+  registerParseBlock(
+    fn: (
+      source: string,
+      start: number,
+      context: ExtensionContext,
+    ) => ParseBlockResult,
+  ) {
+    this.parseBlockFns.push(fn);
+    return () => removeFromArray(this.parseBlockFns, fn);
+  }
+
+  registerParseInline(
+    fn: (
+      source: string,
+      start: number,
+      end: number,
+      context: ExtensionContext,
+    ) => ParseInlineResult,
+  ) {
+    this.parseInlineFns.push(fn);
+    return () => removeFromArray(this.parseInlineFns, fn);
+  }
+
+  registerSerializeBlock(
+    fn: (
+      block: Block,
+      context: ExtensionContext,
+    ) => SerializeBlockResult | null,
+  ) {
+    this.serializeBlockFns.push(fn);
+    return () => removeFromArray(this.serializeBlockFns, fn);
+  }
+
+  registerSerializeInline(
+    fn: (
+      inline: Inline,
+      context: ExtensionContext,
+    ) => SerializeInlineResult | null,
+  ) {
+    this.serializeInlineFns.push(fn);
+    return () => removeFromArray(this.serializeInlineFns, fn);
+  }
+
+  registerNormalizeBlock(fn: (block: Block) => Block | null) {
+    this.normalizeBlockFns.push(fn);
+    return () => removeFromArray(this.normalizeBlockFns, fn);
+  }
+
+  registerNormalizeInline(fn: (inline: Inline) => Inline | null) {
+    this.normalizeInlineFns.push(fn);
+    return () => removeFromArray(this.normalizeInlineFns, fn);
+  }
+
+  registerOnEdit(
+    fn: (
+      command: EditCommand,
+      state: RuntimeState,
+    ) => EditResult | EditCommand | null,
+  ) {
+    this.onEditFns.push(fn);
+    return () => removeFromArray(this.onEditFns, fn);
+  }
+
+  registerOnPasteText(
+    fn: (text: string, state: RuntimeState) => EditCommand | null,
+  ) {
+    this.onPasteTextHandlers.push(fn);
+    return () => removeFromArray(this.onPasteTextHandlers, fn);
+  }
+
+  registerKeybindings(bindings: KeyBinding[]) {
+    this.keybindings.push(...bindings);
+    return () => {
+      for (const binding of bindings) {
+        removeFromArray(this.keybindings, binding);
+      }
+    };
+  }
+
+  registerInlineRenderer(fn: DomInlineRenderer) {
+    this.domInlineRenderers.push(fn);
+    return () => removeFromArray(this.domInlineRenderers, fn);
+  }
+
+  registerBlockRenderer(fn: DomBlockRenderer) {
+    this.domBlockRenderers.push(fn);
+    return () => removeFromArray(this.domBlockRenderers, fn);
+  }
+
+  registerUI(component: CakeUIComponent) {
+    this.uiComponents.push(component);
+    return () => removeFromArray(this.uiComponents, component);
+  }
+
   destroy() {
     this.detachListeners();
-    this.disposeExtensions?.();
+    this.extensionDisposers
+      .splice(0)
+      .reverse()
+      .forEach((dispose) => dispose());
     this.clearCaretBlinkTimer();
     if (this.overlayUpdateId !== null) {
       window.cancelAnimationFrame(this.overlayUpdateId);

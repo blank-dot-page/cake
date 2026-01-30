@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { installExtensions } from "../../core/runtime";
+import type { CakeUIComponent } from "../../core/runtime";
+import type { CakeEditor } from "../../editor/cake-editor";
 
 /**
  * The scrollbar extension is a React-only overlay component.
@@ -19,8 +20,21 @@ describe("scrollbar extension", () => {
       expect(module.scrollbarExtension).toBeDefined();
       expect(typeof module.scrollbarExtension).toBe("function");
 
-      const installed = installExtensions([module.scrollbarExtension]);
-      expect(installed.ui.components.length).toBe(1);
+      const uiComponents: CakeUIComponent[] = [];
+      const editor = {
+        registerUI: (component: CakeUIComponent) => {
+          uiComponents.push(component);
+          return () => {
+            const index = uiComponents.indexOf(component);
+            if (index >= 0) {
+              uiComponents.splice(index, 1);
+            }
+          };
+        },
+      } as unknown as CakeEditor;
+
+      module.scrollbarExtension(editor);
+      expect(uiComponents.length).toBe(1);
     });
   });
 });

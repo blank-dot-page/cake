@@ -553,8 +553,8 @@ describe("CakeEditor (browser)", () => {
     const container = createContainer();
     let lastValue = "";
 
-    const aExtension: CakeExtension = (host) => {
-      host.registerKeybindings([
+    const aExtension: CakeExtension = (editor) => {
+      editor.registerKeybindings([
         {
           key: "8",
           ctrl: true,
@@ -564,8 +564,8 @@ describe("CakeEditor (browser)", () => {
       ]);
     };
 
-    const bExtension: CakeExtension = (host) => {
-      host.registerKeybindings([
+    const bExtension: CakeExtension = (editor) => {
+      editor.registerKeybindings([
         {
           key: "8",
           ctrl: true,
@@ -609,8 +609,8 @@ describe("CakeEditor (browser)", () => {
     const container = createContainer();
     let lastValue = "";
 
-    const nullBindingExtension: CakeExtension = (host) => {
-      host.registerKeybindings([
+    const nullBindingExtension: CakeExtension = (editor) => {
+      editor.registerKeybindings([
         {
           key: "8",
           ctrl: true,
@@ -653,8 +653,8 @@ describe("CakeEditor (browser)", () => {
     const container = createContainer();
     let lastValue = "";
 
-    const nullPasteExtension: CakeExtension = (host) => {
-      host.registerOnPasteText(() => null);
+    const nullPasteExtension: CakeExtension = (editor) => {
+      editor.registerOnPasteText(() => null);
     };
 
     const engine = new CakeEditor({

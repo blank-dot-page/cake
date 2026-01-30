@@ -12,17 +12,17 @@ const UNDERLINE_KIND = "underline";
 /** Semantic command to toggle underline formatting */
 type ToggleUnderlineCommand = { type: "toggle-underline" };
 
-export const underlineExtension: CakeExtension = (host) => {
+export const underlineExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    host.registerToggleInline({
+    editor.registerToggleInline({
       kind: UNDERLINE_KIND,
       markers: [{ open: "<u>", close: "</u>" }],
     }),
   );
   disposers.push(
-    host.registerKeybindings([
+    editor.registerKeybindings([
       {
         key: "u",
         meta: true,
@@ -38,12 +38,12 @@ export const underlineExtension: CakeExtension = (host) => {
     ]),
   );
   disposers.push(
-    host.registerInlineWrapperAffinity([
+    editor.registerInlineWrapperAffinity([
       { kind: UNDERLINE_KIND, inclusive: true },
     ]),
   );
   disposers.push(
-    host.registerOnEdit((command) => {
+    editor.registerOnEdit((command) => {
       if (command.type === "toggle-underline") {
         return { type: "toggle-inline", marker: "<u>" } as EditCommand;
       }
@@ -51,7 +51,7 @@ export const underlineExtension: CakeExtension = (host) => {
     }),
   );
   disposers.push(
-    host.registerParseInline(
+    editor.registerParseInline(
       (source, start, end, context): ParseInlineResult => {
         if (source.slice(start, start + 3) !== "<u>") {
           return null;
@@ -75,7 +75,7 @@ export const underlineExtension: CakeExtension = (host) => {
     ),
   );
   disposers.push(
-    host.registerSerializeInline(
+    editor.registerSerializeInline(
       (inline, context): SerializeInlineResult | null => {
         if (
           inline.type !== "inline-wrapper" ||
@@ -96,7 +96,7 @@ export const underlineExtension: CakeExtension = (host) => {
     ),
   );
   disposers.push(
-    host.registerNormalizeInline((inline): Inline | null => {
+    editor.registerNormalizeInline((inline): Inline | null => {
       if (inline.type !== "inline-wrapper" || inline.kind !== UNDERLINE_KIND) {
         return inline;
       }
@@ -109,7 +109,7 @@ export const underlineExtension: CakeExtension = (host) => {
     }),
   );
   disposers.push(
-    host.registerInlineRenderer((inline, context) => {
+    editor.registerInlineRenderer((inline, context) => {
       if (inline.type !== "inline-wrapper" || inline.kind !== UNDERLINE_KIND) {
         return null;
       }

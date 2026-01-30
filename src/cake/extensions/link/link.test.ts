@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createRuntime } from "../../core/runtime";
+import { createRuntimeForTests } from "../../core/runtime";
 import { linkExtension } from "./link";
 
 describe("link extension", () => {
   it("ignores image syntax when image extension is not loaded", () => {
-    const runtime = createRuntime([linkExtension]);
+    const runtime = createRuntimeForTests([linkExtension]);
     const source = "![alt](http://example.com/image.png)";
     const state = runtime.createState(source);
     // Image syntax should be preserved as plain text
@@ -14,7 +14,7 @@ describe("link extension", () => {
   });
 
   it("parses and serializes links", () => {
-    const runtime = createRuntime([linkExtension]);
+    const runtime = createRuntimeForTests([linkExtension]);
     const source = "[word](url)";
     const doc = runtime.parse(source);
     const serialized = runtime.serialize(doc);
@@ -22,13 +22,13 @@ describe("link extension", () => {
   });
 
   it("collapses empty link labels", () => {
-    const runtime = createRuntime([linkExtension]);
+    const runtime = createRuntimeForTests([linkExtension]);
     const state = runtime.createState("[](u)");
     expect(state.source).toBe("");
   });
 
   it("inserts text after link when cursor at end with forward affinity", () => {
-    const runtime = createRuntime([linkExtension]);
+    const runtime = createRuntimeForTests([linkExtension]);
     const state = runtime.createState("hello [world](http://test/)");
 
     // "hello " = 6 cursors (0-5), "[world]" = 5 cursors (6-10)
@@ -55,7 +55,7 @@ describe("link extension", () => {
   });
 
   it("inserts text inside link when cursor at end with backward affinity", () => {
-    const runtime = createRuntime([linkExtension]);
+    const runtime = createRuntimeForTests([linkExtension]);
     const state = runtime.createState("hello [world](http://test/)");
 
     // When we insert with backward affinity, we should insert at sourceBackward (position 12)
@@ -72,7 +72,7 @@ describe("link extension", () => {
   });
 
   it("inserts at cursor 10 inside link regardless of affinity", () => {
-    const runtime = createRuntime([linkExtension]);
+    const runtime = createRuntimeForTests([linkExtension]);
     const state = runtime.createState("hello [world](http://test/)");
 
     // Cursor 10 is before 'd' in "world"

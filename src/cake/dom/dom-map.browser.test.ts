@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createRuntime } from "../core/runtime";
+import { createRuntimeForTests } from "../core/runtime";
 import {
   blockquoteExtension,
   boldExtension,
@@ -68,7 +68,7 @@ describe("dom map", () => {
   });
 
   it("maps cursor offsets for nested blockquote content", () => {
-    const runtime = createRuntime([
+    const runtime = createRuntimeForTests([
       blockquoteExtension,
       boldExtension,
       linkExtension,
@@ -88,7 +88,7 @@ describe("dom map", () => {
   });
 
   it("roundtrips selection for delete operations", () => {
-    const runtime = createRuntime([
+    const runtime = createRuntimeForTests([
       blockquoteExtension,
       boldExtension,
       linkExtension,
@@ -121,7 +121,7 @@ describe("dom map", () => {
   });
 
   it("distinguishes boundary sides between blocks", () => {
-    const runtime = createRuntime([]);
+    const runtime = createRuntimeForTests([]);
     const state = runtime.createState("one\ntwo");
     const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
@@ -148,7 +148,7 @@ describe("dom map", () => {
 
   it("preserves affinity at text run boundaries", () => {
     // Test with bold formatting: **ab**cd has two text runs
-    const runtime = createRuntime([boldExtension]);
+    const runtime = createRuntimeForTests([boldExtension]);
     const state = runtime.createState("**ab**cd");
     const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
@@ -178,7 +178,7 @@ describe("dom map", () => {
 
   it("maps cursor at end of link text to correct position with forward affinity", () => {
     // "hello [world](http://test/)" - cursor 11 is at end of link text
-    const runtime = createRuntime([linkExtension]);
+    const runtime = createRuntimeForTests([linkExtension]);
     const state = runtime.createState("hello [world](http://test/)");
     const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
@@ -220,7 +220,7 @@ describe("dom map", () => {
   });
 
   it("cursorAtDom stays fast for large text nodes", () => {
-    const runtime = createRuntime([]);
+    const runtime = createRuntimeForTests([]);
     const source = "a".repeat(24_000);
     const state = runtime.createState(source);
     const { root, map } = renderDoc(state.doc, runtime.dom);

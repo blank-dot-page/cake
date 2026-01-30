@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  createRuntime,
+  createRuntimeForTests,
   type CakeExtension,
   type RuntimeState,
 } from "./core/runtime";
@@ -12,7 +12,7 @@ import {
 import type { Affinity, Selection } from "./core/types";
 import { CursorSourceBuilder } from "./core/mapping/cursor-source-map";
 
-const runtime = createRuntime([
+const runtime = createRuntimeForTests([
   blockquoteExtension,
   boldExtension,
   linkExtension,
@@ -405,8 +405,8 @@ describe("runtime with bold/link/blockquote", () => {
   });
 
   it("allows extensions to override deletes for atoms", () => {
-    const atomExtension: CakeExtension = (host) => {
-      host.registerParseInline((source, start) => {
+    const atomExtension: CakeExtension = (editor) => {
+      editor.registerParseInline((source, start) => {
         if (source.slice(start, start + 2) !== "@@") {
           return null;
         }
@@ -415,7 +415,7 @@ describe("runtime with bold/link/blockquote", () => {
           nextPos: start + 2,
         };
       });
-      host.registerSerializeInline((inline) => {
+      editor.registerSerializeInline((inline) => {
         if (inline.type !== "inline-atom" || inline.kind !== "atom") {
           return null;
         }
@@ -423,7 +423,7 @@ describe("runtime with bold/link/blockquote", () => {
         builder.appendCursorAtom("@@", 1);
         return builder.build();
       });
-      host.registerOnEdit((command, state) => {
+      editor.registerOnEdit((command, state) => {
         if (command.type !== "delete-backward") {
           return null;
         }
@@ -449,7 +449,7 @@ describe("runtime with bold/link/blockquote", () => {
       });
     };
 
-    const atomRuntime = createRuntime([atomExtension]);
+    const atomRuntime = createRuntimeForTests([atomExtension]);
     const base = atomRuntime.createState("@@");
     const selection = { start: 1, end: 1, affinity: "backward" as const };
     const state = { ...base, selection };

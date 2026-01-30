@@ -12,14 +12,14 @@ const STRIKE_KIND = "strikethrough";
 /** Semantic command to toggle strikethrough formatting */
 type ToggleStrikethroughCommand = { type: "toggle-strikethrough" };
 
-export const strikethroughExtension: CakeExtension = (host) => {
+export const strikethroughExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    host.registerToggleInline({ kind: STRIKE_KIND, markers: ["~~"] }),
+    editor.registerToggleInline({ kind: STRIKE_KIND, markers: ["~~"] }),
   );
   disposers.push(
-    host.registerKeybindings([
+    editor.registerKeybindings([
       {
         key: "x",
         meta: true,
@@ -35,12 +35,12 @@ export const strikethroughExtension: CakeExtension = (host) => {
     ]),
   );
   disposers.push(
-    host.registerInlineWrapperAffinity([
+    editor.registerInlineWrapperAffinity([
       { kind: STRIKE_KIND, inclusive: true },
     ]),
   );
   disposers.push(
-    host.registerOnEdit((command) => {
+    editor.registerOnEdit((command) => {
       // Handle semantic command by delegating to toggle-inline
       if (command.type === "toggle-strikethrough") {
         return { type: "toggle-inline", marker: "~~" } as EditCommand;
@@ -49,7 +49,7 @@ export const strikethroughExtension: CakeExtension = (host) => {
     }),
   );
   disposers.push(
-    host.registerParseInline(
+    editor.registerParseInline(
       (source, start, end, context): ParseInlineResult => {
         if (source.slice(start, start + 2) !== "~~") {
           return null;
@@ -77,7 +77,7 @@ export const strikethroughExtension: CakeExtension = (host) => {
     ),
   );
   disposers.push(
-    host.registerSerializeInline(
+    editor.registerSerializeInline(
       (inline, context): SerializeInlineResult | null => {
         if (inline.type !== "inline-wrapper" || inline.kind !== STRIKE_KIND) {
           return null;
@@ -95,7 +95,7 @@ export const strikethroughExtension: CakeExtension = (host) => {
     ),
   );
   disposers.push(
-    host.registerNormalizeInline((inline): Inline | null => {
+    editor.registerNormalizeInline((inline): Inline | null => {
       if (inline.type !== "inline-wrapper" || inline.kind !== STRIKE_KIND) {
         return inline;
       }
@@ -108,7 +108,7 @@ export const strikethroughExtension: CakeExtension = (host) => {
     }),
   );
   disposers.push(
-    host.registerInlineRenderer((inline, context) => {
+    editor.registerInlineRenderer((inline, context) => {
       if (inline.type !== "inline-wrapper" || inline.kind !== STRIKE_KIND) {
         return null;
       }

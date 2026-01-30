@@ -3,7 +3,7 @@ import { createElement, Fragment } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { CakeEditor } from "../editor/cake-editor";
 import type { Selection } from "../core/types";
-import type { CakeExtension } from "../core/runtime";
+import type { CakeExtension } from "../editor/extension-types";
 import { bundledExtensions } from "../extensions";
 import { measureLayoutModelFromDom } from "../editor/selection/selection-layout-dom";
 

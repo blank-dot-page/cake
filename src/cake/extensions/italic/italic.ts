@@ -12,25 +12,25 @@ const ITALIC_KIND = "italic";
 /** Semantic command to toggle italic formatting */
 type ToggleItalicCommand = { type: "toggle-italic" };
 
-export const italicExtension: CakeExtension = (host) => {
+export const italicExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    host.registerToggleInline({ kind: ITALIC_KIND, markers: ["*", "_"] }),
+    editor.registerToggleInline({ kind: ITALIC_KIND, markers: ["*", "_"] }),
   );
   disposers.push(
-    host.registerKeybindings([
+    editor.registerKeybindings([
       { key: "i", meta: true, command: { type: "toggle-italic" } },
       { key: "i", ctrl: true, command: { type: "toggle-italic" } },
     ]),
   );
   disposers.push(
-    host.registerInlineWrapperAffinity([
+    editor.registerInlineWrapperAffinity([
       { kind: ITALIC_KIND, inclusive: true },
     ]),
   );
   disposers.push(
-    host.registerOnEdit((command) => {
+    editor.registerOnEdit((command) => {
       // Handle semantic command by delegating to toggle-inline
       if (command.type === "toggle-italic") {
         return { type: "toggle-inline", marker: "*" } as EditCommand;
@@ -39,7 +39,7 @@ export const italicExtension: CakeExtension = (host) => {
     }),
   );
   disposers.push(
-    host.registerParseInline(
+    editor.registerParseInline(
       (source, start, end, context): ParseInlineResult => {
         const char = source[start];
         // Support both * and _ for italic (like v1)
@@ -80,7 +80,7 @@ export const italicExtension: CakeExtension = (host) => {
     ),
   );
   disposers.push(
-    host.registerSerializeInline(
+    editor.registerSerializeInline(
       (inline, context): SerializeInlineResult | null => {
         if (inline.type !== "inline-wrapper" || inline.kind !== ITALIC_KIND) {
           return null;
@@ -101,7 +101,7 @@ export const italicExtension: CakeExtension = (host) => {
     ),
   );
   disposers.push(
-    host.registerNormalizeInline((inline): Inline | null => {
+    editor.registerNormalizeInline((inline): Inline | null => {
       if (inline.type !== "inline-wrapper" || inline.kind !== ITALIC_KIND) {
         return inline;
       }
@@ -114,7 +114,7 @@ export const italicExtension: CakeExtension = (host) => {
     }),
   );
   disposers.push(
-    host.registerInlineRenderer((inline, context) => {
+    editor.registerInlineRenderer((inline, context) => {
       if (inline.type !== "inline-wrapper" || inline.kind !== ITALIC_KIND) {
         return null;
       }

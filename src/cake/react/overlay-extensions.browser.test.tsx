@@ -5,10 +5,10 @@ import { cleanup, render } from "vitest-browser-react";
 import { CakeEditor, type CakeEditorRef } from "./index";
 import type {
   CakeExtension,
-  CakeEditorUI,
   ParseInlineResult,
   SerializeInlineResult,
 } from "../core/runtime";
+import type { CakeEditor } from "../editor/cake-editor";
 import { CursorSourceBuilder } from "../core/mapping/cursor-source-map";
 import type { Inline } from "../core/types";
 
@@ -28,11 +28,11 @@ function toOverlayRect(container: HTMLElement, rect: DOMRectReadOnly) {
   };
 }
 
-const helloInlineExtension: CakeExtension = (host) => {
+const helloInlineExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    host.registerParseInline(
+    editor.registerParseInline(
       (source, start, end, context): ParseInlineResult => {
         if (source[start] !== "[" || source[start + 1] !== "[") {
           return null;
@@ -58,7 +58,7 @@ const helloInlineExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerSerializeInline(
+    editor.registerSerializeInline(
       (inline, context): SerializeInlineResult | null => {
         if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
           return null;
@@ -76,7 +76,7 @@ const helloInlineExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerInlineRenderer((inline, context) => {
+    editor.registerInlineRenderer((inline, context) => {
       if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
         return null;
       }
@@ -94,7 +94,7 @@ const helloInlineExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerNormalizeInline((inline): Inline | null => {
+    editor.registerNormalizeInline((inline): Inline | null => {
       if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
         return inline;
       }
@@ -102,7 +102,7 @@ const helloInlineExtension: CakeExtension = (host) => {
     }),
   );
 
-  disposers.push(host.registerUI(HelloPopoverUI));
+  disposers.push(editor.registerUI(HelloPopoverUI));
 
   return () =>
     disposers
@@ -111,7 +111,7 @@ const helloInlineExtension: CakeExtension = (host) => {
       .forEach((d) => d());
 };
 
-function HelloPopoverUI({ editor }: { editor: CakeEditorUI }) {
+function HelloPopoverUI({ editor }: { editor: CakeEditor }) {
   const container = editor.getContainer();
   const contentRoot = editor.getContentRoot();
   if (!contentRoot) {

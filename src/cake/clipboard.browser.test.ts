@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { htmlToMarkdownForPaste } from "./clipboard";
-import { createRuntime } from "./core/runtime";
+import { createRuntimeForTests } from "./core/runtime";
 import { bundledExtensions } from "./extensions";
 
 function createTestRuntime() {
-  return createRuntime(bundledExtensions);
+  return createRuntimeForTests(bundledExtensions);
 }
 
 function selectionForText(params: {
-  runtime: ReturnType<typeof createRuntime>;
-  state: ReturnType<ReturnType<typeof createRuntime>["createState"]>;
+  runtime: ReturnType<typeof createRuntimeForTests>;
+  state: ReturnType<ReturnType<typeof createRuntimeForTests>["createState"]>;
   text: string;
 }) {
   const { runtime, state, text } = params;

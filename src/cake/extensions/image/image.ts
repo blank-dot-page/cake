@@ -34,11 +34,11 @@ function isImageData(data: unknown): data is ImageData {
   return false;
 }
 
-export const imageExtension: CakeExtension = (host) => {
+export const imageExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    host.registerParseBlock((source, start): ParseBlockResult => {
+    editor.registerParseBlock((source, start): ParseBlockResult => {
       let lineEnd = source.indexOf("\n", start);
       if (lineEnd === -1) {
         lineEnd = source.length;
@@ -81,7 +81,7 @@ export const imageExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerSerializeBlock((block): SerializeBlockResult | null => {
+    editor.registerSerializeBlock((block): SerializeBlockResult | null => {
       if (block.type !== "block-atom" || block.kind !== IMAGE_KIND) {
         return null;
       }
@@ -102,7 +102,7 @@ export const imageExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerNormalizeBlock((block): Block | null => {
+    editor.registerNormalizeBlock((block): Block | null => {
       if (block.type !== "block-atom" || block.kind !== IMAGE_KIND) {
         return block;
       }
@@ -111,7 +111,7 @@ export const imageExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerBlockRenderer((block, context) => {
+    editor.registerBlockRenderer((block, context) => {
       if (block.type !== "block-atom" || block.kind !== IMAGE_KIND) {
         return null;
       }

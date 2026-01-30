@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createRuntime } from "../core/runtime";
+import { createRuntimeForTests } from "../core/runtime";
 import { renderDoc } from "./render";
 import { applyDomSelection, readDomSelection } from "./dom-selection";
 
@@ -21,7 +21,7 @@ describe("dom selection", () => {
   });
 
   it("reads element-anchored selections", () => {
-    const runtime = createRuntime([]);
+    const runtime = createRuntimeForTests([]);
     const state = runtime.createState("a");
     const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
@@ -40,7 +40,7 @@ describe("dom selection", () => {
   });
 
   it("reads selections inside empty paragraphs", () => {
-    const runtime = createRuntime([]);
+    const runtime = createRuntimeForTests([]);
     const state = runtime.createState("");
     const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
@@ -59,7 +59,7 @@ describe("dom selection", () => {
   });
 
   it("includes newline when selecting to a line start boundary", () => {
-    const runtime = createRuntime([]);
+    const runtime = createRuntimeForTests([]);
     const state = runtime.createState("First line\nSecond line\nThird line");
     const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
