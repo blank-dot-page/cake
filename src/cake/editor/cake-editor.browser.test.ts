@@ -203,6 +203,46 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("exposes visible text and selection helpers", () => {
+    const h = createTestHarness("Hello **bold** [Link](https://example.com)\nNext");
+
+    expect(h.engine.getText()).toBe("Hello bold Link\nNext");
+
+    h.engine.setTextSelection({ start: 1, end: 3 });
+    expect(h.engine.getTextSelection()).toEqual({ start: 1, end: 3 });
+
+    h.destroy();
+  });
+
+  it("returns text before/around cursor in visible text space", () => {
+    const h = createTestHarness("Hello **world**!!");
+
+    // Place caret after "world"
+    h.engine.setTextSelection({ start: 11, end: 11 });
+
+    expect(h.engine.getTextBeforeCursor(5)).toBe("world");
+    expect(h.engine.getTextAroundCursor(5, 2)).toEqual({
+      before: "world",
+      after: "!!",
+    });
+
+    h.destroy();
+  });
+
+  it("replaces visible text before cursor without touching markdown markers", () => {
+    const h = createTestHarness("**bold** world");
+
+    // Caret after "bold"
+    h.engine.setTextSelection({ start: 4, end: 4 });
+    h.engine.replaceTextBeforeCursor(4, "cool");
+
+    expect(h.engine.getValue()).toBe("**cool** world");
+    expect(h.engine.getText()).toBe("cool world");
+    expect(h.engine.getTextSelection()).toEqual({ start: 4, end: 4 });
+
+    h.destroy();
+  });
+
   it("handles beforeinput insertReplacementText with targetRanges", () => {
     const container = createContainer();
     let lastValue = "";

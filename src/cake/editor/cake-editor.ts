@@ -504,6 +504,95 @@ export class CakeEditor {
     return this.state.selection;
   }
 
+  getText() {
+    const lines = getDocLines(this.state.doc);
+    return getVisibleText(lines);
+  }
+
+  getTextSelection() {
+    const lines = getDocLines(this.state.doc);
+    return {
+      start: cursorOffsetToVisibleOffset(lines, this.state.selection.start),
+      end: cursorOffsetToVisibleOffset(lines, this.state.selection.end),
+    };
+  }
+
+  setTextSelection(selection: { start: number; end: number }) {
+    const lines = getDocLines(this.state.doc);
+    const start = visibleOffsetToCursorOffset(lines, selection.start);
+    const end = visibleOffsetToCursorOffset(lines, selection.end);
+    if (start === null || end === null) {
+      return;
+    }
+    const normalizedStart = Math.min(start, end);
+    const normalizedEnd = Math.max(start, end);
+    this.setSelection({
+      start: normalizedStart,
+      end: normalizedEnd,
+      affinity: "forward",
+    });
+  }
+
+  getTextBeforeCursor(maxChars = Number.POSITIVE_INFINITY) {
+    const text = this.getText();
+    const { start } = this.getTextSelection();
+    const cursor = Math.max(0, Math.min(start, text.length));
+    const length = Math.max(0, maxChars);
+    return text.slice(Math.max(0, cursor - length), cursor);
+  }
+
+  getTextAroundCursor(before: number, after: number) {
+    const text = this.getText();
+    const { start } = this.getTextSelection();
+    const cursor = Math.max(0, Math.min(start, text.length));
+    const beforeLength = Math.max(0, before);
+    const afterLength = Math.max(0, after);
+    const beforeText = text.slice(Math.max(0, cursor - beforeLength), cursor);
+    const afterText = text.slice(cursor, Math.min(text.length, cursor + afterLength));
+    return { before: beforeText, after: afterText };
+  }
+
+  replaceTextBeforeCursor(chars: number, replacement: string) {
+    const lines = getDocLines(this.state.doc);
+    const selection = this.state.selection;
+    const focus =
+      selection.start === selection.end
+        ? selection.start
+        : selection.affinity === "backward"
+          ? selection.start
+          : selection.end;
+    const focusVisible = cursorOffsetToVisibleOffset(lines, focus);
+    const length = Math.max(0, chars);
+    const startVisible = Math.max(0, focusVisible - length);
+    const startCursor = visibleOffsetToCursorOffset(lines, startVisible);
+    if (startCursor === null) {
+      return;
+    }
+    const from = this.state.map.cursorToSource(startCursor, "forward");
+    const to = this.state.map.cursorToSource(focus, "backward");
+    const nextSource =
+      this.state.source.slice(0, from) +
+      replacement +
+      this.state.source.slice(to);
+    const next = this.runtime.createState(nextSource);
+    const newCursor = next.map.sourceToCursor(
+      from + replacement.length,
+      "forward",
+    );
+    this.state = {
+      ...next,
+      selection: {
+        start: newCursor.cursorOffset,
+        end: newCursor.cursorOffset,
+        affinity: "forward",
+      },
+    };
+    this.render();
+    this.flushOverlayUpdate();
+    this.notifyChange();
+    this.scheduleScrollCaretIntoView();
+  }
+
   getCursorLength() {
     return this.state.map.cursorLength;
   }
