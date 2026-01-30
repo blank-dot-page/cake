@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { page } from "vitest/browser";
 import { createTestHarness, type TestHarness } from "../../test/harness";
 
 const mod =
@@ -24,7 +25,9 @@ describe("link shortcut (Cmd+Shift+U)", () => {
       value: "hello world",
       renderOverlays: true,
     });
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    // Wait for React to commit overlay effects
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
     harness.engine.setSelection({ start: 6, end: 11, affinity: "forward" });
     await harness.focus();
@@ -32,13 +35,9 @@ describe("link shortcut (Cmd+Shift+U)", () => {
 
     expect(harness.engine.getValue()).toBe("hello [world]()");
 
-    // Popover opens after the engine schedules it on the next animation frame.
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    const popover = document.querySelector(".cake-link-popover");
-    expect(popover).not.toBeNull();
-
-    const input = document.querySelector(".cake-link-input");
-    expect(input).not.toBeNull();
+    // Popover opens after the engine schedules it on the next animation frame
+    // and React commits the state update. Use expect.poll for retry.
+    await expect.poll(() => document.querySelector(".cake-link-popover")).not.toBeNull();
+    await expect.poll(() => document.querySelector(".cake-link-input")).not.toBeNull();
   });
 });
