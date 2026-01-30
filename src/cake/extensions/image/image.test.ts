@@ -167,23 +167,10 @@ describe("image extension", () => {
   });
 
   describe("normalizeBlock", () => {
-    test("returns image block unchanged", () => {
-      const block = {
-        type: "block-atom" as const,
-        kind: "image",
-        data: { status: "ready", alt: "test", url: "url" },
-      };
-      const normalized = imageExtension.normalizeBlock?.(block);
-      expect(normalized).toEqual(block);
-    });
-
-    test("returns non-image blocks unchanged", () => {
-      const block = {
-        type: "paragraph" as const,
-        content: [{ type: "text" as const, text: "hello" }],
-      };
-      const normalized = imageExtension.normalizeBlock?.(block);
-      expect(normalized).toEqual(block);
+    test("normalizes images produced by parsing", () => {
+      const runtime = createRuntime([imageExtension]);
+      const state = runtime.createState("![alt](url)");
+      expect(state.doc.blocks[0]).toMatchObject({ type: "block-atom", kind: "image" });
     });
   });
 });

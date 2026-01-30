@@ -3,7 +3,7 @@ import { createElement, Fragment } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { CakeEditor } from "../editor/cake-editor";
 import type { Selection } from "../core/types";
-import type { CakeExtension, OverlayExtensionContext } from "../core/runtime";
+import type { CakeExtension } from "../core/runtime";
 import { bundledExtensions } from "../extensions";
 import { measureLayoutModelFromDom } from "../editor/selection/selection-layout-dom";
 
@@ -124,56 +124,12 @@ export function createTestHarness(
   let overlayRoot: Root | null = null;
   if (options.renderOverlays) {
     const overlayContainer = engine.getOverlayRoot();
-    const contentRoot = engine.getContentRoot();
-    if (!overlayContainer || !contentRoot) {
-      throw new Error("Missing overlay root for extensions");
-    }
-    const overlayContext: OverlayExtensionContext = {
-      container,
-      contentRoot,
-      overlayRoot: overlayContainer,
-      toOverlayRect: (rect) => {
-        const containerRect = container.getBoundingClientRect();
-        return {
-          top: rect.top - containerRect.top,
-          left: rect.left - containerRect.left,
-          width: rect.width,
-          height: rect.height,
-        };
-      },
-      insertText: (text) => {
-        engine.insertText(text);
-      },
-      replaceText: (oldText, newText) => {
-        engine.replaceText(oldText, newText);
-      },
-      getSelection: () => {
-        const selection = engine.getSelection();
-        if (!selection) {
-          return null;
-        }
-        const focus =
-          selection.start === selection.end
-            ? selection.start
-            : Math.max(selection.start, selection.end);
-        return { start: focus, end: focus };
-      },
-      executeCommand: (command) => {
-        return engine.executeCommand(command);
-      },
-    };
-
-    const overlayElements = extensions.flatMap((extension) => {
-      if (!extension.renderOverlay) {
-        return [];
-      }
-      const rendered = extension.renderOverlay(overlayContext);
-      if (!rendered) {
-        return [];
-      }
-      return [createElement(Fragment, { key: extension.name }, rendered)];
-    });
     overlayRoot = createRoot(overlayContainer);
+    const overlayElements = engine
+      .getUIComponents()
+      .map((Component, index) =>
+        createElement(Component, { key: index, editor: engine }),
+      );
     overlayRoot.render(createElement(Fragment, null, ...overlayElements));
   }
 

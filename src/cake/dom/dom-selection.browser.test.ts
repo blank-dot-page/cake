@@ -23,7 +23,7 @@ describe("dom selection", () => {
   it("reads element-anchored selections", () => {
     const runtime = createRuntime([]);
     const state = runtime.createState("a");
-    const { root, map } = renderDoc(state.doc, runtime.extensions);
+    const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
 
     const paragraph = root.querySelector(".cake-line");
@@ -42,7 +42,7 @@ describe("dom selection", () => {
   it("reads selections inside empty paragraphs", () => {
     const runtime = createRuntime([]);
     const state = runtime.createState("");
-    const { root, map } = renderDoc(state.doc, runtime.extensions);
+    const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
 
     const paragraph = root.querySelector(".cake-line");
@@ -61,7 +61,7 @@ describe("dom selection", () => {
   it("includes newline when selecting to a line start boundary", () => {
     const runtime = createRuntime([]);
     const state = runtime.createState("First line\nSecond line\nThird line");
-    const { root, map } = renderDoc(state.doc, runtime.extensions);
+    const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
 
     const paragraphs = root.querySelectorAll(".cake-line");

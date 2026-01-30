@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { installExtensions } from "../../core/runtime";
 
 /**
  * The scrollbar extension is a React-only overlay component.
@@ -16,7 +17,10 @@ describe("scrollbar extension", () => {
       // This test validates the module can be imported
       const module = await import("./index");
       expect(module.scrollbarExtension).toBeDefined();
-      expect(module.scrollbarExtension.name).toBe("scrollbar");
+      expect(typeof module.scrollbarExtension).toBe("function");
+
+      const installed = installExtensions([module.scrollbarExtension]);
+      expect(installed.ui.components.length).toBe(1);
     });
   });
 });

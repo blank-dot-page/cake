@@ -405,9 +405,8 @@ describe("runtime with bold/link/blockquote", () => {
   });
 
   it("allows extensions to override deletes for atoms", () => {
-    const atomExtension: CakeExtension = {
-      name: "atom",
-      parseInline(source, start) {
+    const atomExtension: CakeExtension = (host) => {
+      host.registerParseInline((source, start) => {
         if (source.slice(start, start + 2) !== "@@") {
           return null;
         }
@@ -415,16 +414,16 @@ describe("runtime with bold/link/blockquote", () => {
           inline: { type: "inline-atom", kind: "atom" },
           nextPos: start + 2,
         };
-      },
-      serializeInline(inline) {
+      });
+      host.registerSerializeInline((inline) => {
         if (inline.type !== "inline-atom" || inline.kind !== "atom") {
           return null;
         }
         const builder = new CursorSourceBuilder();
         builder.appendCursorAtom("@@", 1);
         return builder.build();
-      },
-      onEdit(command, state) {
+      });
+      host.registerOnEdit((command, state) => {
         if (command.type !== "delete-backward") {
           return null;
         }
@@ -439,15 +438,11 @@ describe("runtime with bold/link/blockquote", () => {
           return null;
         }
         const inline = block.content[0];
-        if (
-          !inline ||
-          inline.type !== "inline-atom" ||
-          inline.kind !== "atom"
-        ) {
+        if (!inline || inline.type !== "inline-atom" || inline.kind !== "atom") {
           return null;
         }
         return { source: "", selection: { start: 0, end: 0 } };
-      },
+      });
     };
 
     const atomRuntime = createRuntime([atomExtension]);

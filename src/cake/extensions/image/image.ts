@@ -1,5 +1,5 @@
 import {
-  defineExtension,
+  type CakeExtension,
   type ParseBlockResult,
   type SerializeBlockResult,
 } from "../../core/runtime";
@@ -34,109 +34,123 @@ function isImageData(data: unknown): data is ImageData {
   return false;
 }
 
-export const imageExtension = defineExtension({
-  name: "image",
-  parseBlock(source, start): ParseBlockResult {
-    let lineEnd = source.indexOf("\n", start);
-    if (lineEnd === -1) {
-      lineEnd = source.length;
-    }
+export const imageExtension: CakeExtension = (host) => {
+  const disposers: Array<() => void> = [];
 
-    const line = source.slice(start, lineEnd).trim();
-    const uploadingMatch = line.match(UPLOADING_PATTERN);
-    if (uploadingMatch) {
+  disposers.push(
+    host.registerParseBlock((source, start): ParseBlockResult => {
+      let lineEnd = source.indexOf("\n", start);
+      if (lineEnd === -1) {
+        lineEnd = source.length;
+      }
+
+      const line = source.slice(start, lineEnd).trim();
+      const uploadingMatch = line.match(UPLOADING_PATTERN);
+      if (uploadingMatch) {
+        return {
+          block: {
+            type: "block-atom",
+            kind: IMAGE_KIND,
+            data: {
+              status: "uploading",
+              id: uploadingMatch[1],
+            } satisfies ImageData,
+          },
+          nextPos: lineEnd,
+        };
+      }
+
+      const imageMatch = line.match(IMAGE_PATTERN);
+      if (!imageMatch) {
+        return null;
+      }
+
       return {
         block: {
           type: "block-atom",
           kind: IMAGE_KIND,
           data: {
-            status: "uploading",
-            id: uploadingMatch[1],
+            status: "ready",
+            alt: imageMatch[1],
+            url: imageMatch[2],
           } satisfies ImageData,
         },
         nextPos: lineEnd,
       };
-    }
+    }),
+  );
 
-    const imageMatch = line.match(IMAGE_PATTERN);
-    if (!imageMatch) {
-      return null;
-    }
-
-    return {
-      block: {
-        type: "block-atom",
-        kind: IMAGE_KIND,
-        data: {
-          status: "ready",
-          alt: imageMatch[1],
-          url: imageMatch[2],
-        } satisfies ImageData,
-      },
-      nextPos: lineEnd,
-    };
-  },
-  serializeBlock(block, _context): SerializeBlockResult | null {
-    if (block.type !== "block-atom" || block.kind !== IMAGE_KIND) {
-      return null;
-    }
-
-    let source = "";
-    if (isImageData(block.data)) {
-      if (block.data.status === "uploading") {
-        source = `![uploading:${block.data.id}]()`;
-      } else {
-        source = `![${block.data.alt}](${block.data.url})`;
+  disposers.push(
+    host.registerSerializeBlock((block): SerializeBlockResult | null => {
+      if (block.type !== "block-atom" || block.kind !== IMAGE_KIND) {
+        return null;
       }
-    }
 
-    const builder = new CursorSourceBuilder();
-    builder.appendSourceOnly(source);
-    return builder.build();
-  },
-  normalizeBlock(block): Block | null {
-    if (block.type !== "block-atom" || block.kind !== IMAGE_KIND) {
+      let source = "";
+      if (isImageData(block.data)) {
+        if (block.data.status === "uploading") {
+          source = `![uploading:${block.data.id}]()`;
+        } else {
+          source = `![${block.data.alt}](${block.data.url})`;
+        }
+      }
+
+      const builder = new CursorSourceBuilder();
+      builder.appendSourceOnly(source);
+      return builder.build();
+    }),
+  );
+
+  disposers.push(
+    host.registerNormalizeBlock((block): Block | null => {
+      if (block.type !== "block-atom" || block.kind !== IMAGE_KIND) {
+        return block;
+      }
       return block;
-    }
-    return block;
-  },
-  renderBlock(block, context) {
-    if (block.type !== "block-atom" || block.kind !== IMAGE_KIND) {
-      return null;
-    }
+    }),
+  );
 
-    const element = document.createElement("div");
-    element.setAttribute("data-block-atom", IMAGE_KIND);
-    element.setAttribute("data-block-extension", IMAGE_KIND);
-    element.setAttribute("data-line-index", String(context.getLineIndex()));
-    element.classList.add("cake-line");
-    context.incrementLineIndex();
-
-    element.setAttribute("contenteditable", "false");
-    if (isImageData(block.data)) {
-      if (block.data.status === "uploading") {
-        const skeleton = document.createElement("div");
-        skeleton.dataset.testid = "image-upload-skeleton";
-        skeleton.className =
-          "cake-image-skeleton animate-pulse bg-gray-200 dark:bg-gray-700 rounded";
-        skeleton.style.width = "300px";
-        skeleton.style.height = "200px";
-        element.appendChild(skeleton);
-
-        const image = document.createElement("img");
-        image.src = UPLOADING_PLACEHOLDER_SRC;
-        image.alt = "";
-        image.className = "cake-image";
-        element.appendChild(image);
-      } else {
-        const image = document.createElement("img");
-        image.src = block.data.url;
-        image.alt = block.data.alt;
-        image.className = "cake-image";
-        element.appendChild(image);
+  disposers.push(
+    host.registerBlockRenderer((block, context) => {
+      if (block.type !== "block-atom" || block.kind !== IMAGE_KIND) {
+        return null;
       }
-    }
 
-    return element;
-  },
-});
+      const element = document.createElement("div");
+      element.setAttribute("data-block-atom", IMAGE_KIND);
+      element.setAttribute("data-block-extension", IMAGE_KIND);
+      element.setAttribute("data-line-index", String(context.getLineIndex()));
+      element.classList.add("cake-line");
+      context.incrementLineIndex();
+
+      element.setAttribute("contenteditable", "false");
+      if (isImageData(block.data)) {
+        if (block.data.status === "uploading") {
+          const skeleton = document.createElement("div");
+          skeleton.dataset.testid = "image-upload-skeleton";
+          skeleton.className =
+            "cake-image-skeleton animate-pulse bg-gray-200 dark:bg-gray-700 rounded";
+          skeleton.style.width = "300px";
+          skeleton.style.height = "200px";
+          element.appendChild(skeleton);
+
+          const image = document.createElement("img");
+          image.src = UPLOADING_PLACEHOLDER_SRC;
+          image.alt = "";
+          image.className = "cake-image";
+          element.appendChild(image);
+        } else {
+          const image = document.createElement("img");
+          image.src = block.data.url;
+          image.alt = block.data.alt;
+          image.className = "cake-image";
+          element.appendChild(image);
+        }
+      }
+
+      return element;
+    }),
+  );
+
+  return () => disposers.splice(0).reverse().forEach((d) => d());
+};

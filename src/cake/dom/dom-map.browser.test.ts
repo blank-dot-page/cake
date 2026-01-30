@@ -76,7 +76,7 @@ describe("dom map", () => {
     const source = "> **a** [b](u)";
     const state = runtime.createState(source);
 
-    const { root, map } = renderDoc(state.doc, runtime.extensions);
+    const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
 
     const node = findTextNode(root, "b");
@@ -96,7 +96,7 @@ describe("dom map", () => {
     const source = "> **a** [b](u)";
     const state = runtime.createState(source);
 
-    const { root, map } = renderDoc(state.doc, runtime.extensions);
+    const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
 
     const node = findTextNode(root, "b");
@@ -123,7 +123,7 @@ describe("dom map", () => {
   it("distinguishes boundary sides between blocks", () => {
     const runtime = createRuntime([]);
     const state = runtime.createState("one\ntwo");
-    const { root, map } = renderDoc(state.doc, runtime.extensions);
+    const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
 
     const paragraphs = root.querySelectorAll(".cake-line");
@@ -150,7 +150,7 @@ describe("dom map", () => {
     // Test with bold formatting: **ab**cd has two text runs
     const runtime = createRuntime([boldExtension]);
     const state = runtime.createState("**ab**cd");
-    const { root, map } = renderDoc(state.doc, runtime.extensions);
+    const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
 
     // Find text nodes in the bold span and plain text
@@ -180,7 +180,7 @@ describe("dom map", () => {
     // "hello [world](http://test/)" - cursor 11 is at end of link text
     const runtime = createRuntime([linkExtension]);
     const state = runtime.createState("hello [world](http://test/)");
-    const { root, map } = renderDoc(state.doc, runtime.extensions);
+    const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
 
     // Verify cursor length
@@ -223,7 +223,7 @@ describe("dom map", () => {
     const runtime = createRuntime([]);
     const source = "a".repeat(24_000);
     const state = runtime.createState(source);
-    const { root, map } = renderDoc(state.doc, runtime.extensions);
+    const { root, map } = renderDoc(state.doc, runtime.dom);
     document.body.append(root);
 
     const textNode = findFirstTextNodeIn(root);

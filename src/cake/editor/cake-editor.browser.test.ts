@@ -549,28 +549,26 @@ describe("CakeEditor (browser)", () => {
     const container = createContainer();
     let lastValue = "";
 
-    const aExtension: CakeExtension = {
-      name: "a",
-      keybindings: [
+    const aExtension: CakeExtension = (host) => {
+      host.registerKeybindings([
         {
           key: "8",
           ctrl: true,
           shift: true,
           command: { type: "insert", text: "A" },
         },
-      ],
+      ]);
     };
 
-    const bExtension: CakeExtension = {
-      name: "b",
-      keybindings: [
+    const bExtension: CakeExtension = (host) => {
+      host.registerKeybindings([
         {
           key: "8",
           ctrl: true,
           shift: true,
           command: { type: "insert", text: "B" },
         },
-      ],
+      ]);
     };
 
     const engine = new CakeEditor({
@@ -607,16 +605,15 @@ describe("CakeEditor (browser)", () => {
     const container = createContainer();
     let lastValue = "";
 
-    const nullBindingExtension: CakeExtension = {
-      name: "null-binding",
-      keybindings: [
+    const nullBindingExtension: CakeExtension = (host) => {
+      host.registerKeybindings([
         {
           key: "8",
           ctrl: true,
           shift: true,
           command: () => null,
         },
-      ],
+      ]);
     };
 
     const engine = new CakeEditor({
@@ -652,9 +649,8 @@ describe("CakeEditor (browser)", () => {
     const container = createContainer();
     let lastValue = "";
 
-    const nullPasteExtension: CakeExtension = {
-      name: "null-paste",
-      onPasteText: () => null,
+    const nullPasteExtension: CakeExtension = (host) => {
+      host.registerOnPasteText(() => null);
     };
 
     const engine = new CakeEditor({

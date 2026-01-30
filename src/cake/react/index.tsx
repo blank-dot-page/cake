@@ -1,16 +1,16 @@
 import {
-  Fragment,
   forwardRef,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import type { Selection } from "../core/types";
 import type {
   CakeExtension,
+  CakeUIComponent,
   EditCommand,
-  OverlayExtensionContext,
 } from "../core/runtime";
 import { CakeEditor as CakeEditorEngine } from "../editor/cake-editor";
 
@@ -94,12 +94,9 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
     const onSelectionChangeRef = useRef(props.onSelectionChange);
     const lastEmittedValueRef = useRef<string | null>(null);
     const lastEmittedSelectionRef = useRef<Selection | null>(null);
-    const [contentRoot, setContentRoot] = useState<HTMLElement | null>(null);
+    const [uiComponents, setUiComponents] = useState<CakeUIComponent[]>([]);
 
     const extensionsRef = useRef<CakeExtension[]>(props.extensions);
-    const hasOverlayExtensions = extensionsRef.current.some(
-      (ext) => ext.renderOverlay,
-    );
 
     useEffect(() => {
       onChangeRef.current = props.onChange;
@@ -144,12 +141,12 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
       });
 
       engineRef.current = engine;
-      setContentRoot(engine.getContentRoot());
+      setUiComponents(engine.getUIComponents());
 
       return () => {
         engine.destroy();
         engineRef.current = null;
-        setContentRoot(null);
+        setUiComponents([]);
       };
     }, []);
 
@@ -275,52 +272,6 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
       ? `cake ${props.className}`
       : "cake";
 
-    const overlayContext =
-      containerRef.current && contentRoot
-        ? ({
-            container: containerRef.current,
-            contentRoot,
-            toOverlayRect: (rect) => {
-              const containerRect =
-                containerRef.current?.getBoundingClientRect();
-              if (!containerRect) {
-                return {
-                  top: rect.top,
-                  left: rect.left,
-                  width: rect.width,
-                  height: rect.height,
-                };
-              }
-              return {
-                top: rect.top - containerRect.top,
-                left: rect.left - containerRect.left,
-                width: rect.width,
-                height: rect.height,
-              };
-            },
-            insertText: (text: string) => {
-              engineRef.current?.insertText(text);
-            },
-            replaceText: (oldText: string, newText: string) => {
-              engineRef.current?.replaceText(oldText, newText);
-            },
-            getSelection: () => {
-              const selection = engineRef.current?.getSelection();
-              if (!selection) {
-                return null;
-              }
-              const focus =
-                selection.start === selection.end
-                  ? selection.start
-                  : Math.max(selection.start, selection.end);
-              return { start: focus, end: focus };
-            },
-            executeCommand: (command) => {
-              return engineRef.current?.executeCommand(command) ?? false;
-            },
-          } satisfies OverlayExtensionContext)
-        : null;
-
     return (
       <div style={{ position: "relative", height: "100%" }}>
         <div
@@ -332,13 +283,12 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
             props.onBlur?.(event.nativeEvent);
           }}
         />
-        {overlayContext && hasOverlayExtensions
-          ? extensionsRef.current.map((extension) =>
-              extension.renderOverlay ? (
-                <Fragment key={extension.name}>
-                  {extension.renderOverlay(overlayContext)}
-                </Fragment>
-              ) : null,
+        {engineRef.current && uiComponents.length > 0
+          ? createPortal(
+              uiComponents.map((Component, index) => (
+                <Component key={index} editor={engineRef.current!} />
+              )),
+              engineRef.current.getOverlayRoot(),
             )
           : null}
       </div>

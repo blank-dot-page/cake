@@ -8,7 +8,7 @@ import {
 } from "react";
 import { ExternalLink, Pencil, Unlink } from "lucide-react";
 import { ensureHttpsProtocol } from "../../shared/url";
-import type { EditCommand } from "../../core/runtime";
+import type { CakeEditorUI, EditCommand } from "../../core/runtime";
 
 type PopoverPosition = { top: number; left: number };
 
@@ -49,20 +49,35 @@ function getPopoverPosition(params: {
   };
 }
 
-export function CakeLinkPopover(params: {
-  container: HTMLElement;
-  contentRoot: HTMLElement;
-  toOverlayRect: (rect: DOMRectReadOnly) => {
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  };
-  getSelection: () => { start: number; end: number } | null;
-  executeCommand: (command: EditCommand) => boolean;
-}) {
-  const { container, contentRoot, toOverlayRect, getSelection, executeCommand } =
-    params;
+export function CakeLinkPopover({ editor }: { editor: CakeEditorUI }) {
+  const container = editor.getContainer();
+  const contentRoot = editor.getContentRoot();
+  if (!contentRoot) {
+    return null;
+  }
+  const toOverlayRect = useCallback((rect: DOMRectReadOnly) => {
+    const containerRect = container.getBoundingClientRect();
+    return {
+      top: rect.top - containerRect.top,
+      left: rect.left - containerRect.left,
+      width: rect.width,
+      height: rect.height,
+    };
+  }, [container]);
+  const getSelection = useCallback(() => {
+    const selection = editor.getSelection();
+    const focus =
+      selection.start === selection.end
+        ? selection.start
+        : Math.max(selection.start, selection.end);
+    return { start: focus, end: focus };
+  }, [editor]);
+  const executeCommand = useCallback(
+    (command: EditCommand) => {
+      return editor.executeCommand(command);
+    },
+    [editor],
+  );
   const anchorRef = useRef<HTMLAnchorElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);

@@ -5,6 +5,7 @@ import { cleanup, render } from "vitest-browser-react";
 import { CakeEditor, type CakeEditorRef } from "./index";
 import type {
   CakeExtension,
+  CakeEditorUI,
   ParseInlineResult,
   SerializeInlineResult,
 } from "../core/runtime";
@@ -17,84 +18,98 @@ afterEach(async () => {
 
 const HELLO_KIND = "hello-inline";
 
-type HelloOverlayContext = {
-  container: HTMLElement;
-  contentRoot: HTMLElement;
-  toOverlayRect: (rect: DOMRectReadOnly) => {
-    top: number;
-    left: number;
-    width: number;
-    height: number;
+function toOverlayRect(container: HTMLElement, rect: DOMRectReadOnly) {
+  const containerRect = container.getBoundingClientRect();
+  return {
+    top: rect.top - containerRect.top,
+    left: rect.left - containerRect.left,
+    width: rect.width,
+    height: rect.height,
   };
-};
+}
 
-const helloInlineExtension: CakeExtension = {
-  name: HELLO_KIND,
-  parseInline(source, start, end, context): ParseInlineResult {
-    if (source[start] !== "[" || source[start + 1] !== "[") {
-      return null;
-    }
+const helloInlineExtension: CakeExtension = (host) => {
+  const disposers: Array<() => void> = [];
 
-    const labelStart = start + 2;
-    const labelClose = source.indexOf("]]", labelStart);
-    if (labelClose === -1 || labelClose >= end) {
-      return null;
-    }
-
-    const children = context.parseInline(source, labelStart, labelClose);
-    return {
-      inline: {
-        type: "inline-wrapper",
-        kind: HELLO_KIND,
-        children,
-      },
-      nextPos: labelClose + 2,
-    };
-  },
-  serializeInline(inline, context): SerializeInlineResult | null {
-    if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
-      return null;
-    }
-
-    const builder = new CursorSourceBuilder();
-    builder.appendSourceOnly("[[");
-    for (const child of inline.children) {
-      builder.appendSerialized(context.serializeInline(child));
-    }
-    builder.appendSourceOnly("]]");
-    return builder.build();
-  },
-  renderInline(inline, context) {
-    if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
-      return null;
-    }
-
-    const element = document.createElement("span");
-    element.className = "cake-hello-inline";
-    element.setAttribute("data-testid", "hello-inline");
-    for (const child of inline.children) {
-      for (const node of context.renderInline(child)) {
-        element.append(node);
+  disposers.push(
+    host.registerParseInline((source, start, end, context): ParseInlineResult => {
+      if (source[start] !== "[" || source[start + 1] !== "[") {
+        return null;
       }
-    }
-    return element;
-  },
-  normalizeInline(inline): Inline | null {
-    if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
-      return inline;
-    }
-    return inline.children.length === 0 ? null : inline;
-  },
-  renderOverlay(context) {
-    return (
-      <HelloPopoverOverlay
-        context={context as unknown as HelloOverlayContext}
-      />
-    );
-  },
+
+      const labelStart = start + 2;
+      const labelClose = source.indexOf("]]", labelStart);
+      if (labelClose === -1 || labelClose >= end) {
+        return null;
+      }
+
+      const children = context.parseInline(source, labelStart, labelClose);
+      return {
+        inline: {
+          type: "inline-wrapper",
+          kind: HELLO_KIND,
+          children,
+        },
+        nextPos: labelClose + 2,
+      };
+    }),
+  );
+
+  disposers.push(
+    host.registerSerializeInline((inline, context): SerializeInlineResult | null => {
+      if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
+        return null;
+      }
+
+      const builder = new CursorSourceBuilder();
+      builder.appendSourceOnly("[[");
+      for (const child of inline.children) {
+        builder.appendSerialized(context.serializeInline(child));
+      }
+      builder.appendSourceOnly("]]");
+      return builder.build();
+    }),
+  );
+
+  disposers.push(
+    host.registerInlineRenderer((inline, context) => {
+      if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
+        return null;
+      }
+
+      const element = document.createElement("span");
+      element.className = "cake-hello-inline";
+      element.setAttribute("data-testid", "hello-inline");
+      for (const child of inline.children) {
+        for (const node of context.renderInline(child)) {
+          element.append(node);
+        }
+      }
+      return element;
+    }),
+  );
+
+  disposers.push(
+    host.registerNormalizeInline((inline): Inline | null => {
+      if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
+        return inline;
+      }
+      return inline.children.length === 0 ? null : inline;
+    }),
+  );
+
+  disposers.push(host.registerUI(HelloPopoverUI));
+
+  return () => disposers.splice(0).reverse().forEach((d) => d());
 };
 
-function HelloPopoverOverlay({ context }: { context: HelloOverlayContext }) {
+function HelloPopoverUI({ editor }: { editor: CakeEditorUI }) {
+  const container = editor.getContainer();
+  const contentRoot = editor.getContentRoot();
+  if (!contentRoot) {
+    return null;
+  }
+
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [position, setPosition] = useState<{
     top: number;
@@ -114,7 +129,7 @@ function HelloPopoverOverlay({ context }: { context: HelloOverlayContext }) {
       close();
       return;
     }
-    const rect = context.toOverlayRect(nextAnchor.getBoundingClientRect());
+    const rect = toOverlayRect(container, nextAnchor.getBoundingClientRect());
     setPosition({ top: rect.top + rect.height + 6, left: rect.left });
   };
 
@@ -123,13 +138,13 @@ function HelloPopoverOverlay({ context }: { context: HelloOverlayContext }) {
       return;
     }
     reposition();
-    context.container.addEventListener("scroll", reposition, { passive: true });
+    container.addEventListener("scroll", reposition, { passive: true });
     window.addEventListener("resize", reposition);
     return () => {
-      context.container.removeEventListener("scroll", reposition);
+      container.removeEventListener("scroll", reposition);
       window.removeEventListener("resize", reposition);
     };
-  }, [anchor, context.container]);
+  }, [anchor, container]);
 
   useEffect(() => {
     function handleClick(event: MouseEvent) {
@@ -148,11 +163,11 @@ function HelloPopoverOverlay({ context }: { context: HelloOverlayContext }) {
       setAnchor(nextAnchor);
     }
 
-    context.contentRoot.addEventListener("click", handleClick);
+    contentRoot.addEventListener("click", handleClick);
     return () => {
-      context.contentRoot.removeEventListener("click", handleClick);
+      contentRoot.removeEventListener("click", handleClick);
     };
-  }, [context.contentRoot]);
+  }, [contentRoot]);
 
   if (!anchor || !position) {
     return null;

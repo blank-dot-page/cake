@@ -1,5 +1,5 @@
 import {
-  defineExtension,
+  type CakeExtension,
   type EditResult,
   type ParseBlockResult,
   type RuntimeState,
@@ -132,98 +132,110 @@ function handleToggleBlockquote(state: RuntimeState): EditResult | null {
   };
 }
 
-export const blockquoteExtension = defineExtension<ToggleBlockquoteCommand>({
-  name: "blockquote",
-  onEdit(command, state) {
-    if (command.type === "toggle-blockquote") {
-      return handleToggleBlockquote(state);
-    }
-    // Handle insert-hard-line-break (Cmd+Enter) to exit blockquote
-    if (command.type === "insert-hard-line-break") {
-      return handleExitBlockquote(state);
-    }
-    return null;
-  },
-  parseBlock(source, start, context): ParseBlockResult {
-    if (source.slice(start, start + PREFIX.length) !== PREFIX) {
+export const blockquoteExtension: CakeExtension = (host) => {
+  const disposers: Array<() => void> = [];
+
+  disposers.push(
+    host.registerOnEdit((command, state) => {
+      if (command.type === "toggle-blockquote") {
+        return handleToggleBlockquote(state);
+      }
+      // Handle insert-hard-line-break (Cmd+Enter) to exit blockquote
+      if (command.type === "insert-hard-line-break") {
+        return handleExitBlockquote(state);
+      }
       return null;
-    }
+    }),
+  );
 
-    const blocks: Block[] = [];
-    let pos = start;
-
-    while (pos < source.length) {
-      if (source.slice(pos, pos + PREFIX.length) !== PREFIX) {
-        break;
+  disposers.push(
+    host.registerParseBlock((source, start, context): ParseBlockResult => {
+      if (source.slice(start, start + PREFIX.length) !== PREFIX) {
+        return null;
       }
 
-      let lineEnd = source.indexOf("\n", pos);
-      if (lineEnd === -1) {
-        lineEnd = source.length;
-      }
+      const blocks: Block[] = [];
+      let pos = start;
 
-      const contentStart = pos + PREFIX.length;
-      const content = context.parseInline(source, contentStart, lineEnd);
-      const paragraph = {
-        type: "paragraph" as const,
-        content,
-      };
+      while (pos < source.length) {
+        if (source.slice(pos, pos + PREFIX.length) !== PREFIX) {
+          break;
+        }
 
-      blocks.push(paragraph);
+        let lineEnd = source.indexOf("\n", pos);
+        if (lineEnd === -1) {
+          lineEnd = source.length;
+        }
 
-      if (lineEnd >= source.length) {
+        const contentStart = pos + PREFIX.length;
+        const content = context.parseInline(source, contentStart, lineEnd);
+        const paragraph = {
+          type: "paragraph" as const,
+          content,
+        };
+
+        blocks.push(paragraph);
+
+        if (lineEnd >= source.length) {
+          pos = lineEnd;
+          break;
+        }
+
+        const nextLineStart = lineEnd + 1;
+        if (source.slice(nextLineStart, nextLineStart + PREFIX.length) === PREFIX) {
+          pos = nextLineStart;
+          continue;
+        }
+
         pos = lineEnd;
         break;
       }
 
-      const nextLineStart = lineEnd + 1;
-      if (
-        source.slice(nextLineStart, nextLineStart + PREFIX.length) === PREFIX
-      ) {
-        pos = nextLineStart;
-        continue;
+      return {
+        block: {
+          type: "block-wrapper",
+          kind: BLOCKQUOTE_KIND,
+          blocks,
+        },
+        nextPos: pos,
+      };
+    }),
+  );
+
+  disposers.push(
+    host.registerSerializeBlock((block, context): SerializeBlockResult | null => {
+      if (block.type !== "block-wrapper" || block.kind !== BLOCKQUOTE_KIND) {
+        return null;
       }
 
-      pos = lineEnd;
-      break;
-    }
+      const builder = new CursorSourceBuilder();
+      block.blocks.forEach((child, index) => {
+        builder.appendSourceOnly(PREFIX);
+        const serialized = context.serializeBlock(child);
+        builder.appendSerialized(serialized);
+        if (index < block.blocks.length - 1) {
+          builder.appendText("\n");
+        }
+      });
 
-    return {
-      block: {
-        type: "block-wrapper",
-        kind: BLOCKQUOTE_KIND,
-        blocks,
-      },
-      nextPos: pos,
-    };
-  },
-  serializeBlock(block, context): SerializeBlockResult | null {
-    if (block.type !== "block-wrapper" || block.kind !== BLOCKQUOTE_KIND) {
-      return null;
-    }
+      return builder.build();
+    }),
+  );
 
-    const builder = new CursorSourceBuilder();
-    block.blocks.forEach((child, index) => {
-      builder.appendSourceOnly(PREFIX);
-      const serialized = context.serializeBlock(child);
-      builder.appendSerialized(serialized);
-      if (index < block.blocks.length - 1) {
-        builder.appendText("\n");
+  disposers.push(
+    host.registerBlockRenderer((block, context) => {
+      if (block.type !== "block-wrapper" || block.kind !== BLOCKQUOTE_KIND) {
+        return null;
       }
-    });
 
-    return builder.build();
-  },
-  renderBlock(block, context) {
-    if (block.type !== "block-wrapper" || block.kind !== BLOCKQUOTE_KIND) {
-      return null;
-    }
+      const element = document.createElement("blockquote");
+      element.setAttribute("data-block-wrapper", BLOCKQUOTE_KIND);
+      for (const node of context.renderBlocks(block.blocks)) {
+        element.append(node);
+      }
+      return element;
+    }),
+  );
 
-    const element = document.createElement("blockquote");
-    element.setAttribute("data-block-wrapper", BLOCKQUOTE_KIND);
-    for (const node of context.renderBlocks(block.blocks)) {
-      element.append(node);
-    }
-    return element;
-  },
-});
+  return () => disposers.splice(0).reverse().forEach((d) => d());
+};

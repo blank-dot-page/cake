@@ -1,5 +1,5 @@
 import {
-  defineExtension,
+  type CakeExtension,
   type EditResult,
   type ParseBlockResult,
   type RuntimeState,
@@ -249,9 +249,11 @@ function handleToggleHeading(
   };
 }
 
-export const headingExtension = defineExtension<ToggleHeadingCommand>({
-  name: "heading",
-  onEdit(command, state) {
+export const headingExtension: CakeExtension = (host) => {
+  const disposers: Array<() => void> = [];
+
+  disposers.push(
+    host.registerOnEdit((command, state) => {
     // Handle semantic toggle-heading command
     if (command.type === "toggle-heading") {
       const level = command.level ?? 1;
@@ -322,8 +324,11 @@ export const headingExtension = defineExtension<ToggleHeadingCommand>({
         affinity: "forward",
       },
     };
-  },
-  parseBlock(source, start, context): ParseBlockResult {
+    }),
+  );
+
+  disposers.push(
+    host.registerParseBlock((source, start, context): ParseBlockResult => {
     let lineEnd = source.indexOf("\n", start);
     if (lineEnd === -1) {
       lineEnd = source.length;
@@ -353,8 +358,11 @@ export const headingExtension = defineExtension<ToggleHeadingCommand>({
       },
       nextPos: lineEnd,
     };
-  },
-  serializeBlock(block, context): SerializeBlockResult | null {
+    }),
+  );
+
+  disposers.push(
+    host.registerSerializeBlock((block, context): SerializeBlockResult | null => {
     if (block.type !== "block-wrapper" || block.kind !== HEADING_KIND) {
       return null;
     }
@@ -369,8 +377,11 @@ export const headingExtension = defineExtension<ToggleHeadingCommand>({
       builder.appendSerialized(context.serializeBlock(paragraph));
     }
     return builder.build();
-  },
-  normalizeBlock(block): Block | null {
+    }),
+  );
+
+  disposers.push(
+    host.registerNormalizeBlock((block): Block | null => {
     if (block.type !== "block-wrapper" || block.kind !== HEADING_KIND) {
       return block;
     }
@@ -383,8 +394,11 @@ export const headingExtension = defineExtension<ToggleHeadingCommand>({
     }
 
     return block;
-  },
-  renderBlock(block, context) {
+    }),
+  );
+
+  disposers.push(
+    host.registerBlockRenderer((block, context) => {
     if (block.type !== "block-wrapper" || block.kind !== HEADING_KIND) {
       return null;
     }
@@ -419,5 +433,8 @@ export const headingExtension = defineExtension<ToggleHeadingCommand>({
       lineElement.append(node);
     }
     return lineElement;
-  },
-});
+    }),
+  );
+
+  return () => disposers.splice(0).reverse().forEach((d) => d());
+};

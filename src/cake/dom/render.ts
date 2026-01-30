@@ -1,5 +1,5 @@
 import type { Block, Doc, Inline } from "../core/types";
-import type { CakeExtension } from "../core/runtime";
+import type { Runtime } from "../core/runtime";
 import type { DomRenderContext } from "./types";
 import {
   createDomMap,
@@ -26,7 +26,7 @@ function normalizeNodes(result: Node | Node[] | null): Node[] {
 
 export function renderDocContent(
   doc: Doc,
-  extensions: CakeExtension[],
+  dom: Runtime["dom"],
   root?: HTMLElement,
 ): RenderContentResult {
   const runs: TextRun[] = [];
@@ -109,12 +109,8 @@ export function renderDocContent(
   }
 
   function reconcileInline(inline: Inline, existing: Element | null): Node[] {
-    for (const extension of extensions) {
-      const render = extension.renderInline;
-      if (!render) {
-        continue;
-      }
-      const result = render(inline, context);
+    for (const renderInline of dom.inlineRenderers) {
+      const result = renderInline(inline, context);
       if (result) {
         return normalizeNodes(result);
       }
@@ -229,12 +225,8 @@ export function renderDocContent(
   }
 
   function reconcileBlock(block: Block, existing: Element | null): Node[] {
-    for (const extension of extensions) {
-      const render = extension.renderBlock;
-      if (!render) {
-        continue;
-      }
-      const result = render(block, context);
+    for (const renderBlock of dom.blockRenderers) {
+      const result = renderBlock(block, context);
       if (result) {
         return normalizeNodes(result);
       }
@@ -403,7 +395,7 @@ export function renderDocContent(
 
 export function renderDoc(
   doc: Doc,
-  extensions: CakeExtension[],
+  dom: Runtime["dom"],
 ): RenderResult {
   const root = document.createElement("div");
   root.className = "cake-content";
@@ -432,12 +424,8 @@ export function renderDoc(
   };
 
   function renderInline(inline: Inline): Node[] {
-    for (const extension of extensions) {
-      const render = extension.renderInline;
-      if (!render) {
-        continue;
-      }
-      const result = render(inline, context);
+    for (const renderInline of dom.inlineRenderers) {
+      const result = renderInline(inline, context);
       if (result) {
         return normalizeNodes(result);
       }
@@ -479,12 +467,8 @@ export function renderDoc(
   }
 
   function renderBlock(block: Block): Node[] {
-    for (const extension of extensions) {
-      const render = extension.renderBlock;
-      if (!render) {
-        continue;
-      }
-      const result = render(block, context);
+    for (const renderBlock of dom.blockRenderers) {
+      const result = renderBlock(block, context);
       if (result) {
         return normalizeNodes(result);
       }

@@ -1,5 +1,5 @@
 import {
-  defineExtension,
+  type CakeExtension,
   type EditResult,
   type RuntimeState,
 } from "../../core/runtime";
@@ -1040,103 +1040,114 @@ export type ToggleNumberedListCommand = { type: "toggle-numbered-list" };
 /** All list extension commands */
 export type ListCommand = ToggleBulletListCommand | ToggleNumberedListCommand;
 
-export const plainTextListExtension = defineExtension<ListCommand>({
-  name: "plain-text-list",
-  keybindings: [
-    {
-      key: "8",
-      meta: true,
-      shift: true,
-      command: { type: "toggle-bullet-list" },
-    },
-    {
-      key: "8",
-      ctrl: true,
-      shift: true,
-      command: { type: "toggle-bullet-list" },
-    },
-    {
-      key: "7",
-      meta: true,
-      shift: true,
-      command: { type: "toggle-numbered-list" },
-    },
-    {
-      key: "7",
-      ctrl: true,
-      shift: true,
-      command: { type: "toggle-numbered-list" },
-    },
-  ],
-  onEdit(command, state) {
-    if (command.type === "insert-line-break") {
-      return handleInsertLineBreak(state);
-    }
-    if (command.type === "delete-backward") {
-      return handleDeleteBackward(state);
-    }
-    if (command.type === "delete-forward") {
-      return handleDeleteForward(state);
-    }
-    if (command.type === "indent") {
-      return handleIndent(state);
-    }
-    if (command.type === "outdent") {
-      return handleOutdent(state);
-    }
-    if (command.type === "toggle-bullet-list") {
-      return handleToggleList(state, true);
-    }
-    if (command.type === "toggle-numbered-list") {
-      return handleToggleList(state, false);
-    }
-    if (command.type === "insert" && command.text.length === 1) {
-      return handleMarkerSwitch(state, command.text);
-    }
-    return null;
-  },
-  renderBlock(block: Block, context: DomRenderContext): Node | null {
-    if (block.type !== "paragraph") {
+export const plainTextListExtension: CakeExtension = (host) => {
+  const disposers: Array<() => void> = [];
+
+  disposers.push(
+    host.registerKeybindings([
+      {
+        key: "8",
+        meta: true,
+        shift: true,
+        command: { type: "toggle-bullet-list" },
+      },
+      {
+        key: "8",
+        ctrl: true,
+        shift: true,
+        command: { type: "toggle-bullet-list" },
+      },
+      {
+        key: "7",
+        meta: true,
+        shift: true,
+        command: { type: "toggle-numbered-list" },
+      },
+      {
+        key: "7",
+        ctrl: true,
+        shift: true,
+        command: { type: "toggle-numbered-list" },
+      },
+    ]),
+  );
+
+  disposers.push(
+    host.registerOnEdit((command, state) => {
+      if (command.type === "insert-line-break") {
+        return handleInsertLineBreak(state);
+      }
+      if (command.type === "delete-backward") {
+        return handleDeleteBackward(state);
+      }
+      if (command.type === "delete-forward") {
+        return handleDeleteForward(state);
+      }
+      if (command.type === "indent") {
+        return handleIndent(state);
+      }
+      if (command.type === "outdent") {
+        return handleOutdent(state);
+      }
+      if (command.type === "toggle-bullet-list") {
+        return handleToggleList(state, true);
+      }
+      if (command.type === "toggle-numbered-list") {
+        return handleToggleList(state, false);
+      }
+      if (command.type === "insert" && command.text.length === 1) {
+        return handleMarkerSwitch(state, command.text);
+      }
       return null;
-    }
+    }),
+  );
 
-    const text = getParagraphText(block);
-    if (!text) {
-      return null;
-    }
+  disposers.push(
+    host.registerBlockRenderer((block: Block, context: DomRenderContext): Node | null => {
+      if (block.type !== "paragraph") {
+        return null;
+      }
 
-    const listMatch = matchListLine(text);
-    if (!listMatch) {
-      return null;
-    }
+      const text = getParagraphText(block);
+      if (!text) {
+        return null;
+      }
 
-    const element = document.createElement("div");
-    element.setAttribute("data-line-index", String(context.getLineIndex()));
-    element.classList.add("cake-line", "is-list");
-    context.incrementLineIndex();
+      const listMatch = matchListLine(text);
+      if (!listMatch) {
+        return null;
+      }
 
-    const indentLevel = Math.floor(listMatch.indent.length / 2);
-    if (indentLevel > 0) {
-      element.style.setProperty("--cake-list-indent", `${indentLevel * 2}ch`);
-    }
+      const element = document.createElement("div");
+      element.setAttribute("data-line-index", String(context.getLineIndex()));
+      element.classList.add("cake-line", "is-list");
+      context.incrementLineIndex();
 
-    const markerPrefix = `${listMatch.marker}${listMatch.space}`;
-    element.style.setProperty("--cake-list-marker", `${markerPrefix.length}ch`);
+      const indentLevel = Math.floor(listMatch.indent.length / 2);
+      if (indentLevel > 0) {
+        element.style.setProperty("--cake-list-indent", `${indentLevel * 2}ch`);
+      }
 
-    if (block.content.length === 0) {
-      const textNode = document.createTextNode("");
-      context.createTextRun(textNode);
-      element.append(textNode);
-      element.append(document.createElement("br"));
-    } else {
-      const mergedContent = mergeInlineForRender(block.content);
-      for (const inline of mergedContent) {
-        for (const node of context.renderInline(inline)) {
-          element.append(node);
+      const markerPrefix = `${listMatch.marker}${listMatch.space}`;
+      element.style.setProperty("--cake-list-marker", `${markerPrefix.length}ch`);
+
+      if (block.content.length === 0) {
+        const textNode = document.createTextNode("");
+        context.createTextRun(textNode);
+        element.append(textNode);
+        element.append(document.createElement("br"));
+      } else {
+        const mergedContent = mergeInlineForRender(block.content);
+        for (const inline of mergedContent) {
+          for (const node of context.renderInline(inline)) {
+            element.append(node);
+          }
         }
       }
-    }
 
-    return element;
-  },
-});
+      return element;
+    }),
+  );
+
+  return () => disposers.splice(0).reverse().forEach((d) => d());
+};

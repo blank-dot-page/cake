@@ -1,5 +1,5 @@
 import {
-  defineExtension,
+  type CakeExtension,
   type ParseInlineResult,
   type SerializeInlineResult,
 } from "../../core/runtime";
@@ -32,34 +32,43 @@ export type UnlinkCommand = {
 /** All link extension commands */
 export type LinkCommand = WrapLinkCommand | UnlinkCommand;
 
-export const linkExtension = defineExtension<LinkCommand>({
-  name: "link",
-  inlineWrapperAffinity: [{ kind: LINK_KIND, inclusive: false }],
-  keybindings: [
-    {
-      key: "u",
-      meta: true,
-      shift: true,
-      command: (state) => {
-        if (state.selection.start === state.selection.end) {
-          return null;
-        }
-        return { type: "wrap-link", openPopover: true };
+export const linkExtension: CakeExtension = (host) => {
+  const disposers: Array<() => void> = [];
+
+  disposers.push(
+    host.registerInlineWrapperAffinity([
+      { kind: LINK_KIND, inclusive: false },
+    ]),
+  );
+  disposers.push(
+    host.registerKeybindings([
+      {
+        key: "u",
+        meta: true,
+        shift: true,
+        command: (state) => {
+          if (state.selection.start === state.selection.end) {
+            return null;
+          }
+          return { type: "wrap-link", openPopover: true };
+        },
       },
-    },
-    {
-      key: "u",
-      ctrl: true,
-      shift: true,
-      command: (state) => {
-        if (state.selection.start === state.selection.end) {
-          return null;
-        }
-        return { type: "wrap-link", openPopover: true };
+      {
+        key: "u",
+        ctrl: true,
+        shift: true,
+        command: (state) => {
+          if (state.selection.start === state.selection.end) {
+            return null;
+          }
+          return { type: "wrap-link", openPopover: true };
+        },
       },
-    },
-  ],
-  onEdit(command, state) {
+    ]),
+  );
+
+  disposers.push(
+    host.registerOnEdit((command, state) => {
     if (command.type === "unlink") {
       // Find the link at the given cursor position and remove the link markup
       const cursorPos = command.start;
@@ -136,8 +145,11 @@ export const linkExtension = defineExtension<LinkCommand>({
         affinity: "backward",
       },
     };
-  },
-  onPasteText(text, state) {
+    }),
+  );
+
+  disposers.push(
+    host.registerOnPasteText((text, state) => {
     if (!isUrl(text)) {
       return null;
     }
@@ -159,8 +171,11 @@ export const linkExtension = defineExtension<LinkCommand>({
 
     const linkMarkdown = `[${url}](${url})`;
     return { type: "insert", text: linkMarkdown };
-  },
-  parseInline(source, start, end, context): ParseInlineResult {
+    }),
+  );
+
+  disposers.push(
+    host.registerParseInline((source, start, end, context): ParseInlineResult => {
     if (source[start] !== "[") {
       return null;
     }
@@ -197,8 +212,11 @@ export const linkExtension = defineExtension<LinkCommand>({
       },
       nextPos: urlClose + 1,
     };
-  },
-  serializeInline(inline, context): SerializeInlineResult | null {
+    }),
+  );
+
+  disposers.push(
+    host.registerSerializeInline((inline, context): SerializeInlineResult | null => {
     if (inline.type !== "inline-wrapper" || inline.kind !== LINK_KIND) {
       return null;
     }
@@ -214,8 +232,11 @@ export const linkExtension = defineExtension<LinkCommand>({
     builder.appendSourceOnly(url);
     builder.appendSourceOnly(")");
     return builder.build();
-  },
-  normalizeInline(inline): Inline | null {
+    }),
+  );
+
+  disposers.push(
+    host.registerNormalizeInline((inline): Inline | null => {
     if (inline.type !== "inline-wrapper" || inline.kind !== LINK_KIND) {
       return inline;
     }
@@ -225,8 +246,11 @@ export const linkExtension = defineExtension<LinkCommand>({
     }
 
     return inline;
-  },
-  renderInline(inline, context) {
+    }),
+  );
+
+  disposers.push(
+    host.registerInlineRenderer((inline, context) => {
     if (inline.type !== "inline-wrapper" || inline.kind !== LINK_KIND) {
       return null;
     }
@@ -241,19 +265,10 @@ export const linkExtension = defineExtension<LinkCommand>({
       }
     }
     return element;
-  },
-  renderOverlay(context) {
-    if (!context.contentRoot || !context.toOverlayRect) {
-      return null;
-    }
-    return (
-      <CakeLinkPopover
-        container={context.container}
-        contentRoot={context.contentRoot}
-        toOverlayRect={context.toOverlayRect}
-        getSelection={context.getSelection}
-        executeCommand={context.executeCommand}
-      />
-    );
-  },
-});
+    }),
+  );
+
+  disposers.push(host.registerUI(CakeLinkPopover));
+
+  return () => disposers.splice(0).reverse().forEach((d) => d());
+};

@@ -173,28 +173,14 @@ describe("heading extension", () => {
   });
 
   describe("normalizeBlock", () => {
-    test("adds empty paragraph to heading with no blocks", () => {
-      const block = {
-        type: "block-wrapper" as const,
-        kind: "heading",
-        blocks: [],
-        data: { level: 1 },
-      };
-      const normalized = headingExtension.normalizeBlock?.(block);
-      expect(normalized).toMatchObject({
+    test("normalizes headings produced by parsing", () => {
+      const runtime = createRuntime([headingExtension]);
+      const state = runtime.createState("# ");
+      expect(state.doc.blocks[0]).toMatchObject({
         type: "block-wrapper",
         kind: "heading",
-        blocks: [{ type: "paragraph", content: [] }],
+        blocks: [{ type: "paragraph" }],
       });
-    });
-
-    test("returns non-heading blocks unchanged", () => {
-      const block = {
-        type: "paragraph" as const,
-        content: [{ type: "text" as const, text: "hello" }],
-      };
-      const normalized = headingExtension.normalizeBlock?.(block);
-      expect(normalized).toEqual(block);
     });
   });
 

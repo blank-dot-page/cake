@@ -1,10 +1,12 @@
 import type { Affinity, Selection } from "../core/types";
 import {
-  createRuntime,
   isApplyEditCommand,
+  installExtensions,
   type ApplyEditCommand,
   type CakeExtension,
   type EditCommand,
+  type KeyBinding,
+  type CakeUIComponent,
   type Runtime,
   type RuntimeState,
 } from "../core/runtime";
@@ -91,7 +93,12 @@ type HistoryState = {
 export class CakeEditor {
   private container: HTMLElement;
   private runtime: Runtime;
-  private extensions: CakeExtension[];
+  private keybindings: KeyBinding[];
+  private onPasteTextHandlers: Array<
+    (text: string, state: RuntimeState) => EditCommand | null
+  >;
+  private uiComponents: CakeUIComponent[];
+  private disposeExtensions: (() => void) | null = null;
   private _state!: RuntimeState;
 
   private get state(): RuntimeState {
@@ -235,8 +242,12 @@ export class CakeEditor {
   constructor(options: EngineOptions) {
     this.container = options.container;
     this.contentRoot = options.contentRoot ?? null;
-    this.extensions = options.extensions ?? bundledExtensions;
-    this.runtime = createRuntime(this.extensions);
+    const installed = installExtensions(options.extensions ?? bundledExtensions);
+    this.runtime = installed.runtime;
+    this.keybindings = installed.keybindings;
+    this.onPasteTextHandlers = installed.onPasteText;
+    this.uiComponents = installed.ui.components;
+    this.disposeExtensions = installed.dispose;
     this.state = this.runtime.createState(
       options.value,
       options.selection ?? defaultSelection,
@@ -252,6 +263,7 @@ export class CakeEditor {
 
   destroy() {
     this.detachListeners();
+    this.disposeExtensions?.();
     this.clearCaretBlinkTimer();
     if (this.overlayUpdateId !== null) {
       window.cancelAnimationFrame(this.overlayUpdateId);
@@ -303,6 +315,10 @@ export class CakeEditor {
 
   getOverlayRoot() {
     return this.ensureExtensionsRoot();
+  }
+
+  getUIComponents() {
+    return this.uiComponents.slice();
   }
 
   // Placeholder text is provided by the caller via the container's
@@ -651,7 +667,7 @@ export class CakeEditor {
     }
     const { content, map } = renderDocContent(
       this.state.doc,
-      this.extensions,
+      this.runtime.dom,
       this.contentRoot,
     );
     const existingChildren = Array.from(this.contentRoot.childNodes);
@@ -1421,36 +1437,30 @@ export class CakeEditor {
   private resolveExtensionKeybinding(event: KeyboardEvent): EditCommand | null {
     const eventKey =
       event.key.length === 1 ? event.key.toLowerCase() : event.key;
-    for (const extension of this.extensions) {
-      const bindings = extension.keybindings;
-      if (!bindings) {
+    for (const binding of this.keybindings) {
+      const bindingKey =
+        binding.key.length === 1 ? binding.key.toLowerCase() : binding.key;
+      if (bindingKey !== eventKey) {
         continue;
       }
-      for (const binding of bindings) {
-        const bindingKey =
-          binding.key.length === 1 ? binding.key.toLowerCase() : binding.key;
-        if (bindingKey !== eventKey) {
-          continue;
-        }
-        if (binding.meta !== undefined && binding.meta !== event.metaKey) {
-          continue;
-        }
-        if (binding.ctrl !== undefined && binding.ctrl !== event.ctrlKey) {
-          continue;
-        }
-        if (binding.alt !== undefined && binding.alt !== event.altKey) {
-          continue;
-        }
-        if (binding.shift !== undefined && binding.shift !== event.shiftKey) {
-          continue;
-        }
-        const command =
-          typeof binding.command === "function"
-            ? binding.command(this.state)
-            : binding.command;
-        if (command) {
-          return command;
-        }
+      if (binding.meta !== undefined && binding.meta !== event.metaKey) {
+        continue;
+      }
+      if (binding.ctrl !== undefined && binding.ctrl !== event.ctrlKey) {
+        continue;
+      }
+      if (binding.alt !== undefined && binding.alt !== event.altKey) {
+        continue;
+      }
+      if (binding.shift !== undefined && binding.shift !== event.shiftKey) {
+        continue;
+      }
+      const command =
+        typeof binding.command === "function"
+          ? binding.command(this.state)
+          : binding.command;
+      if (command) {
+        return command;
       }
     }
     return null;
@@ -1525,11 +1535,7 @@ export class CakeEditor {
       return;
     }
 
-    for (const extension of this.extensions) {
-      const handler = extension.onPasteText;
-      if (!handler) {
-        continue;
-      }
+    for (const handler of this.onPasteTextHandlers) {
       const command = handler(text, this.state);
       if (!command) {
         continue;

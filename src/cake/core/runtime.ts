@@ -1,27 +1,11 @@
 import type { Affinity, Block, Doc, Inline, ParagraphBlock, Selection } from "./types";
-import type { ReactElement } from "react";
+import type { ComponentType } from "react";
 import {
   CursorSourceBuilder,
   type CursorSourceMap,
 } from "./mapping/cursor-source-map";
 import { graphemeSegments } from "../shared/segmenter";
 import type { DomRenderContext } from "../dom/types";
-
-export type OverlayExtensionContext = {
-  container: HTMLElement;
-  insertText: (text: string) => void;
-  replaceText: (oldText: string, newText: string) => void;
-  getSelection: () => { start: number; end: number } | null;
-  executeCommand: (command: EditCommand) => boolean;
-  contentRoot?: HTMLElement;
-  overlayRoot?: HTMLElement;
-  toOverlayRect?: (rect: DOMRectReadOnly) => {
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  };
-};
 
 type BlockParseResult = { block: Block; nextPos: number };
 type InlineParseResult = { inline: Inline; nextPos: number };
@@ -124,90 +108,83 @@ export type ExtensionContext = {
   serializeBlock: (block: Block) => SerializeBlockResult;
 };
 
-export type CakeExtension = {
-  name: string;
-  inlineWrapperAffinity?: InlineWrapperAffinity[];
-  /**
-   * Declares which inline wrapper kind a `toggle-inline` marker corresponds to.
-   * This keeps the core runtime syntax-agnostic while still allowing extension-
-   * specific toggle behavior at wrapper boundaries.
-   */
-  toggleInline?: {
-    kind: string;
-    markers: Array<string | { open: string; close: string }>;
-  };
-  parseBlock?: (
-    source: string,
-    start: number,
-    context: ExtensionContext,
-  ) => ParseBlockResult;
-  parseInline?: (
-    source: string,
-    start: number,
-    end: number,
-    context: ExtensionContext,
-  ) => ParseInlineResult;
-  serializeBlock?: (
-    block: Block,
-    context: ExtensionContext,
-  ) => SerializeBlockResult | null;
-  serializeInline?: (
-    inline: Inline,
-    context: ExtensionContext,
-  ) => SerializeInlineResult | null;
-  normalizeBlock?: (block: Block) => Block | null;
-  normalizeInline?: (inline: Inline) => Inline | null;
-  onEdit?: (
-    command: EditCommand,
-    state: RuntimeState,
-  ) => EditResult | EditCommand | null;
-  onPasteText?: (text: string, state: RuntimeState) => EditCommand | null;
-  keybindings?: KeyBinding[];
-  renderInline?: (
-    inline: Inline,
-    context: DomRenderContext,
-  ) => Node | Node[] | null;
-  renderBlock?: (
-    block: Block,
-    context: DomRenderContext,
-  ) => Node | Node[] | null;
-  renderOverlay?: (context: OverlayExtensionContext) => ReactElement | null;
+export type DomInlineRenderer = (
+  inline: Inline,
+  context: DomRenderContext,
+) => Node | Node[] | null;
+
+export type DomBlockRenderer = (
+  block: Block,
+  context: DomRenderContext,
+) => Node | Node[] | null;
+
+export type CakeEditorUI = {
+  getContainer(): HTMLElement;
+  getContentRoot(): HTMLElement | null;
+  getOverlayRoot(): HTMLElement;
+  getSelection(): Selection;
+  insertText(text: string): void;
+  replaceText(oldText: string, newText: string): void;
+  executeCommand(command: EditCommand, options?: { restoreFocus?: boolean }): boolean;
 };
 
-/**
- * Extension config with typed custom commands.
- */
-export type ExtensionConfig<TCommand extends ExtensionCommand> = Omit<
-  CakeExtension,
-  "onEdit"
-> & {
-  onEdit?: (
-    command: EditCommand | TCommand,
-    state: RuntimeState,
-  ) => EditResult | EditCommand | TCommand | null;
+export type CakeUIComponent = ComponentType<{ editor: CakeEditorUI }>;
+
+export type ToggleInlineSpec = {
+  kind: string;
+  markers: Array<string | { open: string; close: string }>;
 };
 
-/**
- * Define an extension with typed custom commands.
- *
- * @example
- * type MyCommand = { type: "my-command"; value: number };
- * export const myExtension = defineExtension<MyCommand>({
- *   name: "my-extension",
- *   onEdit(command, state) {
- *     if (command.type === "my-command") {
- *       // command is narrowed to MyCommand here
- *       console.log(command.value);
- *     }
- *     return null;
- *   },
- * });
- */
-export function defineExtension<TCommand extends ExtensionCommand>(
-  extension: ExtensionConfig<TCommand>,
-): CakeExtension {
-  return extension as CakeExtension;
-}
+export type CakeExtensionHost = {
+  registerInlineWrapperAffinity(specs: InlineWrapperAffinity[]): () => void;
+  registerToggleInline(spec: ToggleInlineSpec): () => void;
+  registerParseBlock(
+    fn: (
+      source: string,
+      start: number,
+      context: ExtensionContext,
+    ) => ParseBlockResult,
+  ): () => void;
+  registerParseInline(
+    fn: (
+      source: string,
+      start: number,
+      end: number,
+      context: ExtensionContext,
+    ) => ParseInlineResult,
+  ): () => void;
+  registerSerializeBlock(
+    fn: (block: Block, context: ExtensionContext) => SerializeBlockResult | null,
+  ): () => void;
+  registerSerializeInline(
+    fn: (inline: Inline, context: ExtensionContext) => SerializeInlineResult | null,
+  ): () => void;
+  registerNormalizeBlock(fn: (block: Block) => Block | null): () => void;
+  registerNormalizeInline(fn: (inline: Inline) => Inline | null): () => void;
+  registerOnEdit(
+    fn: (
+      command: EditCommand,
+      state: RuntimeState,
+    ) => EditResult | EditCommand | null,
+  ): () => void;
+  registerOnPasteText(
+    fn: (text: string, state: RuntimeState) => EditCommand | null,
+  ): () => void;
+  registerKeybindings(bindings: KeyBinding[]): () => void;
+  registerInlineRenderer(fn: DomInlineRenderer): () => void;
+  registerBlockRenderer(fn: DomBlockRenderer): () => void;
+  registerUI(component: CakeUIComponent): () => void;
+};
+
+export type CakeExtension = (host: CakeExtensionHost) => void | (() => void);
+
+export type InstalledExtensions = {
+  runtime: Runtime;
+  keybindings: KeyBinding[];
+  onPasteText: Array<(text: string, state: RuntimeState) => EditCommand | null>;
+  ui: { components: CakeUIComponent[] };
+  dispose(): void;
+};
 
 export type RuntimeState = {
   source: string;
@@ -218,7 +195,10 @@ export type RuntimeState = {
 };
 
 export type Runtime = {
-  extensions: CakeExtension[];
+  dom: {
+    inlineRenderers: DomInlineRenderer[];
+    blockRenderers: DomBlockRenderer[];
+  };
   parse(source: string): Doc;
   serialize(doc: Doc): { source: string; map: CursorSourceMap };
   createState(source: string, selection?: Selection): RuntimeState;
@@ -234,36 +214,218 @@ export type Runtime = {
 
 const defaultSelection: Selection = { start: 0, end: 0, affinity: "forward" };
 
-export function createRuntime(extensions: CakeExtension[]): Runtime {
+function removeFromArray<T>(arr: T[], value: T) {
+  const index = arr.indexOf(value);
+  if (index === -1) {
+    return;
+  }
+  arr.splice(index, 1);
+}
+
+export function installExtensions(extensions: CakeExtension[]): InstalledExtensions {
   const toggleMarkerToSpec = new Map<
     string,
     { kind: string; open: string; close: string }
   >();
-  for (const extension of extensions) {
-    const toggle = extension.toggleInline;
-    if (!toggle) {
-      continue;
-    }
-    for (const marker of toggle.markers) {
-      const spec =
-        typeof marker === "string"
-          ? { kind: toggle.kind, open: marker, close: marker }
-          : { kind: toggle.kind, open: marker.open, close: marker.close };
-      toggleMarkerToSpec.set(spec.open, spec);
-    }
-  }
   const inclusiveAtEndByKind = new Map<string, boolean>();
-  for (const extension of extensions) {
-    const specs = extension.inlineWrapperAffinity;
-    if (!specs) {
-      continue;
-    }
-    for (const spec of specs) {
-      if (!inclusiveAtEndByKind.has(spec.kind)) {
-        inclusiveAtEndByKind.set(spec.kind, spec.inclusive);
+  const parseBlockFns: Array<
+    (source: string, start: number, context: ExtensionContext) => ParseBlockResult
+  > = [];
+  const parseInlineFns: Array<
+    (
+      source: string,
+      start: number,
+      end: number,
+      context: ExtensionContext,
+    ) => ParseInlineResult
+  > = [];
+  const serializeBlockFns: Array<
+    (block: Block, context: ExtensionContext) => SerializeBlockResult | null
+  > = [];
+  const serializeInlineFns: Array<
+    (inline: Inline, context: ExtensionContext) => SerializeInlineResult | null
+  > = [];
+  const normalizeBlockFns: Array<(block: Block) => Block | null> = [];
+  const normalizeInlineFns: Array<(inline: Inline) => Inline | null> = [];
+  const onEditFns: Array<
+    (command: EditCommand, state: RuntimeState) => EditResult | EditCommand | null
+  > = [];
+  const onPasteTextFns: Array<
+    (text: string, state: RuntimeState) => EditCommand | null
+  > = [];
+  const keybindings: KeyBinding[] = [];
+  const domInlineRenderers: DomInlineRenderer[] = [];
+  const domBlockRenderers: DomBlockRenderer[] = [];
+  const uiComponents: CakeUIComponent[] = [];
+
+  const host: CakeExtensionHost = {
+    registerInlineWrapperAffinity: (specs) => {
+      for (const spec of specs) {
+        if (!inclusiveAtEndByKind.has(spec.kind)) {
+          inclusiveAtEndByKind.set(spec.kind, spec.inclusive);
+        }
       }
+      return () => {
+        // Best-effort disposal: remove only kinds that were set by this call.
+        for (const spec of specs) {
+          const current = inclusiveAtEndByKind.get(spec.kind);
+          if (current === spec.inclusive) {
+            inclusiveAtEndByKind.delete(spec.kind);
+          }
+        }
+      };
+    },
+    registerToggleInline: (toggle) => {
+      const added: Array<{ open: string; kind: string; close: string }> = [];
+      for (const marker of toggle.markers) {
+        const spec =
+          typeof marker === "string"
+            ? { kind: toggle.kind, open: marker, close: marker }
+            : { kind: toggle.kind, open: marker.open, close: marker.close };
+        toggleMarkerToSpec.set(spec.open, spec);
+        added.push(spec);
+      }
+      return () => {
+        for (const spec of added) {
+          const current = toggleMarkerToSpec.get(spec.open);
+          if (current && current.kind === spec.kind && current.close === spec.close) {
+            toggleMarkerToSpec.delete(spec.open);
+          }
+        }
+      };
+    },
+    registerParseBlock: (fn) => {
+      parseBlockFns.push(fn);
+      return () => removeFromArray(parseBlockFns, fn);
+    },
+    registerParseInline: (fn) => {
+      parseInlineFns.push(fn);
+      return () => removeFromArray(parseInlineFns, fn);
+    },
+    registerSerializeBlock: (fn) => {
+      serializeBlockFns.push(fn);
+      return () => removeFromArray(serializeBlockFns, fn);
+    },
+    registerSerializeInline: (fn) => {
+      serializeInlineFns.push(fn);
+      return () => removeFromArray(serializeInlineFns, fn);
+    },
+    registerNormalizeBlock: (fn) => {
+      normalizeBlockFns.push(fn);
+      return () => removeFromArray(normalizeBlockFns, fn);
+    },
+    registerNormalizeInline: (fn) => {
+      normalizeInlineFns.push(fn);
+      return () => removeFromArray(normalizeInlineFns, fn);
+    },
+    registerOnEdit: (fn) => {
+      onEditFns.push(fn);
+      return () => removeFromArray(onEditFns, fn);
+    },
+    registerOnPasteText: (fn) => {
+      onPasteTextFns.push(fn);
+      return () => removeFromArray(onPasteTextFns, fn);
+    },
+    registerKeybindings: (bindings) => {
+      keybindings.push(...bindings);
+      return () => {
+        for (const binding of bindings) {
+          removeFromArray(keybindings, binding);
+        }
+      };
+    },
+    registerInlineRenderer: (fn) => {
+      domInlineRenderers.push(fn);
+      return () => removeFromArray(domInlineRenderers, fn);
+    },
+    registerBlockRenderer: (fn) => {
+      domBlockRenderers.push(fn);
+      return () => removeFromArray(domBlockRenderers, fn);
+    },
+    registerUI: (component) => {
+      uiComponents.push(component);
+      return () => removeFromArray(uiComponents, component);
+    },
+  };
+
+  const extensionDisposers: Array<() => void> = [];
+  for (const extension of extensions) {
+    const dispose = extension(host);
+    if (dispose) {
+      extensionDisposers.push(dispose);
     }
   }
+
+  const runtime = createRuntimeFromRegistry({
+    toggleMarkerToSpec,
+    inclusiveAtEndByKind,
+    parseBlockFns,
+    parseInlineFns,
+    serializeBlockFns,
+    serializeInlineFns,
+    normalizeBlockFns,
+    normalizeInlineFns,
+    onEditFns,
+    domInlineRenderers,
+    domBlockRenderers,
+  });
+
+  return {
+    runtime,
+    keybindings,
+    onPasteText: onPasteTextFns,
+    ui: { components: uiComponents },
+    dispose: () => {
+      extensionDisposers.splice(0).reverse().forEach((d) => d());
+    },
+  };
+}
+
+export function createRuntime(extensions: CakeExtension[]): Runtime {
+  return installExtensions(extensions).runtime;
+}
+
+function createRuntimeFromRegistry(registry: {
+  toggleMarkerToSpec: Map<string, { kind: string; open: string; close: string }>;
+  inclusiveAtEndByKind: Map<string, boolean>;
+  parseBlockFns: Array<
+    (source: string, start: number, context: ExtensionContext) => ParseBlockResult
+  >;
+  parseInlineFns: Array<
+    (
+      source: string,
+      start: number,
+      end: number,
+      context: ExtensionContext,
+    ) => ParseInlineResult
+  >;
+  serializeBlockFns: Array<
+    (block: Block, context: ExtensionContext) => SerializeBlockResult | null
+  >;
+  serializeInlineFns: Array<
+    (inline: Inline, context: ExtensionContext) => SerializeInlineResult | null
+  >;
+  normalizeBlockFns: Array<(block: Block) => Block | null>;
+  normalizeInlineFns: Array<(inline: Inline) => Inline | null>;
+  onEditFns: Array<
+    (command: EditCommand, state: RuntimeState) => EditResult | EditCommand | null
+  >;
+  domInlineRenderers: DomInlineRenderer[];
+  domBlockRenderers: DomBlockRenderer[];
+}): Runtime {
+  const {
+    toggleMarkerToSpec,
+    inclusiveAtEndByKind,
+    parseBlockFns,
+    parseInlineFns,
+    serializeBlockFns,
+    serializeInlineFns,
+    normalizeBlockFns,
+    normalizeInlineFns,
+    onEditFns,
+    domInlineRenderers,
+    domBlockRenderers,
+  } = registry;
   const isInclusiveAtEnd = (kind: string): boolean =>
     inclusiveAtEndByKind.get(kind) ?? true;
 
@@ -274,11 +436,8 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
   };
 
   function parseBlockAt(source: string, start: number): BlockParseResult {
-    for (const extension of extensions) {
-      if (!extension.parseBlock) {
-        continue;
-      }
-      const result = extension.parseBlock(source, start, context);
+    for (const parseBlock of parseBlockFns) {
+      const result = parseBlock(source, start, context);
       if (result) {
         return result;
       }
@@ -296,11 +455,8 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     let pos = start;
     while (pos < end) {
       let matched = false;
-      for (const extension of extensions) {
-        if (!extension.parseInline) {
-          continue;
-        }
-        const result = extension.parseInline(source, pos, end, context);
+      for (const parseInline of parseInlineFns) {
+        const result = parseInline(source, pos, end, context);
         if (result) {
           inlines.push(result.inline);
           pos = result.nextPos;
@@ -354,11 +510,8 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
   }
 
   function serializeBlock(block: Block): SerializeBlockResult {
-    for (const extension of extensions) {
-      if (!extension.serializeBlock) {
-        continue;
-      }
-      const result = extension.serializeBlock(block, context);
+    for (const serializeBlockFn of serializeBlockFns) {
+      const result = serializeBlockFn(block, context);
       if (result) {
         return result;
       }
@@ -376,11 +529,8 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
   }
 
   function serializeInline(inline: Inline): SerializeInlineResult {
-    for (const extension of extensions) {
-      if (!extension.serializeInline) {
-        continue;
-      }
-      const result = extension.serializeInline(inline, context);
+    for (const serializeInlineFn of serializeInlineFns) {
+      const result = serializeInlineFn(inline, context);
       if (result) {
         return result;
       }
@@ -410,14 +560,12 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
 
   function normalizeBlock(block: Block): Block | null {
     let next = block;
-    for (const extension of extensions) {
-      if (extension.normalizeBlock) {
-        const result = extension.normalizeBlock(next);
-        if (result === null) {
-          return null;
-        }
-        next = result;
+    for (const normalizeBlockFn of normalizeBlockFns) {
+      const result = normalizeBlockFn(next);
+      if (result === null) {
+        return null;
       }
+      next = result;
     }
 
     if (next.type === "paragraph") {
@@ -443,11 +591,8 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
 
   function applyInlineNormalizers(inline: Inline): Inline | null {
     let next = inline;
-    for (const extension of extensions) {
-      if (!extension.normalizeInline) {
-        continue;
-      }
-      const result = extension.normalizeInline(next);
+    for (const normalizeInlineFn of normalizeInlineFns) {
+      const result = normalizeInlineFn(next);
       if (result === null) {
         return null;
       }
@@ -516,11 +661,8 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     // If an extension delegates in a loop, this will loop as well.
     while (true) {
       let delegated = false;
-      for (const extension of extensions) {
-        if (!extension.onEdit) {
-          continue;
-        }
-        const result = extension.onEdit(command, state);
+      for (const onEdit of onEditFns) {
+        const result = onEdit(command, state);
         if (!result) {
           continue;
         }
@@ -2340,7 +2482,10 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
   }
 
   const runtime: Runtime = {
-    extensions,
+    dom: {
+      inlineRenderers: domInlineRenderers,
+      blockRenderers: domBlockRenderers,
+    },
     parse,
     serialize,
     createState,
