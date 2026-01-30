@@ -321,12 +321,8 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
     },
   };
 
-  const extensionDisposers: Array<() => void> = [];
   for (const extension of extensions) {
-    const dispose = extension(editor as unknown as import("../editor/cake-editor").CakeEditor);
-    if (dispose) {
-      extensionDisposers.push(dispose);
-    }
+    extension(editor as unknown as import("../editor/cake-editor").CakeEditor);
   }
 
   const runtime = createRuntimeFromRegistry({
@@ -342,11 +338,6 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
     domInlineRenderers,
     domBlockRenderers,
   });
-
-  extensionDisposers
-    .splice(0)
-    .reverse()
-    .forEach((dispose) => dispose());
 
   return runtime;
 }
