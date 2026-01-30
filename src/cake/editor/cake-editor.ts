@@ -183,8 +183,11 @@ export class CakeEditor {
   private scrollCaretIntoViewId: number | null = null;
   private selectionRectElements: HTMLDivElement[] = [];
   private lastSelectionRects: SelectionRect[] | null = null;
-  private onChange?: EngineOptions["onChange"];
-  private onSelectionChange?: EngineOptions["onSelectionChange"];
+  private onChangeOption?: EngineOptions["onChange"];
+  private onSelectionChangeOption?: EngineOptions["onSelectionChange"];
+  private changeSubscribers: Array<(value: string, selection: Selection) => void> =
+    [];
+  private selectionChangeSubscribers: Array<(selection: Selection) => void> = [];
   private readOnly: boolean;
   private spellCheckEnabled: boolean;
   private extensionsRoot: HTMLDivElement | null = null;
@@ -294,8 +297,8 @@ export class CakeEditor {
   constructor(options: EngineOptions) {
     this.container = options.container;
     this.contentRoot = options.contentRoot ?? null;
-    this.onChange = options.onChange;
-    this.onSelectionChange = options.onSelectionChange;
+    this.onChangeOption = options.onChange;
+    this.onSelectionChangeOption = options.onSelectionChange;
     this.readOnly = options.readOnly ?? false;
     this.spellCheckEnabled = options.spellCheckEnabled ?? true;
 
@@ -529,6 +532,26 @@ export class CakeEditor {
     return this.uiComponents.slice();
   }
 
+  onChange(callback: (value: string, selection: Selection) => void): () => void {
+    this.changeSubscribers.push(callback);
+    return () => {
+      const index = this.changeSubscribers.indexOf(callback);
+      if (index !== -1) {
+        this.changeSubscribers.splice(index, 1);
+      }
+    };
+  }
+
+  onSelectionChange(callback: (selection: Selection) => void): () => void {
+    this.selectionChangeSubscribers.push(callback);
+    return () => {
+      const index = this.selectionChangeSubscribers.indexOf(callback);
+      if (index !== -1) {
+        this.selectionChangeSubscribers.splice(index, 1);
+      }
+    };
+  }
+
   // Placeholder text is provided by the caller via the container's
   // `data-placeholder` attribute (set by the React wrapper).
   // The engine owns the placeholder element so it survives internal renders.
@@ -566,7 +589,7 @@ export class CakeEditor {
     this.recordHistory("replace");
     this.state = this.runtime.createState(nextSource, this.state.selection);
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
     this.scheduleOverlayUpdate();
     this.scheduleScrollCaretIntoView();
   }
@@ -641,7 +664,7 @@ export class CakeEditor {
     this.history.lastKind = null;
     this.state = this.runtime.createState(entry.source, entry.selection);
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
   }
 
   redo() {
@@ -656,7 +679,7 @@ export class CakeEditor {
     this.history.lastKind = null;
     this.state = this.runtime.createState(entry.source, entry.selection);
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
   }
 
   canUndo(): boolean {
@@ -685,7 +708,7 @@ export class CakeEditor {
     // overlay is updated immediately rather than waiting for the next animation
     // frame (which can vary across engines in test and headless environments).
     this.flushOverlayUpdate();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
     this.scheduleScrollCaretIntoView();
     if (shouldOpenLinkPopover) {
       // The popover is rendered via React overlays, and its event listeners are
@@ -1083,7 +1106,7 @@ export class CakeEditor {
     this.state = this.runtime.updateSelection(this.state, adjustedSelection, {
       kind: "dom",
     });
-    this.onSelectionChange?.(this.state.selection);
+    this.notifySelectionChange();
     this.scheduleOverlayUpdate();
     this.scheduleScrollCaretIntoView();
 
@@ -1111,7 +1134,7 @@ export class CakeEditor {
     this.state = this.runtime.updateSelection(this.state, selection, {
       kind: "dom",
     });
-    this.onSelectionChange?.(this.state.selection);
+    this.notifySelectionChange();
     this.lastAppliedSelection = this.state.selection;
     this.scheduleOverlayUpdate();
     this.scheduleScrollCaretIntoView();
@@ -1245,7 +1268,7 @@ export class CakeEditor {
           { kind: "dom" },
         );
         this.applySelection(this.state.selection);
-        this.onSelectionChange?.(this.state.selection);
+        this.notifySelectionChange();
         this.scheduleOverlayUpdate();
         this.selectedAtomicLineIndex = atomicResult.lineIndex;
         this.suppressSelectionChange = false;
@@ -1269,7 +1292,7 @@ export class CakeEditor {
           kind: "dom",
         });
         this.applySelection(this.state.selection);
-        this.onSelectionChange?.(this.state.selection);
+        this.notifySelectionChange();
         this.scheduleOverlayUpdate();
         setTimeout(() => {
           this.suppressSelectionChange = false;
@@ -1297,7 +1320,7 @@ export class CakeEditor {
           kind: "dom",
         });
         this.applySelection(this.state.selection);
-        this.onSelectionChange?.(this.state.selection);
+        this.notifySelectionChange();
         this.scheduleOverlayUpdate();
         setTimeout(() => {
           this.suppressSelectionChange = false;
@@ -1347,7 +1370,7 @@ export class CakeEditor {
         kind: "dom",
       });
       this.applySelection(this.state.selection);
-      this.onSelectionChange?.(this.state.selection);
+      this.notifySelectionChange();
       this.suppressSelectionChange = false;
       return;
     }
@@ -1374,7 +1397,7 @@ export class CakeEditor {
         kind: "dom",
       });
       this.applySelection(this.state.selection);
-      this.onSelectionChange?.(this.state.selection);
+      this.notifySelectionChange();
       this.suppressSelectionChange = false;
     }
   }
@@ -2089,7 +2112,7 @@ export class CakeEditor {
     this.selectedAtomicLineIndex = null;
     this.state = nextState;
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
     if (this.state.selection.start === this.state.selection.end) {
       this.flushOverlayUpdate();
     } else {
@@ -2143,7 +2166,7 @@ export class CakeEditor {
       affinity: "forward",
     });
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
     this.flushOverlayUpdate();
     this.scheduleScrollCaretIntoView();
     this.selectedAtomicLineIndex = null;
@@ -2213,7 +2236,7 @@ export class CakeEditor {
       selection: { start: cursorPos, end: cursorPos, affinity: "forward" },
     };
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
     this.flushOverlayUpdate();
     this.scheduleScrollCaretIntoView();
     return true;
@@ -2253,7 +2276,7 @@ export class CakeEditor {
     if (!this.isComposing) {
       this.applySelection(this.state.selection);
     }
-    this.onSelectionChange?.(this.state.selection);
+    this.notifySelectionChange();
     if (this.state.selection.start === this.state.selection.end) {
       this.flushOverlayUpdate();
     }
@@ -2799,7 +2822,7 @@ export class CakeEditor {
       const nextState = this.runtime.applyEdit({ type: "indent" }, this.state);
       this.state = nextState;
       this.render();
-      this.onChange?.(this.state.source, this.state.selection);
+      this.notifyChange();
       this.scheduleOverlayUpdate();
       return;
     }
@@ -2862,7 +2885,7 @@ export class CakeEditor {
 
     this.state = this.runtime.createState(newSource, newSelection);
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
     this.scheduleOverlayUpdate();
   }
 
@@ -2895,7 +2918,7 @@ export class CakeEditor {
       if (nextState.source !== this.state.source) {
         this.state = nextState;
         this.render();
-        this.onChange?.(this.state.source, this.state.selection);
+        this.notifyChange();
         this.scheduleOverlayUpdate();
       }
       return;
@@ -2957,7 +2980,7 @@ export class CakeEditor {
 
     this.state = this.runtime.createState(newSource, newSelection);
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
     this.scheduleOverlayUpdate();
   }
 
@@ -3033,7 +3056,7 @@ export class CakeEditor {
       // History was already recorded above
       this.state = this.runtime.createState(domText, selection);
       this.render();
-      this.onChange?.(this.state.source, this.state.selection);
+      this.notifyChange();
       return true;
     }
 
@@ -3084,7 +3107,7 @@ export class CakeEditor {
 
     this.state = { ...newState, selection: newSelection };
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
     return true;
   }
 
@@ -3137,6 +3160,20 @@ export class CakeEditor {
       this.suppressSelectionChange = false;
       this.suppressSelectionChangeResetId = null;
     });
+  }
+
+  private notifyChange() {
+    this.onChangeOption?.(this.state.source, this.state.selection);
+    for (const callback of this.changeSubscribers) {
+      callback(this.state.source, this.state.selection);
+    }
+  }
+
+  private notifySelectionChange() {
+    this.onSelectionChangeOption?.(this.state.selection);
+    for (const callback of this.selectionChangeSubscribers) {
+      callback(this.state.selection);
+    }
   }
 
   private markCompositionCommit() {
@@ -3587,7 +3624,7 @@ export class CakeEditor {
           this.suppressSelectionChange = true;
           this.state = { ...this.state, selection: atomicSelection };
           this.applySelection(atomicSelection);
-          this.onSelectionChange?.(atomicSelection);
+          this.notifySelectionChange();
           this.flushOverlayUpdate();
           this.selectedAtomicLineIndex = lineIndex;
 
@@ -3643,7 +3680,7 @@ export class CakeEditor {
             kind: "dom",
           });
           this.applySelection(this.state.selection);
-          this.onSelectionChange?.(this.state.selection);
+          this.notifySelectionChange();
           this.scheduleOverlayUpdate();
           return;
         }
@@ -3660,7 +3697,7 @@ export class CakeEditor {
           kind: "dom",
         });
         this.applySelection(this.state.selection);
-        this.onSelectionChange?.(this.state.selection);
+        this.notifySelectionChange();
         this.scheduleOverlayUpdate();
         return;
       }
@@ -4141,7 +4178,7 @@ export class CakeEditor {
       affinity: "forward",
     });
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
   }
 
   private handleDragStart(event: DragEvent) {
@@ -4341,7 +4378,7 @@ export class CakeEditor {
 
       this.state = afterInsert;
       this.render();
-      this.onChange?.(this.state.source, this.state.selection);
+      this.notifyChange();
       return;
     }
 
@@ -4365,7 +4402,7 @@ export class CakeEditor {
 
     this.state = afterInsert;
     this.render();
-    this.onChange?.(this.state.source, this.state.selection);
+    this.notifyChange();
   }
 
   private handleDragEnd() {

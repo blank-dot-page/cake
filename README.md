@@ -119,3 +119,7 @@ engine.destroy();
 - `plainTextListExtension` - Ordered and unordered lists
 - `scrollbarExtension` - Custom scrollbar styling
 - `strikethroughExtension` - Strikethrough (`~~text~~`)
+
+## Writing extensions
+
+See [docs/extensions.md](docs/extensions.md) for the full extension API, including examples of pure logic extensions and React-based UI extensions.
