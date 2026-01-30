@@ -25,6 +25,11 @@ const cases = [
   "\n",
 ];
 
+async function createBundledRuntime() {
+  const { bundledExtensions } = await import("../extensions");
+  return createRuntime(bundledExtensions);
+}
+
 describe("createRuntime([])", () => {
   it("roundtrips literal text without syntax knowledge", () => {
     const runtime = createRuntime([]);
@@ -147,5 +152,209 @@ describe("createRuntime([])", () => {
       state,
     );
     expect(result.source).toBe("**hello**\n**world**");
+  });
+});
+
+describe("inline toggle selection edge cases", () => {
+  it("toggles underline on/off across a heading selection that includes newline", async () => {
+    const runtime = await createBundledRuntime();
+    const initial = "# title\n";
+    const state = runtime.createState(initial, {
+      start: 0,
+      end: 6,
+      affinity: "forward",
+    });
+
+    const underlined = runtime.applyEdit({ type: "toggle-underline" }, state);
+    expect(underlined.source).toBe("# <u>title</u>\n");
+
+    const restored = runtime.applyEdit(
+      { type: "toggle-underline" },
+      underlined,
+    );
+    expect(restored.source).toBe("# title\n");
+  });
+
+  it("toggles bold off across a heading selection that includes newline", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState("# **title**\n", {
+      start: 0,
+      end: 6,
+      affinity: "forward",
+    });
+
+    const result = runtime.applyEdit({ type: "toggle-bold" }, state);
+    expect(result.source).toBe("# title\n");
+  });
+
+  it("toggles underline for a selection that starts after the line start and ends at newline", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState("# title\n", {
+      start: 1,
+      end: 6,
+      affinity: "forward",
+    });
+
+    const result = runtime.applyEdit({ type: "toggle-underline" }, state);
+    expect(result.source).toBe("# t<u>itle</u>\n");
+  });
+
+  it("toggles underline across an inline newline inside a single paragraph", async () => {
+    const runtime = await createBundledRuntime();
+    const doc: Doc = {
+      type: "doc",
+      blocks: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "hello\nworld" }],
+        },
+      ],
+    };
+    const serialized = runtime.serialize(doc);
+
+    const state: RuntimeState = {
+      source: serialized.source,
+      map: serialized.map,
+      doc,
+      runtime,
+      selection: { start: 0, end: 11, affinity: "forward" },
+    };
+
+    const result = runtime.applyEdit(
+      { type: "toggle-inline", marker: "<u>" },
+      state,
+    );
+    expect(result.source).toBe("<u>hello</u>\n<u>world</u>");
+  });
+
+  it("toggles underline across multiple paragraphs while skipping empty lines", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState("one\n\ntwo", {
+      start: 0,
+      end: 8,
+      affinity: "forward",
+    });
+
+    const underlined = runtime.applyEdit({ type: "toggle-underline" }, state);
+    expect(underlined.source).toBe("<u>one</u>\n\n<u>two</u>");
+
+    const restored = runtime.applyEdit(
+      { type: "toggle-underline" },
+      underlined,
+    );
+    expect(restored.source).toBe("one\n\ntwo");
+  });
+
+  it("toggles bold when selection ends at a block boundary", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState("para1\n", {
+      start: 0,
+      end: 6,
+      affinity: "forward",
+    });
+
+    const bolded = runtime.applyEdit({ type: "toggle-bold" }, state);
+    expect(bolded.source).toBe("**para1**\n");
+
+    const restored = runtime.applyEdit({ type: "toggle-bold" }, bolded);
+    expect(restored.source).toBe("para1\n");
+  });
+
+  it("toggles bold when selection starts at a block boundary", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState("para1\npara2", {
+      start: 6,
+      end: 11,
+      affinity: "forward",
+    });
+
+    const bolded = runtime.applyEdit({ type: "toggle-bold" }, state);
+    expect(bolded.source).toBe("para1\n**para2**");
+  });
+
+  it("adds underline to already bold text and removes it cleanly", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState("**hello**", {
+      start: 0,
+      end: 5,
+      affinity: "forward",
+    });
+
+    const underlined = runtime.applyEdit({ type: "toggle-underline" }, state);
+    expect(underlined.source).toBe("**<u>hello</u>**");
+
+    const restored = runtime.applyEdit(
+      { type: "toggle-underline" },
+      underlined,
+    );
+    expect(restored.source).toBe("**hello**");
+  });
+
+  it("adds bold inside underline and removes it cleanly", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState("<u>hello</u>", {
+      start: 0,
+      end: 5,
+      affinity: "forward",
+    });
+
+    const bolded = runtime.applyEdit({ type: "toggle-bold" }, state);
+    expect(bolded.source).toBe("<u>**hello**</u>");
+
+    const restored = runtime.applyEdit({ type: "toggle-bold" }, bolded);
+    expect(restored.source).toBe("<u>hello</u>");
+  });
+
+  it("splits an existing bold run when toggling off within a subset", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState("**hello** world", {
+      start: 3,
+      end: 5,
+      affinity: "forward",
+    });
+
+    const result = runtime.applyEdit({ type: "toggle-bold" }, state);
+    expect(result.source).toBe("**hel**lo world");
+  });
+
+  it("inserts a placeholder when toggling bold with a collapsed selection", async () => {
+    const runtime = await createBundledRuntime();
+    const placeholder = "\u200B";
+    const state = runtime.createState("hello", {
+      start: 2,
+      end: 2,
+      affinity: "forward",
+    });
+
+    const result = runtime.applyEdit({ type: "toggle-bold" }, state);
+    expect(result.source).toBe(`he**${placeholder}**llo`);
+  });
+
+  it("does nothing when the selection contains only a newline", async () => {
+    const runtime = await createBundledRuntime();
+    const doc: Doc = {
+      type: "doc",
+      blocks: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "one\n" }],
+        },
+      ],
+    };
+    const serialized = runtime.serialize(doc);
+
+    const state: RuntimeState = {
+      source: serialized.source,
+      map: serialized.map,
+      doc,
+      runtime,
+      selection: { start: 3, end: 4, affinity: "forward" },
+    };
+
+    const result = runtime.applyEdit(
+      { type: "toggle-inline", marker: "<u>" },
+      state,
+    );
+    expect(result.source).toBe("one\n");
   });
 });

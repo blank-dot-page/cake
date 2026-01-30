@@ -805,6 +805,70 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
     }
 
     if (
+      command.type === "delete-backward" &&
+      cursorStart === cursorEnd &&
+      endLoc.offsetInLine === 0 &&
+      endLoc.lineIndex > 0
+    ) {
+      const prevLine = lines[endLoc.lineIndex - 1];
+      if (
+        prevLine &&
+        !pathsEqual(prevLine.parentPath, endLine.parentPath)
+      ) {
+        const prevBlock = getBlockAtPath(doc.blocks, prevLine.path);
+        const currentBlock = getBlockAtPath(doc.blocks, endLine.path);
+        if (
+          prevBlock &&
+          prevBlock.type === "paragraph" &&
+          currentBlock &&
+          currentBlock.type === "paragraph"
+        ) {
+          const prevRuns = paragraphToRuns(prevBlock);
+          const currentRuns = paragraphToRuns(currentBlock);
+          const mergedRuns = normalizeRuns([...prevRuns, ...currentRuns]);
+          const nextPrevBlock: Block = {
+            ...prevBlock,
+            content: runsToInlines(mergedRuns),
+          };
+
+          let nextBlocks = updateBlocksAtPath(
+            doc.blocks,
+            prevLine.parentPath,
+            (blocks) =>
+              blocks.map((block, index) =>
+                index === prevLine.indexInParent ? nextPrevBlock : block,
+              ),
+          );
+          nextBlocks = updateBlocksAtPath(
+            nextBlocks,
+            endLine.parentPath,
+            (blocks) =>
+              blocks.filter((_, index) => index !== endLine.indexInParent),
+          );
+
+          const nextDoc: Doc = { ...doc, blocks: nextBlocks };
+          const nextLines = flattenDocToLines(nextDoc);
+          const lineStarts = getLineStartOffsets(nextLines);
+          const mergedLineIndex = nextLines.findIndex((line) =>
+            pathsEqual(line.path, prevLine.path),
+          );
+          const mergedLine = nextLines[mergedLineIndex];
+          const nextCursor =
+            mergedLineIndex >= 0
+              ? (lineStarts[mergedLineIndex] ?? 0) +
+                (mergedLine?.cursorLength ?? 0)
+              : 0;
+
+          return {
+            doc: nextDoc,
+            nextCursor,
+            nextAffinity: "forward",
+          };
+        }
+      }
+    }
+
+    if (
       !pathsEqual(startLine.parentPath, endLine.parentPath) ||
       startLine.indexInParent > endLine.indexInParent
     ) {
@@ -1861,11 +1925,6 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
 
     const cursorStart = Math.min(selection.start, selection.end);
     const cursorEnd = Math.max(selection.start, selection.end);
-    const from = map.cursorToSource(cursorStart, "forward");
-    const to = map.cursorToSource(cursorEnd, "backward");
-
-    const selectedText = source.slice(from, to);
-
     const linesForSelection = flattenDocToLines(state.doc);
     const commonMarks = commonMarksAcrossSelection(
       linesForSelection,
@@ -1873,194 +1932,121 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
       cursorEnd,
       state.doc,
     );
-    const hasCommonMark = commonMarks.some((mark) => mark.kind === markerKind);
-    const canUnwrap = hasCommonMark;
-
+    const canUnwrap = commonMarks.some((mark) => mark.kind === markerKind);
     const startLoc = resolveCursorToLine(linesForSelection, cursorStart);
     const endLoc = resolveCursorToLine(linesForSelection, cursorEnd);
+    const markerMark: Mark = {
+      kind: markerKind,
+      data: undefined,
+      key: markKey(markerKind, undefined),
+    };
 
-    if (startLoc.lineIndex !== endLoc.lineIndex || selectedText.includes("\n")) {
-      const edits: Array<{ from: number; to: number; insert: string }> = [];
-
-      const segments = (() => {
-        if (!selectedText.includes("\n")) {
-          const lineOffsets = getLineStartOffsets(linesForSelection);
-          const byCursorLines: Array<{ from: number; to: number }> = [];
-
-          for (
-            let lineIndex = startLoc.lineIndex;
-            lineIndex <= endLoc.lineIndex;
-            lineIndex += 1
-          ) {
-            const line = linesForSelection[lineIndex];
-            if (!line) {
-              continue;
-            }
-            const lineStart = lineOffsets[lineIndex] ?? 0;
-            const startInLine =
-              lineIndex === startLoc.lineIndex ? startLoc.offsetInLine : 0;
-            const endInLine =
-              lineIndex === endLoc.lineIndex
-                ? endLoc.offsetInLine
-                : line.cursorLength;
-            if (startInLine === endInLine) {
-              continue;
-            }
-            const segmentStartCursor = lineStart + startInLine;
-            const segmentEndCursor = lineStart + endInLine;
-            const segmentFrom = map.cursorToSource(segmentStartCursor, "forward");
-            const segmentTo = map.cursorToSource(segmentEndCursor, "backward");
-            if (segmentFrom === segmentTo) {
-              continue;
-            }
-            byCursorLines.push({ from: segmentFrom, to: segmentTo });
-          }
-
-          return byCursorLines;
-        }
-
-        const byNewlines: Array<{ from: number; to: number }> = [];
-        let sliceOffset = 0;
-        while (sliceOffset <= selectedText.length) {
-          const newlineIndex = selectedText.indexOf("\n", sliceOffset);
-          const segmentEndOffset =
-            newlineIndex === -1 ? selectedText.length : newlineIndex;
-          const segmentFrom = from + sliceOffset;
-          const segmentTo = from + segmentEndOffset;
-          if (segmentFrom !== segmentTo) {
-            byNewlines.push({ from: segmentFrom, to: segmentTo });
-          }
-          if (newlineIndex === -1) {
-            break;
-          }
-          sliceOffset = newlineIndex + 1;
-        }
-        return byNewlines;
-      })();
-
-      for (const segment of segments) {
-        const segmentFrom = segment.from;
-        const segmentTo = segment.to;
-
-        if (canUnwrap) {
-          if (
-            segmentFrom >= openLen &&
-            source.slice(segmentFrom - openLen, segmentFrom) === openMarker
-          ) {
-            edits.push({
-              from: segmentFrom - openLen,
-              to: segmentFrom,
-              insert: "",
-            });
-          }
-          if (source.slice(segmentTo, segmentTo + closeLen) === closeMarker) {
-            edits.push({
-              from: segmentTo,
-              to: segmentTo + closeLen,
-              insert: "",
-            });
-          }
-        } else {
-          edits.push({ from: segmentFrom, to: segmentFrom, insert: openMarker });
-          edits.push({ from: segmentTo, to: segmentTo, insert: closeMarker });
+    const removeMark = (marks: Mark[]): Mark[] => {
+      for (let i = marks.length - 1; i >= 0; i -= 1) {
+        if (marks[i]?.kind === markerKind) {
+          return [...marks.slice(0, i), ...marks.slice(i + 1)];
         }
       }
+      return marks;
+    };
 
-      if (edits.length === 0) {
-        return state;
+    const splitRunsOnNewlines = (runs: Run[]): Run[] => {
+      const split: Run[] = [];
+      for (const run of runs) {
+        if (!run.text.includes("\n")) {
+          split.push(run);
+          continue;
+        }
+        const parts = run.text.split("\n");
+        for (let i = 0; i < parts.length; i += 1) {
+          const part = parts[i] ?? "";
+          if (part) {
+            split.push({ ...run, text: part });
+          }
+          if (i < parts.length - 1) {
+            split.push({ ...run, text: "\n" });
+          }
+        }
+      }
+      return split;
+    };
+
+    let nextDoc = state.doc;
+    let didChange = false;
+
+    for (
+      let lineIndex = startLoc.lineIndex;
+      lineIndex <= endLoc.lineIndex;
+      lineIndex += 1
+    ) {
+      const line = linesForSelection[lineIndex];
+      if (!line) {
+        continue;
       }
 
-      edits.sort((a, b) => b.from - a.from);
-      let newSource = source;
-      for (const edit of edits) {
-        newSource =
-          newSource.slice(0, edit.from) +
-          edit.insert +
-          newSource.slice(edit.to);
+      const startInLine =
+        lineIndex === startLoc.lineIndex ? startLoc.offsetInLine : 0;
+      const endInLine =
+        lineIndex === endLoc.lineIndex ? endLoc.offsetInLine : line.cursorLength;
+      if (startInLine === endInLine) {
+        continue;
       }
 
-      const next = createState(newSource);
+      const block = getBlockAtPath(nextDoc.blocks, line.path);
+      if (!block || block.type !== "paragraph") {
+        continue;
+      }
 
-      return {
-        ...next,
-        selection: {
-          start: cursorStart,
-          end: cursorEnd,
-          affinity: selection.affinity ?? "forward",
-        },
+      const runs = paragraphToRuns(block);
+      const { before, selected, after } = sliceRuns(
+        runs,
+        startInLine,
+        endInLine,
+      );
+      if (selected.length === 0) {
+        continue;
+      }
+
+      const updatedSelected = splitRunsOnNewlines(selected).map((run) => {
+        const isNewline = run.text === "\n";
+        const nextMarks = canUnwrap
+          ? removeMark(run.marks)
+          : isNewline
+            ? run.marks
+            : [...run.marks, markerMark];
+        if (!marksEqual(run.marks, nextMarks)) {
+          didChange = true;
+        }
+        return { ...run, marks: nextMarks };
+      });
+
+      const mergedRuns = normalizeRuns([
+        ...before,
+        ...updatedSelected,
+        ...after,
+      ]);
+      const nextBlock: Block = {
+        ...block,
+        content: runsToInlines(mergedRuns),
+      };
+
+      const parentPath = line.path.slice(0, -1);
+      const indexInParent = line.path[line.path.length - 1] ?? 0;
+      nextDoc = {
+        ...nextDoc,
+        blocks: updateBlocksAtPath(nextDoc.blocks, parentPath, (blocks) =>
+          blocks.map((child, index) =>
+            index === indexInParent ? nextBlock : child,
+          ),
+        ),
       };
     }
 
-    const isSelectionWrappedByAdjacentMarkers =
-      from >= openLen &&
-      source.slice(from - openLen, from) === openMarker &&
-      source.slice(to, to + closeLen) === closeMarker;
-    const isWrappedBySelectionText =
-      selectedText.startsWith(openMarker) &&
-      selectedText.endsWith(closeMarker) &&
-      selectedText.length >= openLen + closeLen;
-    const isWrapped =
-      canUnwrap &&
-      (isSelectionWrappedByAdjacentMarkers || isWrappedBySelectionText);
-    let newSource: string;
-
-    if (canUnwrap && !isWrapped) {
-      const edits: Array<{ from: number; to: number; insert: string }> = [];
-      const startBackward = map.cursorToSource(cursorStart, "backward");
-      const startForward = map.cursorToSource(cursorStart, "forward");
-      const endBackward = map.cursorToSource(cursorEnd, "backward");
-      const endForward = map.cursorToSource(cursorEnd, "forward");
-
-      const startGap = source.slice(startBackward, startForward);
-      const openIndex = startGap.lastIndexOf(openMarker);
-      if (openIndex !== -1) {
-        edits.push({
-          from: startBackward + openIndex,
-          to: startBackward + openIndex + openLen,
-          insert: "",
-        });
-      } else {
-        edits.push({ from: startBackward, to: startBackward, insert: closeMarker });
-      }
-
-      const endGap = source.slice(endBackward, endForward);
-      const closeIndex = endGap.indexOf(closeMarker);
-      if (closeIndex !== -1) {
-        edits.push({
-          from: endBackward + closeIndex,
-          to: endBackward + closeIndex + closeLen,
-          insert: "",
-        });
-      } else {
-        edits.push({ from: endForward, to: endForward, insert: openMarker });
-      }
-
-      edits.sort((a, b) => b.from - a.from);
-      newSource = source;
-      for (const edit of edits) {
-        newSource =
-          newSource.slice(0, edit.from) +
-          edit.insert +
-          newSource.slice(edit.to);
-      }
-    } else if (isWrapped) {
-      // Unwrap
-      if (isSelectionWrappedByAdjacentMarkers) {
-        newSource =
-          source.slice(0, from - openLen) +
-          selectedText +
-          source.slice(to + closeLen);
-      } else {
-        const unwrapped = selectedText.slice(openLen, -closeLen);
-        newSource = source.slice(0, from) + unwrapped + source.slice(to);
-      }
-    } else {
-      // Wrap
-      const wrapped = openMarker + selectedText + closeMarker;
-      newSource = source.slice(0, from) + wrapped + source.slice(to);
+    if (!didChange) {
+      return state;
     }
 
-    const next = createState(newSource);
+    const next = createStateFromDoc(nextDoc);
 
     return {
       ...next,
