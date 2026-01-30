@@ -243,7 +243,9 @@ function ScrollbarOverlay({ container }: { container: HTMLElement }) {
 
   const getThumbColor = () => {
     if (isDarkMode) {
-      return isDragging ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 255, 255, 0.3)";
+      return isDragging
+        ? "rgba(255, 255, 255, 0.5)"
+        : "rgba(255, 255, 255, 0.3)";
     }
     return isDragging ? "rgba(0, 0, 0, 0.5)" : "rgba(0, 0, 0, 0.3)";
   };

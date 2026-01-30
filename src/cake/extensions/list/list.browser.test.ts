@@ -661,7 +661,10 @@ describe("typing dash with selection to create list", () => {
     await userEvent.keyboard("{Enter}");
     await userEvent.type(harness.contentRoot, "third line");
 
-    console.log("Value after typing:", JSON.stringify(harness.engine.getValue()));
+    console.log(
+      "Value after typing:",
+      JSON.stringify(harness.engine.getValue()),
+    );
 
     // Select all using real Cmd+A
     await userEvent.keyboard("{Meta>}a{/Meta}");
@@ -674,9 +677,8 @@ describe("typing dash with selection to create list", () => {
     console.log("Value after typing dash:", harness.engine.getValue());
 
     // Check that lines are now list items
-    const listCount = harness.container.querySelectorAll(
-      ".cake-line.is-list",
-    ).length;
+    const listCount =
+      harness.container.querySelectorAll(".cake-line.is-list").length;
     expect(listCount).toBe(3);
 
     // Also verify the value
@@ -708,9 +710,8 @@ describe("typing dash with selection to create list", () => {
     console.log("Value after typing dash:", harness.engine.getValue());
 
     // Should convert ALL THREE lines to list items, not just replace selection
-    const listCount = harness.container.querySelectorAll(
-      ".cake-line.is-list",
-    ).length;
+    const listCount =
+      harness.container.querySelectorAll(".cake-line.is-list").length;
     expect(listCount).toBe(3);
 
     expect(harness.engine.getValue()).toBe(

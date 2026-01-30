@@ -182,7 +182,9 @@ export const blockquoteExtension: CakeExtension = (host) => {
         }
 
         const nextLineStart = lineEnd + 1;
-        if (source.slice(nextLineStart, nextLineStart + PREFIX.length) === PREFIX) {
+        if (
+          source.slice(nextLineStart, nextLineStart + PREFIX.length) === PREFIX
+        ) {
           pos = nextLineStart;
           continue;
         }
@@ -203,23 +205,25 @@ export const blockquoteExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerSerializeBlock((block, context): SerializeBlockResult | null => {
-      if (block.type !== "block-wrapper" || block.kind !== BLOCKQUOTE_KIND) {
-        return null;
-      }
-
-      const builder = new CursorSourceBuilder();
-      block.blocks.forEach((child, index) => {
-        builder.appendSourceOnly(PREFIX);
-        const serialized = context.serializeBlock(child);
-        builder.appendSerialized(serialized);
-        if (index < block.blocks.length - 1) {
-          builder.appendText("\n");
+    host.registerSerializeBlock(
+      (block, context): SerializeBlockResult | null => {
+        if (block.type !== "block-wrapper" || block.kind !== BLOCKQUOTE_KIND) {
+          return null;
         }
-      });
 
-      return builder.build();
-    }),
+        const builder = new CursorSourceBuilder();
+        block.blocks.forEach((child, index) => {
+          builder.appendSourceOnly(PREFIX);
+          const serialized = context.serializeBlock(child);
+          builder.appendSerialized(serialized);
+          if (index < block.blocks.length - 1) {
+            builder.appendText("\n");
+          }
+        });
+
+        return builder.build();
+      },
+    ),
   );
 
   disposers.push(
@@ -237,5 +241,9 @@ export const blockquoteExtension: CakeExtension = (host) => {
     }),
   );
 
-  return () => disposers.splice(0).reverse().forEach((d) => d());
+  return () =>
+    disposers
+      .splice(0)
+      .reverse()
+      .forEach((d) => d());
 };

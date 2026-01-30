@@ -152,5 +152,9 @@ export const imageExtension: CakeExtension = (host) => {
     }),
   );
 
-  return () => disposers.splice(0).reverse().forEach((d) => d());
+  return () =>
+    disposers
+      .splice(0)
+      .reverse()
+      .forEach((d) => d());
 };

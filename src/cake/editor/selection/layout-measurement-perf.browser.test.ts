@@ -77,4 +77,3 @@ describe("Layout measurement performance", () => {
     expect(createRangeCalls).toBeLessThan(12_000);
   });
 });
-

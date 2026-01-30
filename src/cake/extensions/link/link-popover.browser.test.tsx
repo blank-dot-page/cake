@@ -47,7 +47,9 @@ describe("cake link popover", () => {
     // This test uses a controlled editor (value + onChange) which causes
     // React re-renders and DOM node replacement when the editor state changes.
     // The popover should still position correctly on first click.
-    render(<ControlledEditor initialValue="hello [world](https://example.com)" />);
+    render(
+      <ControlledEditor initialValue="hello [world](https://example.com)" />,
+    );
 
     const link = page.getByRole("link", { name: "world" });
     await expect.element(link).toBeVisible();

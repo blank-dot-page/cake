@@ -138,7 +138,10 @@ export const boldExtension: CakeExtension = (host) => {
   );
 
   return () => {
-    disposers.splice(0).reverse().forEach((d) => d());
+    disposers
+      .splice(0)
+      .reverse()
+      .forEach((d) => d());
   };
 };
 

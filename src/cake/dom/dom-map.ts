@@ -130,7 +130,11 @@ export function createDomMap(runs: TextRun[]): DomMap {
     const previous = runIndex > 0 ? runs[runIndex - 1]! : null;
     const next = nextIndex < runs.length ? runs[nextIndex]! : null;
 
-    if (cursorOffset === run.cursorStart && previous && affinity === "backward") {
+    if (
+      cursorOffset === run.cursorStart &&
+      previous &&
+      affinity === "backward"
+    ) {
       return {
         node: previous.node,
         offset: previous.boundaryOffsets[previous.boundaryOffsets.length - 1]!,

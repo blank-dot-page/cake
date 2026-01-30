@@ -283,7 +283,10 @@ describe("heading extension typing behavior (harness)", () => {
 
     // Click into the empty second line (can't use clickAt on empty line).
     const lineRect = h.getLineRect(1);
-    await h.clickAtCoords(lineRect.left + 5, lineRect.top + lineRect.height / 2);
+    await h.clickAtCoords(
+      lineRect.left + 5,
+      lineRect.top + lineRect.height / 2,
+    );
     await h.pressBackspace();
 
     expect(h.engine.getValue()).toBe("# Cake Demo");

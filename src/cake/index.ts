@@ -1,1 +1,5 @@
-export type { EditCommand, CoreEditCommand, ExtensionCommand } from "./core/runtime";
+export type {
+  EditCommand,
+  CoreEditCommand,
+  ExtensionCommand,
+} from "./core/runtime";

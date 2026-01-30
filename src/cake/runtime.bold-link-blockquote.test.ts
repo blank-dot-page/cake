@@ -438,7 +438,11 @@ describe("runtime with bold/link/blockquote", () => {
           return null;
         }
         const inline = block.content[0];
-        if (!inline || inline.type !== "inline-atom" || inline.kind !== "atom") {
+        if (
+          !inline ||
+          inline.type !== "inline-atom" ||
+          inline.kind !== "atom"
+        ) {
           return null;
         }
         return { source: "", selection: { start: 0, end: 0 } };

@@ -441,7 +441,9 @@ describe("CakeEditor click positioning", () => {
 
       // Click on the harness container (outside contenteditable but inside cake)
       const containerRect = harness.container.getBoundingClientRect();
-      await (await import("vitest/browser")).userEvent.click(harness.container, {
+      await (
+        await import("vitest/browser")
+      ).userEvent.click(harness.container, {
         position: {
           x: clickX - containerRect.left,
           y: clickY - containerRect.top,
@@ -494,7 +496,8 @@ describe("CakeEditor click positioning", () => {
 
       // Click in the empty space between last char and contenteditable edge
       // This is INSIDE the contenteditable but AFTER the last character
-      const clickX = lastCharRect.right + (contentRect.right - lastCharRect.right) / 2;
+      const clickX =
+        lastCharRect.right + (contentRect.right - lastCharRect.right) / 2;
       const clickY = lastCharRect.top + lastCharRect.height / 2;
 
       await harness.clickAtCoords(clickX, clickY);
@@ -547,7 +550,8 @@ describe("CakeEditor click positioning", () => {
       const contentRect = harness.contentRoot.getBoundingClientRect();
 
       // Click in the empty space between last char and contenteditable edge
-      const clickX = lastCharRect.right + (contentRect.right - lastCharRect.right) / 2;
+      const clickX =
+        lastCharRect.right + (contentRect.right - lastCharRect.right) / 2;
       const clickY = lastCharRect.top + lastCharRect.height / 2;
 
       console.log("lastCharOnFirstRow:", lastCharOnFirstRow);
@@ -622,8 +626,11 @@ describe("CakeEditor click positioning", () => {
 
       // Click in the empty space, but lower - in the line-height gap
       // Y position: just below the first char rect, but above the second row
-      const clickX = lastCharRect.right + (contentRect.right - lastCharRect.right) / 2;
-      const clickY = lastCharRect.bottom + (firstCharSecondRow.top - lastCharRect.bottom) / 2;
+      const clickX =
+        lastCharRect.right + (contentRect.right - lastCharRect.right) / 2;
+      const clickY =
+        lastCharRect.bottom +
+        (firstCharSecondRow.top - lastCharRect.bottom) / 2;
 
       console.log("=== LINE HEIGHT GAP TEST ===");
       console.log("lastCharOnFirstRow:", lastCharOnFirstRow);
@@ -805,7 +812,10 @@ describe("CakeEditor click positioning", () => {
       console.log("selection before arrow:", JSON.stringify(harness.selection));
 
       const caretBeforeRect = harness.getCaretRect();
-      console.log("caretRect before arrow right:", JSON.stringify(caretBeforeRect));
+      console.log(
+        "caretRect before arrow right:",
+        JSON.stringify(caretBeforeRect),
+      );
 
       // Verify we're at the end of first row (position after last char)
       expect(harness.selection.start).toBe(lastCharOnFirstRow + 1);
@@ -814,7 +824,10 @@ describe("CakeEditor click positioning", () => {
       await harness.pressKey("ArrowRight");
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      console.log("selection after arrow right:", JSON.stringify(harness.selection));
+      console.log(
+        "selection after arrow right:",
+        JSON.stringify(harness.selection),
+      );
 
       const caretRect = harness.getCaretRect();
       console.log("caretRect after arrow right:", JSON.stringify(caretRect));
@@ -828,7 +841,9 @@ describe("CakeEditor click positioning", () => {
       // Caret should now be visually on the SECOND row
       expect(caretRect).not.toBeNull();
       if (caretRect) {
-        expect(caretRect.top).toBeGreaterThanOrEqual(firstCharSecondRowRect.top);
+        expect(caretRect.top).toBeGreaterThanOrEqual(
+          firstCharSecondRowRect.top,
+        );
       }
     });
   });
@@ -881,7 +896,10 @@ describe("CakeEditor click positioning", () => {
       await harness.pressKey("ArrowLeft");
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      console.log("Selection after arrow left:", JSON.stringify(harness.selection));
+      console.log(
+        "Selection after arrow left:",
+        JSON.stringify(harness.selection),
+      );
 
       // === ASSERT AFTER STATE ===
       // Selection should be at end of first row (position AFTER last char)
@@ -923,7 +941,10 @@ describe("CakeEditor click positioning", () => {
       await harness.pressKey("ArrowRight");
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      console.log("Selection after arrow right:", JSON.stringify(harness.selection));
+      console.log(
+        "Selection after arrow right:",
+        JSON.stringify(harness.selection),
+      );
       const caretAfter = harness.getCaretRect();
       console.log("Caret after arrow right:", JSON.stringify(caretAfter));
 
@@ -983,7 +1004,10 @@ describe("CakeEditor click positioning", () => {
       await harness.pressKey("ArrowRight");
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      console.log("Selection after arrow right:", JSON.stringify(harness.selection));
+      console.log(
+        "Selection after arrow right:",
+        JSON.stringify(harness.selection),
+      );
       const caretAfter = harness.getCaretRect();
       console.log("Caret after arrow right:", JSON.stringify(caretAfter));
 
@@ -1028,7 +1052,10 @@ describe("CakeEditor click positioning", () => {
       await harness.pressKey("ArrowRight", { meta: true });
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      console.log("Selection after Cmd+ArrowRight:", JSON.stringify(harness.selection));
+      console.log(
+        "Selection after Cmd+ArrowRight:",
+        JSON.stringify(harness.selection),
+      );
       const caretAfter = harness.getCaretRect();
       console.log("Caret after Cmd+ArrowRight:", JSON.stringify(caretAfter));
 
@@ -1056,7 +1083,8 @@ describe("CakeEditor click positioning", () => {
       const row1 = rows[1];
 
       // Click in the middle of second row
-      const middleOffset = row1.startOffset + Math.floor((row1.endOffset - row1.startOffset) / 2);
+      const middleOffset =
+        row1.startOffset + Math.floor((row1.endOffset - row1.startOffset) / 2);
       await harness.clickLeftOf(middleOffset);
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -1072,7 +1100,10 @@ describe("CakeEditor click positioning", () => {
       await harness.pressKey("ArrowLeft", { meta: true });
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      console.log("Selection after Cmd+ArrowLeft:", JSON.stringify(harness.selection));
+      console.log(
+        "Selection after Cmd+ArrowLeft:",
+        JSON.stringify(harness.selection),
+      );
       const caretAfter = harness.getCaretRect();
       console.log("Caret after Cmd+ArrowLeft:", JSON.stringify(caretAfter));
 

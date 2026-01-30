@@ -117,7 +117,8 @@ describe("Cake wrapped-line navigation (browser)", () => {
     // Place caret at end of first visual line, press ArrowDown.
     // Expected: caret moves to end of second visual line (same logical line)
     // Bug: caret skips to the empty line (next logical line)
-    const longText = "This is a long line that should wrap into multiple visual lines when the container is narrow enough";
+    const longText =
+      "This is a long line that should wrap into multiple visual lines when the container is narrow enough";
     const content = `${longText}\n\nshort`;
 
     harness = createTestHarness({
@@ -218,8 +219,7 @@ describe("Cake wrapped-line navigation (browser)", () => {
     // This test replicates the editor bug - using Cmd+ArrowRight to position
     // at end of first visual row, then ArrowDown
     // Uses line-height: 2 like the actual editor
-    const longText =
-      "This is a fairly long line that will wrap into two rows";
+    const longText = "This is a fairly long line that will wrap into two rows";
     const content = `${longText}\n\nshort`;
 
     harness = createTestHarness({

@@ -234,15 +234,16 @@ export class CakeEditor {
   // We check for touch support AND coarse pointer to exclude laptops with touchscreens
   private isTouchDevice(): boolean {
     return (
-      "ontouchstart" in window &&
-      window.matchMedia("(pointer: coarse)").matches
+      "ontouchstart" in window && window.matchMedia("(pointer: coarse)").matches
     );
   }
 
   constructor(options: EngineOptions) {
     this.container = options.container;
     this.contentRoot = options.contentRoot ?? null;
-    const installed = installExtensions(options.extensions ?? bundledExtensions);
+    const installed = installExtensions(
+      options.extensions ?? bundledExtensions,
+    );
     this.runtime = installed.runtime;
     this.keybindings = installed.keybindings;
     this.onPasteTextHandlers = installed.onPasteText;
@@ -676,7 +677,9 @@ export class CakeEditor {
       (node.hasAttribute("data-line-index") ||
         node.hasAttribute("data-block-wrapper"));
     const existingManagedChildren = existingChildren.filter(isManagedChild);
-    const preservedChildren = existingChildren.filter((node) => !isManagedChild(node));
+    const preservedChildren = existingChildren.filter(
+      (node) => !isManagedChild(node),
+    );
     const needsUpdate =
       content.length !== existingManagedChildren.length ||
       content.some((node, i) => node !== existingManagedChildren[i]);
@@ -2110,7 +2113,10 @@ export class CakeEditor {
           affinity: "backward",
         });
         // If backward affinity puts us on a different row, just change affinity
-        if (prevBoundaries.rowEnd !== rowEnd || prevBoundaries.rowStart !== rowStart) {
+        if (
+          prevBoundaries.rowEnd !== rowEnd ||
+          prevBoundaries.rowStart !== rowStart
+        ) {
           return { start: currentPos, end: currentPos, affinity: "backward" };
         }
       }
@@ -2130,7 +2136,10 @@ export class CakeEditor {
           affinity: "forward",
         });
         // If forward affinity puts us on a different row, just change affinity
-        if (nextBoundaries.rowEnd !== rowEnd || nextBoundaries.rowStart !== rowStart) {
+        if (
+          nextBoundaries.rowEnd !== rowEnd ||
+          nextBoundaries.rowStart !== rowStart
+        ) {
           return { start: currentPos, end: currentPos, affinity: "forward" };
         }
       }

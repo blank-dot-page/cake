@@ -115,7 +115,7 @@ function createDomPositionResolver(
     let low = 0;
     let high = cumulativeEnds.length - 1;
     while (low < high) {
-      const mid = low + high >>> 1;
+      const mid = (low + high) >>> 1;
       if ((cumulativeEnds[mid] ?? 0) < clamped) {
         low = mid + 1;
       } else {
@@ -266,7 +266,10 @@ function measureLineRows(params: {
       // Some engines occasionally fail to return a usable rect for certain
       // characters (notably at soft-wrap boundaries). Fall back to measuring the
       // caret position at this offset so row detection remains stable.
-      const codeUnitOffset = cursorOffsetToCodeUnit(params.cursorToCodeUnit, offset);
+      const codeUnitOffset = cursorOffsetToCodeUnit(
+        params.cursorToCodeUnit,
+        offset,
+      );
       const position = resolvePosition(codeUnitOffset);
       scratchRange.setStart(position.node, position.offset);
       scratchRange.setEnd(position.node, position.offset);
@@ -487,8 +490,14 @@ export function measureLayoutModelRangeFromDom(params: {
     return null;
   }
 
-  const clampedStart = Math.max(0, Math.min(params.startLineIndex, params.lines.length - 1));
-  const clampedEnd = Math.max(clampedStart, Math.min(params.endLineIndex, params.lines.length - 1));
+  const clampedStart = Math.max(
+    0,
+    Math.min(params.startLineIndex, params.lines.length - 1),
+  );
+  const clampedEnd = Math.max(
+    clampedStart,
+    Math.min(params.endLineIndex, params.lines.length - 1),
+  );
   const lineOffsets = getLineOffsets(params.lines);
   let lineStartOffset = lineOffsets[clampedStart] ?? 0;
 
@@ -701,7 +710,10 @@ export function hitTestFromLayout(params: {
       to: number,
       edge: "left" | "right",
     ): number | null => {
-      const fromCodeUnit = cursorOffsetToCodeUnit(lineInfo.cursorToCodeUnit, from);
+      const fromCodeUnit = cursorOffsetToCodeUnit(
+        lineInfo.cursorToCodeUnit,
+        from,
+      );
       const toCodeUnit = cursorOffsetToCodeUnit(lineInfo.cursorToCodeUnit, to);
       const fromPos = resolvePosition(fromCodeUnit);
       const toPos = resolvePosition(toCodeUnit);
@@ -854,7 +866,9 @@ export function hitTestFromLayout(params: {
   };
 
   const caretX = (cursorOffsetInLine: number): number => {
-    return measureCaretXOnRow(cursorOffsetInLine) ?? approximateX(cursorOffsetInLine);
+    return (
+      measureCaretXOnRow(cursorOffsetInLine) ?? approximateX(cursorOffsetInLine)
+    );
   };
 
   // Check if the click is outside the row's horizontal bounds (i.e. in container padding).
@@ -910,15 +924,15 @@ export function hitTestFromLayout(params: {
     if (distA + DIST_EPS_PX < distB) {
       return candidateA;
     }
-	    // Near-ties: decide by midpoint between the two caret boundaries. This is
-	    // stable for narrow glyphs where subpixel jitter and integer mouse coords
-	    // would otherwise make left/right clicks ambiguous.
-	    const mid = (xA + xB) / 2;
-	    // Prefer the *earlier* boundary at an exact midpoint tie. This matches
-	    // typical editor caret behavior and avoids center-click instability across
-	    // engines for monospaced glyphs.
-	    return relativeX > mid ? candidateA : candidateB;
-	  })();
+    // Near-ties: decide by midpoint between the two caret boundaries. This is
+    // stable for narrow glyphs where subpixel jitter and integer mouse coords
+    // would otherwise make left/right clicks ambiguous.
+    const mid = (xA + xB) / 2;
+    // Prefer the *earlier* boundary at an exact midpoint tie. This matches
+    // typical editor caret behavior and avoids center-click instability across
+    // engines for monospaced glyphs.
+    return relativeX > mid ? candidateA : candidateB;
+  })();
 
   const endX = caretX(row.endOffset);
   // Normalize within runs of *source-only* offsets that collapse to the same DOM
@@ -940,7 +954,10 @@ export function hitTestFromLayout(params: {
       const COLLAPSE_EPS_PX = 0.25;
       while (closestOffset > row.startOffset) {
         const prev = closestOffset - 1;
-        const prevCodeUnit = cursorOffsetToCodeUnit(lineInfo.cursorToCodeUnit, prev);
+        const prevCodeUnit = cursorOffsetToCodeUnit(
+          lineInfo.cursorToCodeUnit,
+          prev,
+        );
         if (prevCodeUnit !== baseCodeUnit) {
           break;
         }

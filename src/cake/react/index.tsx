@@ -205,7 +205,10 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
         selectAll: () => {
           engineRef.current?.selectAll();
         },
-        executeCommand: (command: EditCommand, options?: { restoreFocus?: boolean }) => {
+        executeCommand: (
+          command: EditCommand,
+          options?: { restoreFocus?: boolean },
+        ) => {
           if (!engineRef.current) {
             return false;
           }
@@ -293,6 +296,7 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
           : null}
       </div>
     );
-});
+  },
+);
 
 CakeEditor.displayName = "CakeEditor";

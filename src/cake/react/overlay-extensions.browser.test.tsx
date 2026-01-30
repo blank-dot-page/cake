@@ -32,43 +32,47 @@ const helloInlineExtension: CakeExtension = (host) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    host.registerParseInline((source, start, end, context): ParseInlineResult => {
-      if (source[start] !== "[" || source[start + 1] !== "[") {
-        return null;
-      }
+    host.registerParseInline(
+      (source, start, end, context): ParseInlineResult => {
+        if (source[start] !== "[" || source[start + 1] !== "[") {
+          return null;
+        }
 
-      const labelStart = start + 2;
-      const labelClose = source.indexOf("]]", labelStart);
-      if (labelClose === -1 || labelClose >= end) {
-        return null;
-      }
+        const labelStart = start + 2;
+        const labelClose = source.indexOf("]]", labelStart);
+        if (labelClose === -1 || labelClose >= end) {
+          return null;
+        }
 
-      const children = context.parseInline(source, labelStart, labelClose);
-      return {
-        inline: {
-          type: "inline-wrapper",
-          kind: HELLO_KIND,
-          children,
-        },
-        nextPos: labelClose + 2,
-      };
-    }),
+        const children = context.parseInline(source, labelStart, labelClose);
+        return {
+          inline: {
+            type: "inline-wrapper",
+            kind: HELLO_KIND,
+            children,
+          },
+          nextPos: labelClose + 2,
+        };
+      },
+    ),
   );
 
   disposers.push(
-    host.registerSerializeInline((inline, context): SerializeInlineResult | null => {
-      if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
-        return null;
-      }
+    host.registerSerializeInline(
+      (inline, context): SerializeInlineResult | null => {
+        if (inline.type !== "inline-wrapper" || inline.kind !== HELLO_KIND) {
+          return null;
+        }
 
-      const builder = new CursorSourceBuilder();
-      builder.appendSourceOnly("[[");
-      for (const child of inline.children) {
-        builder.appendSerialized(context.serializeInline(child));
-      }
-      builder.appendSourceOnly("]]");
-      return builder.build();
-    }),
+        const builder = new CursorSourceBuilder();
+        builder.appendSourceOnly("[[");
+        for (const child of inline.children) {
+          builder.appendSerialized(context.serializeInline(child));
+        }
+        builder.appendSourceOnly("]]");
+        return builder.build();
+      },
+    ),
   );
 
   disposers.push(
@@ -100,7 +104,11 @@ const helloInlineExtension: CakeExtension = (host) => {
 
   disposers.push(host.registerUI(HelloPopoverUI));
 
-  return () => disposers.splice(0).reverse().forEach((d) => d());
+  return () =>
+    disposers
+      .splice(0)
+      .reverse()
+      .forEach((d) => d());
 };
 
 function HelloPopoverUI({ editor }: { editor: CakeEditorUI }) {

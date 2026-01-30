@@ -166,7 +166,9 @@ describe("CakeEditor (browser)", () => {
     });
     container.dispatchEvent(event);
 
-    expect(contentRoot.querySelector("grammarly-extension[data-test='1']")).not.toBeNull();
+    expect(
+      contentRoot.querySelector("grammarly-extension[data-test='1']"),
+    ).not.toBeNull();
 
     engine.destroy();
   });
@@ -194,7 +196,9 @@ describe("CakeEditor (browser)", () => {
       value: "",
     });
 
-    expect(container.querySelector("grammarly-extension[data-test='1']")).not.toBeNull();
+    expect(
+      container.querySelector("grammarly-extension[data-test='1']"),
+    ).not.toBeNull();
 
     engine.destroy();
   });

@@ -11,5 +11,10 @@
     "types": []
   },
   "include": ["src"],
-  "exclude": ["**/*.test.ts", "**/*.test.tsx", "**/*.browser.test.ts", "**/*.browser.test.tsx"]
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.browser.test.ts",
+    "**/*.browser.test.tsx"
+  ]
 }

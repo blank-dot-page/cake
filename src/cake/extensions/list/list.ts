@@ -1103,51 +1103,63 @@ export const plainTextListExtension: CakeExtension = (host) => {
   );
 
   disposers.push(
-    host.registerBlockRenderer((block: Block, context: DomRenderContext): Node | null => {
-      if (block.type !== "paragraph") {
-        return null;
-      }
+    host.registerBlockRenderer(
+      (block: Block, context: DomRenderContext): Node | null => {
+        if (block.type !== "paragraph") {
+          return null;
+        }
 
-      const text = getParagraphText(block);
-      if (!text) {
-        return null;
-      }
+        const text = getParagraphText(block);
+        if (!text) {
+          return null;
+        }
 
-      const listMatch = matchListLine(text);
-      if (!listMatch) {
-        return null;
-      }
+        const listMatch = matchListLine(text);
+        if (!listMatch) {
+          return null;
+        }
 
-      const element = document.createElement("div");
-      element.setAttribute("data-line-index", String(context.getLineIndex()));
-      element.classList.add("cake-line", "is-list");
-      context.incrementLineIndex();
+        const element = document.createElement("div");
+        element.setAttribute("data-line-index", String(context.getLineIndex()));
+        element.classList.add("cake-line", "is-list");
+        context.incrementLineIndex();
 
-      const indentLevel = Math.floor(listMatch.indent.length / 2);
-      if (indentLevel > 0) {
-        element.style.setProperty("--cake-list-indent", `${indentLevel * 2}ch`);
-      }
+        const indentLevel = Math.floor(listMatch.indent.length / 2);
+        if (indentLevel > 0) {
+          element.style.setProperty(
+            "--cake-list-indent",
+            `${indentLevel * 2}ch`,
+          );
+        }
 
-      const markerPrefix = `${listMatch.marker}${listMatch.space}`;
-      element.style.setProperty("--cake-list-marker", `${markerPrefix.length}ch`);
+        const markerPrefix = `${listMatch.marker}${listMatch.space}`;
+        element.style.setProperty(
+          "--cake-list-marker",
+          `${markerPrefix.length}ch`,
+        );
 
-      if (block.content.length === 0) {
-        const textNode = document.createTextNode("");
-        context.createTextRun(textNode);
-        element.append(textNode);
-        element.append(document.createElement("br"));
-      } else {
-        const mergedContent = mergeInlineForRender(block.content);
-        for (const inline of mergedContent) {
-          for (const node of context.renderInline(inline)) {
-            element.append(node);
+        if (block.content.length === 0) {
+          const textNode = document.createTextNode("");
+          context.createTextRun(textNode);
+          element.append(textNode);
+          element.append(document.createElement("br"));
+        } else {
+          const mergedContent = mergeInlineForRender(block.content);
+          for (const inline of mergedContent) {
+            for (const node of context.renderInline(inline)) {
+              element.append(node);
+            }
           }
         }
-      }
 
-      return element;
-    }),
+        return element;
+      },
+    ),
   );
 
-  return () => disposers.splice(0).reverse().forEach((d) => d());
+  return () =>
+    disposers
+      .splice(0)
+      .reverse()
+      .forEach((d) => d());
 };

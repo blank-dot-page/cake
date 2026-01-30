@@ -292,7 +292,11 @@ export function moveSelectionVertically(params: {
               end: hit.cursorOffset,
               affinity: normalizedAffinity,
             }
-          : { start: anchor, end: hit.cursorOffset, affinity: normalizedAffinity };
+          : {
+              start: anchor,
+              end: hit.cursorOffset,
+              affinity: normalizedAffinity,
+            };
       return { selection: nextSelection, goalX };
     }
   }

@@ -58,7 +58,9 @@ describe("Cake formatting parity (browser)", () => {
 
     expect(h.engine.getValue()).toBe("**bold**");
     expect(h.getLine(0).textContent ?? "").toBe("bold");
-    expect(h.getLine(0).querySelector("strong")?.textContent ?? "").toBe("bold");
+    expect(h.getLine(0).querySelector("strong")?.textContent ?? "").toBe(
+      "bold",
+    );
     expect(h.getLine(0).querySelector("em")).toBeNull();
 
     await h.pressKey("i", mod);

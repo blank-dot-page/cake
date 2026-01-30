@@ -381,12 +381,16 @@ export function createTestHarness(
     return lineLayout.rows.map((row) => {
       // Use actual character positions for left/right bounds
       const startCharOffset = row.startOffset;
-      const endCharOffset = row.endOffset > row.startOffset ? row.endOffset - 1 : row.startOffset;
+      const endCharOffset =
+        row.endOffset > row.startOffset ? row.endOffset - 1 : row.startOffset;
 
       // Measure first character's left position
       let left = row.rect.left + containerRect.left;
       try {
-        const firstCharRect = getCharRect(lineLayout.lineStartOffset + startCharOffset, lineIndex);
+        const firstCharRect = getCharRect(
+          lineLayout.lineStartOffset + startCharOffset,
+          lineIndex,
+        );
         left = firstCharRect.left;
       } catch {
         // Fall back to layout model rect if char measurement fails
@@ -395,7 +399,10 @@ export function createTestHarness(
       // Measure last character's right position
       let right = row.rect.left + row.rect.width + containerRect.left;
       try {
-        const lastCharRect = getCharRect(lineLayout.lineStartOffset + endCharOffset, lineIndex);
+        const lastCharRect = getCharRect(
+          lineLayout.lineStartOffset + endCharOffset,
+          lineIndex,
+        );
         right = lastCharRect.right;
       } catch {
         // Fall back to layout model rect if char measurement fails
@@ -403,9 +410,8 @@ export function createTestHarness(
 
       // Note: Layout model endOffset is exclusive, but old harness used inclusive.
       // Convert to inclusive by subtracting 1 (unless it's an empty row).
-      const inclusiveEndOffset = row.endOffset > row.startOffset
-        ? row.endOffset - 1
-        : row.startOffset;
+      const inclusiveEndOffset =
+        row.endOffset > row.startOffset ? row.endOffset - 1 : row.startOffset;
 
       return {
         startOffset: lineLayout.lineStartOffset + row.startOffset,

@@ -215,7 +215,10 @@ export function getCaretRect(params: {
         let bestRect = backRects[backRects.length - 1];
         for (let i = 0; i < backRects.length; i += 1) {
           const rect = backRects[i];
-          if (rect.width > 0 && (bestRect.width === 0 || rect.top < bestRect.top)) {
+          if (
+            rect.width > 0 &&
+            (bestRect.width === 0 || rect.top < bestRect.top)
+          ) {
             bestRect = rect;
           }
         }
@@ -276,12 +279,17 @@ export function getCaretRect(params: {
           );
           const endPos = resolveDomPosition(
             lineElement,
-            cursorOffsetToDomOffset(lineInfo.cursorToCodeUnit, lineInfo.cursorLength),
+            cursorOffsetToDomOffset(
+              lineInfo.cursorToCodeUnit,
+              lineInfo.cursorLength,
+            ),
           );
           const lineRange = document.createRange();
           lineRange.setStart(startPos.node, startPos.offset);
           lineRange.setEnd(endPos.node, endPos.offset);
-          const rowRects = groupDomRectsByRow(Array.from(lineRange.getClientRects()));
+          const rowRects = groupDomRectsByRow(
+            Array.from(lineRange.getClientRects()),
+          );
           // Pick the closest row strictly above the next-row top.
           const ROW_EPS_PX = 1;
           let previousRow: DOMRect | null = null;
@@ -340,12 +348,17 @@ export function getCaretRect(params: {
       );
       const endPos = resolveDomPosition(
         lineElement,
-        cursorOffsetToDomOffset(lineInfo.cursorToCodeUnit, lineInfo.cursorLength),
+        cursorOffsetToDomOffset(
+          lineInfo.cursorToCodeUnit,
+          lineInfo.cursorLength,
+        ),
       );
       const lineRange = document.createRange();
       lineRange.setStart(startPos.node, startPos.offset);
       lineRange.setEnd(endPos.node, endPos.offset);
-      const rowRects = groupDomRectsByRow(Array.from(lineRange.getClientRects()));
+      const rowRects = groupDomRectsByRow(
+        Array.from(lineRange.getClientRects()),
+      );
       const ROW_EPS_PX = 1;
       let previousRow: DOMRect | null = null;
       for (const rowRect of rowRects) {

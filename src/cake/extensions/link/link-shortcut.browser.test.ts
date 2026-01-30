@@ -26,8 +26,12 @@ describe("link shortcut (Cmd+Shift+U)", () => {
       renderOverlays: true,
     });
     // Wait for React to commit overlay effects
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
 
     harness.engine.setSelection({ start: 6, end: 11, affinity: "forward" });
     await harness.focus();
@@ -37,7 +41,11 @@ describe("link shortcut (Cmd+Shift+U)", () => {
 
     // Popover opens after the engine schedules it on the next animation frame
     // and React commits the state update. Use expect.poll for retry.
-    await expect.poll(() => document.querySelector(".cake-link-popover")).not.toBeNull();
-    await expect.poll(() => document.querySelector(".cake-link-input")).not.toBeNull();
+    await expect
+      .poll(() => document.querySelector(".cake-link-popover"))
+      .not.toBeNull();
+    await expect
+      .poll(() => document.querySelector(".cake-link-input"))
+      .not.toBeNull();
   });
 });

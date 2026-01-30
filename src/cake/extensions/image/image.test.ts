@@ -170,7 +170,10 @@ describe("image extension", () => {
     test("normalizes images produced by parsing", () => {
       const runtime = createRuntime([imageExtension]);
       const state = runtime.createState("![alt](url)");
-      expect(state.doc.blocks[0]).toMatchObject({ type: "block-atom", kind: "image" });
+      expect(state.doc.blocks[0]).toMatchObject({
+        type: "block-atom",
+        kind: "image",
+      });
     });
   });
 });

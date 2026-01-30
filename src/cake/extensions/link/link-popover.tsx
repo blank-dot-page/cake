@@ -55,15 +55,18 @@ export function CakeLinkPopover({ editor }: { editor: CakeEditorUI }) {
   if (!contentRoot) {
     return null;
   }
-  const toOverlayRect = useCallback((rect: DOMRectReadOnly) => {
-    const containerRect = container.getBoundingClientRect();
-    return {
-      top: rect.top - containerRect.top,
-      left: rect.left - containerRect.left,
-      width: rect.width,
-      height: rect.height,
-    };
-  }, [container]);
+  const toOverlayRect = useCallback(
+    (rect: DOMRectReadOnly) => {
+      const containerRect = container.getBoundingClientRect();
+      return {
+        top: rect.top - containerRect.top,
+        left: rect.left - containerRect.left,
+        width: rect.width,
+        height: rect.height,
+      };
+    },
+    [container],
+  );
   const getSelection = useCallback(() => {
     const selection = editor.getSelection();
     const focus =
@@ -266,7 +269,11 @@ export function CakeLinkPopover({ editor }: { editor: CakeEditorUI }) {
       close();
       return;
     }
-    executeCommand({ type: "unlink", start: selection.start, end: selection.end });
+    executeCommand({
+      type: "unlink",
+      start: selection.start,
+      end: selection.end,
+    });
     close();
   };
 

@@ -255,5 +255,4 @@ describe("underline toggle command", () => {
 
     expect(engine.getValue()).toBe("hello<u> world</u>");
   });
-
 });

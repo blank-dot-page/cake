@@ -30,4 +30,3 @@ describe("heading extension Enter behavior", () => {
     expect(harness.getLineCount()).toBe(2);
   });
 });
-

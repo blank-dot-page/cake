@@ -33,21 +33,21 @@ function getPlaceholder(): HTMLElement | null {
   return document.querySelector<HTMLElement>(".cake-placeholder");
 }
 
-	describe("cake placeholder", () => {
-	  it("renders placeholder when value is empty and placeholder is non-empty", async () => {
-	    await renderEditor({ value: "", placeholder: "Start writing..." });
-	    const placeholder = getPlaceholder();
-	    expect(placeholder).not.toBeNull();
-	    expect(placeholder?.textContent).toBe("Start writing...");
-	  });
+describe("cake placeholder", () => {
+  it("renders placeholder when value is empty and placeholder is non-empty", async () => {
+    await renderEditor({ value: "", placeholder: "Start writing..." });
+    const placeholder = getPlaceholder();
+    expect(placeholder).not.toBeNull();
+    expect(placeholder?.textContent).toBe("Start writing...");
+  });
 
-	  it("does not render placeholder when placeholder is empty", async () => {
-	    await renderEditor({ value: "", placeholder: "" });
-	    expect(getPlaceholder()).toBeNull();
-	  });
+  it("does not render placeholder when placeholder is empty", async () => {
+    await renderEditor({ value: "", placeholder: "" });
+    expect(getPlaceholder()).toBeNull();
+  });
 
-	  it("does not render placeholder when value is non-empty", async () => {
-	    await renderEditor({ value: "hello", placeholder: "Start writing..." });
-	    expect(getPlaceholder()).toBeNull();
-	  });
-	});
+  it("does not render placeholder when value is non-empty", async () => {
+    await renderEditor({ value: "hello", placeholder: "Start writing..." });
+    expect(getPlaceholder()).toBeNull();
+  });
+});

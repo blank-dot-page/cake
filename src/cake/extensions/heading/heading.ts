@@ -229,7 +229,10 @@ function handleToggleHeading(
     // Line is not a heading - add the heading marker
     const newMarker = "#".repeat(targetLevel) + " ";
     newSource =
-      source.slice(0, lineStart) + newMarker + lineContent + source.slice(lineEnd);
+      source.slice(0, lineStart) +
+      newMarker +
+      lineContent +
+      source.slice(lineEnd);
 
     // Cursor moves forward by marker length
     newCursorOffset = sourcePos + newMarker.length;
@@ -254,187 +257,198 @@ export const headingExtension: CakeExtension = (host) => {
 
   disposers.push(
     host.registerOnEdit((command, state) => {
-    // Handle semantic toggle-heading command
-    if (command.type === "toggle-heading") {
-      const level = command.level ?? 1;
-      return handleToggleHeading(state, level);
-    }
-
-    if (command.type === "delete-backward") {
-      return handleDeleteBackward(state);
-    }
-
-    if (command.type === "insert-line-break") {
-      if (shouldExitHeadingOnLineBreak(state)) {
-        return { type: "exit-block-wrapper" };
+      // Handle semantic toggle-heading command
+      if (command.type === "toggle-heading") {
+        const level = command.level ?? 1;
+        return handleToggleHeading(state, level);
       }
-      return null;
-    }
 
-    if (command.type === "insert") {
-      const multiline = handleMultilineInsertInHeading(state, command.text);
-      if (multiline) {
-        return multiline;
+      if (command.type === "delete-backward") {
+        return handleDeleteBackward(state);
       }
-    }
 
-    // Autoformat: typing a space after 1-3 leading hashes at the start of a
-    // paragraph line converts it into a heading (v1 parity).
-    //
-    // This is implemented in the extension (not core) by taking over the insert
-    // and returning a new source string, which the runtime re-parses to produce
-    // a heading block-wrapper.
-    if (command.type !== "insert" || command.text !== " ") {
-      return null;
-    }
+      if (command.type === "insert-line-break") {
+        if (shouldExitHeadingOnLineBreak(state)) {
+          return { type: "exit-block-wrapper" };
+        }
+        return null;
+      }
 
-    const { source, selection, map } = state;
-    if (selection.start !== selection.end) {
-      return null;
-    }
+      if (command.type === "insert") {
+        const multiline = handleMultilineInsertInHeading(state, command.text);
+        if (multiline) {
+          return multiline;
+        }
+      }
 
-    const cursorPos = selection.start;
-    const sourcePos = map.cursorToSource(
-      cursorPos,
-      selection.affinity ?? "forward",
-    );
-    const lineStart = findLineStartInSource(source, sourcePos);
-    const prefix = source.slice(lineStart, sourcePos);
-    if (!prefix || prefix.length > 3) {
-      return null;
-    }
-    if (!/^[#]+$/.test(prefix)) {
-      return null;
-    }
+      // Autoformat: typing a space after 1-3 leading hashes at the start of a
+      // paragraph line converts it into a heading (v1 parity).
+      //
+      // This is implemented in the extension (not core) by taking over the insert
+      // and returning a new source string, which the runtime re-parses to produce
+      // a heading block-wrapper.
+      if (command.type !== "insert" || command.text !== " ") {
+        return null;
+      }
 
-    // Only convert when we're immediately after the leading hashes.
-    if (sourcePos !== lineStart + prefix.length) {
-      return null;
-    }
+      const { source, selection, map } = state;
+      if (selection.start !== selection.end) {
+        return null;
+      }
 
-    const nextSource =
-      source.slice(0, sourcePos) + " " + source.slice(sourcePos);
-    const lineStartCursor = cursorPos - prefix.length;
+      const cursorPos = selection.start;
+      const sourcePos = map.cursorToSource(
+        cursorPos,
+        selection.affinity ?? "forward",
+      );
+      const lineStart = findLineStartInSource(source, sourcePos);
+      const prefix = source.slice(lineStart, sourcePos);
+      if (!prefix || prefix.length > 3) {
+        return null;
+      }
+      if (!/^[#]+$/.test(prefix)) {
+        return null;
+      }
 
-    return {
-      source: nextSource,
-      selection: {
-        start: lineStartCursor,
-        end: lineStartCursor,
-        affinity: "forward",
-      },
-    };
+      // Only convert when we're immediately after the leading hashes.
+      if (sourcePos !== lineStart + prefix.length) {
+        return null;
+      }
+
+      const nextSource =
+        source.slice(0, sourcePos) + " " + source.slice(sourcePos);
+      const lineStartCursor = cursorPos - prefix.length;
+
+      return {
+        source: nextSource,
+        selection: {
+          start: lineStartCursor,
+          end: lineStartCursor,
+          affinity: "forward",
+        },
+      };
     }),
   );
 
   disposers.push(
     host.registerParseBlock((source, start, context): ParseBlockResult => {
-    let lineEnd = source.indexOf("\n", start);
-    if (lineEnd === -1) {
-      lineEnd = source.length;
-    }
+      let lineEnd = source.indexOf("\n", start);
+      if (lineEnd === -1) {
+        lineEnd = source.length;
+      }
 
-    let pos = start;
-    let level = 0;
-    while (pos < lineEnd && source[pos] === "#" && level < 3) {
-      level += 1;
-      pos += 1;
-    }
+      let pos = start;
+      let level = 0;
+      while (pos < lineEnd && source[pos] === "#" && level < 3) {
+        level += 1;
+        pos += 1;
+      }
 
-    if (level === 0 || pos >= lineEnd || source[pos] !== " ") {
-      return null;
-    }
+      if (level === 0 || pos >= lineEnd || source[pos] !== " ") {
+        return null;
+      }
 
-    const contentStart = pos + 1;
-    const content = context.parseInline(source, contentStart, lineEnd);
-    const paragraph: Block = { type: "paragraph", content };
+      const contentStart = pos + 1;
+      const content = context.parseInline(source, contentStart, lineEnd);
+      const paragraph: Block = { type: "paragraph", content };
 
-    return {
-      block: {
-        type: "block-wrapper",
-        kind: HEADING_KIND,
-        blocks: [paragraph],
-        data: { level } satisfies HeadingData,
-      },
-      nextPos: lineEnd,
-    };
+      return {
+        block: {
+          type: "block-wrapper",
+          kind: HEADING_KIND,
+          blocks: [paragraph],
+          data: { level } satisfies HeadingData,
+        },
+        nextPos: lineEnd,
+      };
     }),
   );
 
   disposers.push(
-    host.registerSerializeBlock((block, context): SerializeBlockResult | null => {
-    if (block.type !== "block-wrapper" || block.kind !== HEADING_KIND) {
-      return null;
-    }
+    host.registerSerializeBlock(
+      (block, context): SerializeBlockResult | null => {
+        if (block.type !== "block-wrapper" || block.kind !== HEADING_KIND) {
+          return null;
+        }
 
-    const level = typeof block.data?.level === "number" ? block.data.level : 1;
-    const normalizedLevel = Math.max(1, Math.min(3, level));
-    const marker = `${"#".repeat(normalizedLevel)} `;
-    const builder = new CursorSourceBuilder();
-    builder.appendSourceOnly(marker);
-    const paragraph = block.blocks[0];
-    if (paragraph) {
-      builder.appendSerialized(context.serializeBlock(paragraph));
-    }
-    return builder.build();
-    }),
+        const level =
+          typeof block.data?.level === "number" ? block.data.level : 1;
+        const normalizedLevel = Math.max(1, Math.min(3, level));
+        const marker = `${"#".repeat(normalizedLevel)} `;
+        const builder = new CursorSourceBuilder();
+        builder.appendSourceOnly(marker);
+        const paragraph = block.blocks[0];
+        if (paragraph) {
+          builder.appendSerialized(context.serializeBlock(paragraph));
+        }
+        return builder.build();
+      },
+    ),
   );
 
   disposers.push(
     host.registerNormalizeBlock((block): Block | null => {
-    if (block.type !== "block-wrapper" || block.kind !== HEADING_KIND) {
+      if (block.type !== "block-wrapper" || block.kind !== HEADING_KIND) {
+        return block;
+      }
+
+      if (block.blocks.length === 0) {
+        return {
+          ...block,
+          blocks: [{ type: "paragraph", content: [] }],
+        };
+      }
+
       return block;
-    }
-
-    if (block.blocks.length === 0) {
-      return {
-        ...block,
-        blocks: [{ type: "paragraph", content: [] }],
-      };
-    }
-
-    return block;
     }),
   );
 
   disposers.push(
     host.registerBlockRenderer((block, context) => {
-    if (block.type !== "block-wrapper" || block.kind !== HEADING_KIND) {
-      return null;
-    }
-
-    const level = typeof block.data?.level === "number" ? block.data.level : 1;
-    const normalizedLevel = Math.max(1, Math.min(3, level));
-    const lineElement = document.createElement("div");
-    lineElement.setAttribute("data-line-index", String(context.getLineIndex()));
-    lineElement.classList.add(
-      "cake-line",
-      "is-heading",
-      `is-heading-${normalizedLevel}`,
-    );
-    context.incrementLineIndex();
-
-    const paragraph = block.blocks[0];
-    if (paragraph?.type === "paragraph" && paragraph.content.length > 0) {
-      lineElement.removeAttribute("aria-placeholder");
-      const mergedContent = mergeInlineForRender(paragraph.content);
-      for (const inline of mergedContent) {
-        for (const node of context.renderInline(inline)) {
-          lineElement.append(node);
-        }
+      if (block.type !== "block-wrapper" || block.kind !== HEADING_KIND) {
+        return null;
       }
-    } else {
+
+      const level =
+        typeof block.data?.level === "number" ? block.data.level : 1;
+      const normalizedLevel = Math.max(1, Math.min(3, level));
+      const lineElement = document.createElement("div");
       lineElement.setAttribute(
-        "aria-placeholder",
-        `Heading ${normalizedLevel}`,
+        "data-line-index",
+        String(context.getLineIndex()),
       );
-      const node = document.createTextNode("");
-      context.createTextRun(node);
-      lineElement.append(node);
-    }
-    return lineElement;
+      lineElement.classList.add(
+        "cake-line",
+        "is-heading",
+        `is-heading-${normalizedLevel}`,
+      );
+      context.incrementLineIndex();
+
+      const paragraph = block.blocks[0];
+      if (paragraph?.type === "paragraph" && paragraph.content.length > 0) {
+        lineElement.removeAttribute("aria-placeholder");
+        const mergedContent = mergeInlineForRender(paragraph.content);
+        for (const inline of mergedContent) {
+          for (const node of context.renderInline(inline)) {
+            lineElement.append(node);
+          }
+        }
+      } else {
+        lineElement.setAttribute(
+          "aria-placeholder",
+          `Heading ${normalizedLevel}`,
+        );
+        const node = document.createTextNode("");
+        context.createTextRun(node);
+        lineElement.append(node);
+      }
+      return lineElement;
     }),
   );
 
-  return () => disposers.splice(0).reverse().forEach((d) => d());
+  return () =>
+    disposers
+      .splice(0)
+      .reverse()
+      .forEach((d) => d());
 };

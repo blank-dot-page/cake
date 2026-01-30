@@ -164,7 +164,9 @@ describe("Layout measurement with variable-width fonts", () => {
       );
       expect(measured.startOffset).toBe(actual.startOffset);
       // Allow endOffset to be off by 1 due to how we count
-      expect(Math.abs(measured.endOffset - actual.endOffset)).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(measured.endOffset - actual.endOffset),
+      ).toBeLessThanOrEqual(1);
     }
   });
 

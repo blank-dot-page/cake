@@ -38,7 +38,9 @@ export const underlineExtension: CakeExtension = (host) => {
     ]),
   );
   disposers.push(
-    host.registerInlineWrapperAffinity([{ kind: UNDERLINE_KIND, inclusive: true }]),
+    host.registerInlineWrapperAffinity([
+      { kind: UNDERLINE_KIND, inclusive: true },
+    ]),
   );
   disposers.push(
     host.registerOnEdit((command) => {
@@ -49,42 +51,49 @@ export const underlineExtension: CakeExtension = (host) => {
     }),
   );
   disposers.push(
-    host.registerParseInline((source, start, end, context): ParseInlineResult => {
-      if (source.slice(start, start + 3) !== "<u>") {
-        return null;
-      }
+    host.registerParseInline(
+      (source, start, end, context): ParseInlineResult => {
+        if (source.slice(start, start + 3) !== "<u>") {
+          return null;
+        }
 
-      const close = source.indexOf("</u>", start + 3);
-      if (close === -1 || close >= end) {
-        return null;
-      }
+        const close = source.indexOf("</u>", start + 3);
+        if (close === -1 || close >= end) {
+          return null;
+        }
 
-      const children = context.parseInline(source, start + 3, close);
-      return {
-        inline: {
-          type: "inline-wrapper",
-          kind: UNDERLINE_KIND,
-          children,
-        },
-        nextPos: close + 4,
-      };
-    }),
+        const children = context.parseInline(source, start + 3, close);
+        return {
+          inline: {
+            type: "inline-wrapper",
+            kind: UNDERLINE_KIND,
+            children,
+          },
+          nextPos: close + 4,
+        };
+      },
+    ),
   );
   disposers.push(
-    host.registerSerializeInline((inline, context): SerializeInlineResult | null => {
-      if (inline.type !== "inline-wrapper" || inline.kind !== UNDERLINE_KIND) {
-        return null;
-      }
+    host.registerSerializeInline(
+      (inline, context): SerializeInlineResult | null => {
+        if (
+          inline.type !== "inline-wrapper" ||
+          inline.kind !== UNDERLINE_KIND
+        ) {
+          return null;
+        }
 
-      const builder = new CursorSourceBuilder();
-      builder.appendSourceOnly("<u>");
-      for (const child of inline.children) {
-        const serialized = context.serializeInline(child);
-        builder.appendSerialized(serialized);
-      }
-      builder.appendSourceOnly("</u>");
-      return builder.build();
-    }),
+        const builder = new CursorSourceBuilder();
+        builder.appendSourceOnly("<u>");
+        for (const child of inline.children) {
+          const serialized = context.serializeInline(child);
+          builder.appendSerialized(serialized);
+        }
+        builder.appendSourceOnly("</u>");
+        return builder.build();
+      },
+    ),
   );
   disposers.push(
     host.registerNormalizeInline((inline): Inline | null => {
@@ -116,5 +125,9 @@ export const underlineExtension: CakeExtension = (host) => {
     }),
   );
 
-  return () => disposers.splice(0).reverse().forEach((d) => d());
+  return () =>
+    disposers
+      .splice(0)
+      .reverse()
+      .forEach((d) => d());
 };

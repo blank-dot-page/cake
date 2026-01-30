@@ -121,9 +121,9 @@ turndownService.addRule("taskList", {
 
     const hasCheckboxClass = Boolean(
       node.className &&
-        (node.className.includes("task") ||
-          node.className.includes("checkbox") ||
-          node.className.includes("todo")),
+      (node.className.includes("task") ||
+        node.className.includes("checkbox") ||
+        node.className.includes("todo")),
     );
 
     return hasCheckboxSymbols || hasCheckboxClass;

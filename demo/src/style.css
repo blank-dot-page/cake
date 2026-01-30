@@ -115,7 +115,9 @@ body {
   font-size: 13px;
   color: #121212;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .toolbarButton:hover:not(:disabled) {

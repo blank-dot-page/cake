@@ -1,4 +1,11 @@
-import type { Affinity, Block, Doc, Inline, ParagraphBlock, Selection } from "./types";
+import type {
+  Affinity,
+  Block,
+  Doc,
+  Inline,
+  ParagraphBlock,
+  Selection,
+} from "./types";
 import type { ComponentType } from "react";
 import {
   CursorSourceBuilder,
@@ -125,7 +132,10 @@ export type CakeEditorUI = {
   getSelection(): Selection;
   insertText(text: string): void;
   replaceText(oldText: string, newText: string): void;
-  executeCommand(command: EditCommand, options?: { restoreFocus?: boolean }): boolean;
+  executeCommand(
+    command: EditCommand,
+    options?: { restoreFocus?: boolean },
+  ): boolean;
 };
 
 export type CakeUIComponent = ComponentType<{ editor: CakeEditorUI }>;
@@ -154,10 +164,16 @@ export type CakeExtensionHost = {
     ) => ParseInlineResult,
   ): () => void;
   registerSerializeBlock(
-    fn: (block: Block, context: ExtensionContext) => SerializeBlockResult | null,
+    fn: (
+      block: Block,
+      context: ExtensionContext,
+    ) => SerializeBlockResult | null,
   ): () => void;
   registerSerializeInline(
-    fn: (inline: Inline, context: ExtensionContext) => SerializeInlineResult | null,
+    fn: (
+      inline: Inline,
+      context: ExtensionContext,
+    ) => SerializeInlineResult | null,
   ): () => void;
   registerNormalizeBlock(fn: (block: Block) => Block | null): () => void;
   registerNormalizeInline(fn: (inline: Inline) => Inline | null): () => void;
@@ -222,14 +238,20 @@ function removeFromArray<T>(arr: T[], value: T) {
   arr.splice(index, 1);
 }
 
-export function installExtensions(extensions: CakeExtension[]): InstalledExtensions {
+export function installExtensions(
+  extensions: CakeExtension[],
+): InstalledExtensions {
   const toggleMarkerToSpec = new Map<
     string,
     { kind: string; open: string; close: string }
   >();
   const inclusiveAtEndByKind = new Map<string, boolean>();
   const parseBlockFns: Array<
-    (source: string, start: number, context: ExtensionContext) => ParseBlockResult
+    (
+      source: string,
+      start: number,
+      context: ExtensionContext,
+    ) => ParseBlockResult
   > = [];
   const parseInlineFns: Array<
     (
@@ -248,7 +270,10 @@ export function installExtensions(extensions: CakeExtension[]): InstalledExtensi
   const normalizeBlockFns: Array<(block: Block) => Block | null> = [];
   const normalizeInlineFns: Array<(inline: Inline) => Inline | null> = [];
   const onEditFns: Array<
-    (command: EditCommand, state: RuntimeState) => EditResult | EditCommand | null
+    (
+      command: EditCommand,
+      state: RuntimeState,
+    ) => EditResult | EditCommand | null
   > = [];
   const onPasteTextFns: Array<
     (text: string, state: RuntimeState) => EditCommand | null
@@ -288,7 +313,11 @@ export function installExtensions(extensions: CakeExtension[]): InstalledExtensi
       return () => {
         for (const spec of added) {
           const current = toggleMarkerToSpec.get(spec.open);
-          if (current && current.kind === spec.kind && current.close === spec.close) {
+          if (
+            current &&
+            current.kind === spec.kind &&
+            current.close === spec.close
+          ) {
             toggleMarkerToSpec.delete(spec.open);
           }
         }
@@ -376,7 +405,10 @@ export function installExtensions(extensions: CakeExtension[]): InstalledExtensi
     onPasteText: onPasteTextFns,
     ui: { components: uiComponents },
     dispose: () => {
-      extensionDisposers.splice(0).reverse().forEach((d) => d());
+      extensionDisposers
+        .splice(0)
+        .reverse()
+        .forEach((d) => d());
     },
   };
 }
@@ -386,10 +418,17 @@ export function createRuntime(extensions: CakeExtension[]): Runtime {
 }
 
 function createRuntimeFromRegistry(registry: {
-  toggleMarkerToSpec: Map<string, { kind: string; open: string; close: string }>;
+  toggleMarkerToSpec: Map<
+    string,
+    { kind: string; open: string; close: string }
+  >;
   inclusiveAtEndByKind: Map<string, boolean>;
   parseBlockFns: Array<
-    (source: string, start: number, context: ExtensionContext) => ParseBlockResult
+    (
+      source: string,
+      start: number,
+      context: ExtensionContext,
+    ) => ParseBlockResult
   >;
   parseInlineFns: Array<
     (
@@ -408,7 +447,10 @@ function createRuntimeFromRegistry(registry: {
   normalizeBlockFns: Array<(block: Block) => Block | null>;
   normalizeInlineFns: Array<(inline: Inline) => Inline | null>;
   onEditFns: Array<
-    (command: EditCommand, state: RuntimeState) => EditResult | EditCommand | null
+    (
+      command: EditCommand,
+      state: RuntimeState,
+    ) => EditResult | EditCommand | null
   >;
   domInlineRenderers: DomInlineRenderer[];
   domBlockRenderers: DomBlockRenderer[];
@@ -762,7 +804,8 @@ function createRuntimeFromRegistry(registry: {
           );
 
           const range = { start: cursorStart, end: cursorEnd };
-          const fullDocReplace = range.start === 0 && range.end === cursorLength;
+          const fullDocReplace =
+            range.start === 0 && range.end === cursorLength;
           const from = fullDocReplace
             ? 0
             : state.map.cursorToSource(range.start, "backward");
@@ -775,8 +818,7 @@ function createRuntimeFromRegistry(registry: {
             Math.min(to, state.source.length),
           );
 
-          const insertText =
-            command.type === "insert" ? command.text : "\n";
+          const insertText = command.type === "insert" ? command.text : "\n";
           const nextSource =
             state.source.slice(0, fromClamped) +
             insertText +
@@ -953,10 +995,7 @@ function createRuntimeFromRegistry(registry: {
       endLoc.lineIndex > 0
     ) {
       const prevLine = lines[endLoc.lineIndex - 1];
-      if (
-        prevLine &&
-        !pathsEqual(prevLine.parentPath, endLine.parentPath)
-      ) {
+      if (prevLine && !pathsEqual(prevLine.parentPath, endLine.parentPath)) {
         const prevBlock = getBlockAtPath(doc.blocks, prevLine.path);
         const currentBlock = getBlockAtPath(doc.blocks, endLine.path);
         if (
@@ -1184,7 +1223,10 @@ function createRuntimeFromRegistry(registry: {
         const wrapperParentPath = wrapperInfo.path.slice(0, -1);
         const wrapperIndexInParent =
           wrapperInfo.path[wrapperInfo.path.length - 1] ?? 0;
-        const wrapperParentBlocks = getBlocksAtPath(doc.blocks, wrapperParentPath);
+        const wrapperParentBlocks = getBlocksAtPath(
+          doc.blocks,
+          wrapperParentPath,
+        );
 
         const nextWrapper: Block = {
           ...wrapperInfo.block,
@@ -1209,7 +1251,11 @@ function createRuntimeFromRegistry(registry: {
 
         const nextDoc: Doc = {
           ...doc,
-          blocks: updateBlocksAtPath(doc.blocks, wrapperParentPath, () => nextParentBlocks),
+          blocks: updateBlocksAtPath(
+            doc.blocks,
+            wrapperParentPath,
+            () => nextParentBlocks,
+          ),
         };
 
         const nextLines = flattenDocToLines(nextDoc);
@@ -1956,7 +2002,11 @@ function createRuntimeFromRegistry(registry: {
       return state;
     }
 
-    const { kind: markerKind, open: openMarker, close: closeMarker } = markerSpec;
+    const {
+      kind: markerKind,
+      open: openMarker,
+      close: closeMarker,
+    } = markerSpec;
     const openLen = openMarker.length;
     const closeLen = closeMarker.length;
 
@@ -2129,7 +2179,9 @@ function createRuntimeFromRegistry(registry: {
       const startInLine =
         lineIndex === startLoc.lineIndex ? startLoc.offsetInLine : 0;
       const endInLine =
-        lineIndex === endLoc.lineIndex ? endLoc.offsetInLine : line.cursorLength;
+        lineIndex === endLoc.lineIndex
+          ? endLoc.offsetInLine
+          : line.cursorLength;
       if (startInLine === endInLine) {
         continue;
       }
@@ -2387,7 +2439,11 @@ function createRuntimeFromRegistry(registry: {
     };
 
     const openList = (type: "ol" | "ul", indent: number) => {
-      if (activeList && activeList.type === type && activeList.indent === indent) {
+      if (
+        activeList &&
+        activeList.type === type &&
+        activeList.indent === indent
+      ) {
         return;
       }
       closeList();
@@ -2413,7 +2469,9 @@ function createRuntimeFromRegistry(registry: {
       const startInLine =
         lineIndex === startLoc.lineIndex ? startLoc.offsetInLine : 0;
       const endInLine =
-        lineIndex === endLoc.lineIndex ? endLoc.offsetInLine : line.cursorLength;
+        lineIndex === endLoc.lineIndex
+          ? endLoc.offsetInLine
+          : line.cursorLength;
 
       const selectedRuns = sliceRuns(runs, startInLine, endInLine).selected;
 
@@ -2437,8 +2495,13 @@ function createRuntimeFromRegistry(registry: {
       let lineHtml: string;
       if (listMatch && !wrapperKind) {
         // For list lines, only include the content after the prefix
-        const prefixLength = listMatch[1].length + listMatch[2].length + listMatch[3].length;
-        const contentRuns = sliceRuns(runs, prefixLength, runs.reduce((sum, r) => sum + r.text.length, 0)).selected;
+        const prefixLength =
+          listMatch[1].length + listMatch[2].length + listMatch[3].length;
+        const contentRuns = sliceRuns(
+          runs,
+          prefixLength,
+          runs.reduce((sum, r) => sum + r.text.length, 0),
+        ).selected;
         lineHtml = runsToHtml(normalizeRuns(contentRuns));
       } else {
         lineHtml = runsToHtml(normalizeRuns(selectedRuns));
@@ -2532,7 +2595,9 @@ function parseLiteralInline(
     if (lowCode >= 0xdc00 && lowCode <= 0xdfff) {
       // Valid surrogate pair - but might be part of a larger grapheme cluster (like emoji with skin tone)
       // Fall back to segmenter for these cases
-      const segment = graphemeSegments(source.slice(start, Math.min(start + 10, end)))[0];
+      const segment = graphemeSegments(
+        source.slice(start, Math.min(start + 10, end)),
+      )[0];
       const text = segment ? segment.segment : source.slice(start, start + 2);
       return { inline: { type: "text", text }, nextPos: start + text.length };
     }
@@ -2540,7 +2605,9 @@ function parseLiteralInline(
 
   // Other multi-byte UTF-8 characters (most are single grapheme clusters)
   // Use a small window for segmenter to avoid processing entire remaining text
-  const segment = graphemeSegments(source.slice(start, Math.min(start + 10, end)))[0];
+  const segment = graphemeSegments(
+    source.slice(start, Math.min(start + 10, end)),
+  )[0];
   const text = segment ? segment.segment : (source[start] ?? "");
   return { inline: { type: "text", text }, nextPos: start + text.length };
 }

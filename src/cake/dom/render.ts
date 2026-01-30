@@ -205,7 +205,8 @@ export function renderDocContent(
     mergedInlines.forEach((inline, i) => {
       const existingChild = existingChildren[i] ?? null;
       const canReuse =
-        existingChild && getInlineElementKey(existingChild) === getInlineKey(inline);
+        existingChild &&
+        getInlineElementKey(existingChild) === getInlineKey(inline);
       const nodes = reconcileInline(inline, canReuse ? existingChild : null);
       newChildren.push(...nodes);
     });
@@ -393,10 +394,7 @@ export function renderDocContent(
   return { content: contentNodes, map: createDomMap(runs) };
 }
 
-export function renderDoc(
-  doc: Doc,
-  dom: Runtime["dom"],
-): RenderResult {
+export function renderDoc(doc: Doc, dom: Runtime["dom"]): RenderResult {
   const root = document.createElement("div");
   root.className = "cake-content";
   root.setAttribute("contenteditable", "true");
