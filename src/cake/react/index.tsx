@@ -61,6 +61,15 @@ export interface CakeEditorRef {
   blur: () => void;
   hasFocus: () => boolean;
   selectAll: () => void;
+  getText: () => string;
+  getTextSelection: () => { start: number; end: number };
+  setTextSelection: (selection: { start: number; end: number }) => void;
+  getTextBeforeCursor: (maxChars?: number) => string;
+  getTextAroundCursor: (
+    before: number,
+    after: number,
+  ) => { before: string; after: string };
+  replaceTextBeforeCursor: (chars: number, replacement: string) => void;
   /**
    * Execute a semantic edit command.
    *
@@ -253,6 +262,22 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
             return null;
           }
           return { start: selection.start, end: selection.end };
+        },
+        getText: () => engineRef.current?.getText() ?? "",
+        getTextSelection: () =>
+          engineRef.current?.getTextSelection() ?? { start: 0, end: 0 },
+        setTextSelection: (selection: { start: number; end: number }) => {
+          engineRef.current?.setTextSelection(selection);
+        },
+        getTextBeforeCursor: (maxChars?: number) =>
+          engineRef.current?.getTextBeforeCursor(maxChars) ?? "",
+        getTextAroundCursor: (before: number, after: number) =>
+          engineRef.current?.getTextAroundCursor(before, after) ?? {
+            before: "",
+            after: "",
+          },
+        replaceTextBeforeCursor: (chars: number, replacement: string) => {
+          engineRef.current?.replaceTextBeforeCursor(chars, replacement);
         },
         getCursorLength: () => engineRef.current?.getCursorLength() ?? 0,
         insertText: (text: string) => {
