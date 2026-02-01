@@ -1,6 +1,8 @@
 # 🍰 Cake
 
-Cake is a small, extension-first, markdown-based editor toolkit. It’s designed
+> ⚠️ **Early Stage / Unstable**: This project is under active development and not ready for production use. The API will likely change. We use Cake in [blank.page](https://blank.page), but expect breaking changes as we iterate.
+
+Cake is a small, extension-first, markdown-based editor toolkit. It's designed
 to give you a reliable plain-text source of truth while still supporting rich
 behaviors (bold, links, lists, images, overlays) through extensions. The project
 includes a core runtime, a DOM/engine layer, and a thin React wrapper.
@@ -42,9 +44,12 @@ npm run build
 
 ## Demo
 
+The `demo/` directory contains a local development playground:
+
 ```bash
-npm --workspace demo install
-npm run demo
+cd demo
+npm install
+npm run dev
 ```
 
 ## Library usage

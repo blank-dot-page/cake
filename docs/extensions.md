@@ -148,6 +148,14 @@ export const boldExtension: CakeExtension = (editor) => {
 
 ## Example: React Extension with UI
 
+For extensions that need complex UI (popovers, pickers, dialogs), we recommend implementing them as React components from the start. The pattern is:
+
+1. Register a React component via `editor.registerUI()`
+2. Use `useEffect` to subscribe to editor state (content, selection)
+3. Manage all UI state and rendering inside the component
+
+This approach keeps UI logic self-contained and avoids mixing imperative DOM manipulation with React's declarative model. Non-React extensions work well for simpler features like keybindings, syntax parsing, or inline formatting toggles.
+
 An extension that mounts a React component for UI overlays:
 
 ```tsx
