@@ -204,7 +204,9 @@ describe("CakeEditor (browser)", () => {
   });
 
   it("exposes visible text and selection helpers", () => {
-    const h = createTestHarness("Hello **bold** [Link](https://example.com)\nNext");
+    const h = createTestHarness(
+      "Hello **bold** [Link](https://example.com)\nNext",
+    );
 
     expect(h.engine.getText()).toBe("Hello bold Link\nNext");
 

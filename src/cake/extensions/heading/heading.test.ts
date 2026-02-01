@@ -103,7 +103,10 @@ describe("heading extension", () => {
     });
 
     test("parses heading with italic content", () => {
-      const runtime = createRuntimeForTests([headingExtension, italicExtension]);
+      const runtime = createRuntimeForTests([
+        headingExtension,
+        italicExtension,
+      ]);
       const doc = runtime.parse("# _Italic_ Title");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0]).toMatchObject({

@@ -185,9 +185,11 @@ export class CakeEditor {
   private lastSelectionRects: SelectionRect[] | null = null;
   private onChangeOption?: EngineOptions["onChange"];
   private onSelectionChangeOption?: EngineOptions["onSelectionChange"];
-  private changeSubscribers: Array<(value: string, selection: Selection) => void> =
+  private changeSubscribers: Array<
+    (value: string, selection: Selection) => void
+  > = [];
+  private selectionChangeSubscribers: Array<(selection: Selection) => void> =
     [];
-  private selectionChangeSubscribers: Array<(selection: Selection) => void> = [];
   private readOnly: boolean;
   private spellCheckEnabled: boolean;
   private extensionsRoot: HTMLDivElement | null = null;
@@ -548,7 +550,10 @@ export class CakeEditor {
     const beforeLength = Math.max(0, before);
     const afterLength = Math.max(0, after);
     const beforeText = text.slice(Math.max(0, cursor - beforeLength), cursor);
-    const afterText = text.slice(cursor, Math.min(text.length, cursor + afterLength));
+    const afterText = text.slice(
+      cursor,
+      Math.min(text.length, cursor + afterLength),
+    );
     return { before: beforeText, after: afterText };
   }
 
@@ -621,7 +626,9 @@ export class CakeEditor {
     return this.uiComponents.slice();
   }
 
-  onChange(callback: (value: string, selection: Selection) => void): () => void {
+  onChange(
+    callback: (value: string, selection: Selection) => void,
+  ): () => void {
     this.changeSubscribers.push(callback);
     return () => {
       const index = this.changeSubscribers.indexOf(callback);

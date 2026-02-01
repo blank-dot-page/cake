@@ -1020,6 +1020,53 @@ describe("keyboard shortcuts for list toggle", () => {
   });
 });
 
+describe("selecting multiple lines with keyboard and typing dash", () => {
+  let harness: TestHarness | null = null;
+
+  afterEach(() => {
+    harness?.destroy();
+    harness = null;
+  });
+
+  test("selecting lines and typing dash creates list without affecting heading", async () => {
+    // Document: "# Hello\none\ntwo\nthree" (21 source chars)
+    // Cursor positions differ from source positions due to syntax markers.
+    // The "# " prefix is 2 chars but contributes 0 cursor positions (it's a marker).
+    // So cursorLength = 21 - 2 = 19
+    harness = createTestHarness("# Hello\none\ntwo\nthree");
+
+    // Verify document
+    expect(harness.engine.getValue()).toBe("# Hello\none\ntwo\nthree");
+
+    await harness.focus();
+
+    // Use selectAll to find the cursor length, then select from after the heading
+    harness.engine.selectAll();
+    const cursorLength = harness.selection.end;
+
+    // Select from after heading to end
+    // Heading "# Hello" takes cursor positions 0-5 (Hello), newline at 6
+    // So "one" starts at cursor position 6
+    harness.engine.setSelection({
+      start: 6,
+      end: cursorLength,
+      affinity: "forward",
+    });
+
+    // Verify selection does NOT include the heading (line 0)
+    // Selection should start at line 1 (the "one" line)
+    expect(harness.selection.start).toBe(6);
+    expect(harness.selection.end).toBe(cursorLength);
+
+    // Type dash to create bullet list
+    await userEvent.keyboard("-");
+
+    // The three lines (one, two, three) should become list items
+    // The heading should remain unchanged - this is the bug we're tracking
+    expect(harness.engine.getValue()).toBe("# Hello\n- one\n- two\n- three");
+  });
+});
+
 describe("list type conversion", () => {
   let harness: TestHarness | null = null;
 

@@ -3,6 +3,7 @@ import {
   type EditResult,
   type RuntimeState,
 } from "../../core/runtime";
+import type { CursorSourceMap } from "../../core/mapping/cursor-source-map";
 import type { Block, Selection } from "../../core/types";
 import type { DomRenderContext } from "../../dom/types";
 import { mergeInlineForRender } from "../../dom/render";
@@ -152,12 +153,17 @@ function applyListTransform(
 function getSelectionLineRange(
   source: string,
   selection: Selection,
+  map: CursorSourceMap,
 ): { startLine: number; endLine: number } {
-  const startInfo = getLineInfo(source, selection.start);
-  const endInfo = getLineInfo(
-    source,
-    Math.max(selection.start, selection.end - 1),
+  const startCursor = Math.min(selection.start, selection.end);
+  const endCursor = Math.max(selection.start, selection.end);
+  const startSource = map.cursorToSource(startCursor, "backward");
+  const endSource = map.cursorToSource(
+    Math.max(startCursor, endCursor - 1),
+    "forward",
   );
+  const startInfo = getLineInfo(source, startSource);
+  const endInfo = getLineInfo(source, endSource);
   return { startLine: startInfo.lineIndex, endLine: endInfo.lineIndex };
 }
 
@@ -595,8 +601,8 @@ function handleDeleteForward(state: RuntimeState): EditResult | null {
 }
 
 function handleIndent(state: RuntimeState): EditResult | null {
-  const { source, selection } = state;
-  const { startLine, endLine } = getSelectionLineRange(source, selection);
+  const { source, selection, map } = state;
+  const { startLine, endLine } = getSelectionLineRange(source, selection, map);
   const lines = getSourceLines(source);
 
   // Check if any line in selection is a list line
@@ -645,8 +651,8 @@ function handleIndent(state: RuntimeState): EditResult | null {
 }
 
 function handleOutdent(state: RuntimeState): EditResult | null {
-  const { source, selection } = state;
-  const { startLine, endLine } = getSelectionLineRange(source, selection);
+  const { source, selection, map } = state;
+  const { startLine, endLine } = getSelectionLineRange(source, selection, map);
   const lines = getSourceLines(source);
 
   // Check if any line in selection is a list line
@@ -755,8 +761,8 @@ function handleToggleList(
   state: RuntimeState,
   isBullet: boolean,
 ): EditResult | null {
-  const { source, selection } = state;
-  const { startLine, endLine } = getSelectionLineRange(source, selection);
+  const { source, selection, map } = state;
+  const { startLine, endLine } = getSelectionLineRange(source, selection, map);
   const lines = getSourceLines(source);
 
   const bulletPattern = /^(\s*)([-*+])( )/;
@@ -871,7 +877,7 @@ function handleInsertListMarkerWithSelection(
   state: RuntimeState,
   marker: string,
 ): EditResult | null {
-  const { source, selection } = state;
+  const { source, selection, map } = state;
 
   // Only handle when there's a selection
   if (selection.start === selection.end) {
@@ -883,7 +889,7 @@ function handleInsertListMarkerWithSelection(
     return null;
   }
 
-  const { startLine, endLine } = getSelectionLineRange(source, selection);
+  const { startLine, endLine } = getSelectionLineRange(source, selection, map);
   const lines = getSourceLines(source);
 
   // Only convert to list if selection covers full lines
@@ -899,10 +905,12 @@ function handleInsertListMarkerWithSelection(
 
   const selStart = Math.min(selection.start, selection.end);
   const selEnd = Math.max(selection.start, selection.end);
+  const selStartSource = map.cursorToSource(selStart, "backward");
+  const selEndSource = map.cursorToSource(selEnd, "forward");
 
   // Check if selection starts at line start and ends at line end
-  const startsAtLineStart = selStart === startLineOffset;
-  const endsAtLineEnd = selEnd === endLineOffset;
+  const startsAtLineStart = selStartSource === startLineOffset;
+  const endsAtLineEnd = selEndSource === endLineOffset;
 
   // For partial selections, don't convert to list - let default behavior handle it
   if (!startsAtLineStart || !endsAtLineEnd) {
@@ -953,13 +961,17 @@ function handleMarkerSwitch(
   state: RuntimeState,
   insertedChar: string,
 ): EditResult | ListCommand | null {
-  const { source, selection } = state;
+  const { source, selection, map } = state;
 
   // If there's a selection, try to convert lines to list
   if (selection.start !== selection.end) {
     // For multi-line selections, use toggle-bullet-list behavior (like Cmd+Shift+8)
     // which doesn't require exact line boundary alignment
-    const { startLine, endLine } = getSelectionLineRange(source, selection);
+    const { startLine, endLine } = getSelectionLineRange(
+      source,
+      selection,
+      map,
+    );
     if (
       startLine !== endLine &&
       (insertedChar === "-" || insertedChar === "*" || insertedChar === "+")
@@ -974,7 +986,11 @@ function handleMarkerSwitch(
   }
 
   const cursorPos = selection.start;
-  const lineInfo = getLineInfo(source, cursorPos);
+  const cursorSourcePos = map.cursorToSource(
+    cursorPos,
+    selection.affinity ?? "forward",
+  );
+  const lineInfo = getLineInfo(source, cursorSourcePos);
   const listMatch = matchListLine(lineInfo.line);
 
   if (!listMatch || listMatch.number !== null) {

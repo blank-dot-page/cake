@@ -36,7 +36,9 @@ export const linkExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
   disposers.push(
-    editor.registerInlineWrapperAffinity([{ kind: LINK_KIND, inclusive: false }]),
+    editor.registerInlineWrapperAffinity([
+      { kind: LINK_KIND, inclusive: false },
+    ]),
   );
   disposers.push(
     editor.registerKeybindings([

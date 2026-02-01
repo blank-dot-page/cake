@@ -25,7 +25,9 @@ export const boldExtension: CakeExtension = (editor) => {
     ]),
   );
   disposers.push(
-    editor.registerInlineWrapperAffinity([{ kind: BOLD_KIND, inclusive: true }]),
+    editor.registerInlineWrapperAffinity([
+      { kind: BOLD_KIND, inclusive: true },
+    ]),
   );
   disposers.push(
     editor.registerOnEdit((command) => {

@@ -115,7 +115,10 @@ describe("list extension", () => {
     });
 
     test("parses list with bold content as paragraph", () => {
-      const runtime = createRuntimeForTests([plainTextListExtension, boldExtension]);
+      const runtime = createRuntimeForTests([
+        plainTextListExtension,
+        boldExtension,
+      ]);
       const doc = runtime.parse("- **bold** item");
       expect(doc.blocks).toHaveLength(1);
       expect(doc.blocks[0].type).toBe("paragraph");
@@ -145,7 +148,10 @@ describe("list extension", () => {
     });
 
     test("round-trips list", () => {
-      const runtime = createRuntimeForTests([plainTextListExtension, boldExtension]);
+      const runtime = createRuntimeForTests([
+        plainTextListExtension,
+        boldExtension,
+      ]);
       const source = "- **bold** item";
       const doc = runtime.parse(source);
       const serialized = runtime.serialize(doc);

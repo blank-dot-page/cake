@@ -132,7 +132,6 @@ export type ToggleInlineSpec = {
   markers: Array<string | { open: string; close: string }>;
 };
 
-
 export type RuntimeState = {
   source: string;
   selection: Selection;

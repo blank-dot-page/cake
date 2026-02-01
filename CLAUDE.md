@@ -1,5 +1,20 @@
 # Cake Editor
 
+## Cursor vs Source vs Visible Text Positions
+
+Cake has three position systems:
+
+1. **Source positions**: Raw markdown character offsets (`getValue().length`)
+2. **Cursor positions**: What `getSelection()`/`setSelection()` use - excludes syntax markers like `# `, `- `, `**`
+3. **Visible text positions**: What `getTextSelection()`/`setTextSelection()` use - the rendered text the user sees
+
+When writing tests with `setSelection()`, use `selectAll()` to discover the cursor length:
+
+```typescript
+harness.engine.selectAll();
+const cursorLength = harness.selection.end; // Not getValue().length
+```
+
 ## Browser Test Screenshots
 
 When adding screenshots to browser tests, use `page.screenshot()` from `vitest/browser` and save to the `.vitest-screenshots/` directory at the project root:

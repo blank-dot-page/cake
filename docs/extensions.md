@@ -22,12 +22,12 @@ Each method returns an unregister function.
 ### Parsing & Serialization
 
 ```ts
-editor.registerParseBlock(fn)
-editor.registerParseInline(fn)
-editor.registerSerializeBlock(fn)
-editor.registerSerializeInline(fn)
-editor.registerNormalizeBlock(fn)
-editor.registerNormalizeInline(fn)
+editor.registerParseBlock(fn);
+editor.registerParseInline(fn);
+editor.registerSerializeBlock(fn);
+editor.registerSerializeInline(fn);
+editor.registerNormalizeBlock(fn);
+editor.registerNormalizeInline(fn);
 ```
 
 ### Edit Handling
@@ -41,8 +41,8 @@ editor.registerKeybindings([{ key, meta?, ctrl?, alt?, shift?, command }])
 ### Inline Formatting Helpers
 
 ```ts
-editor.registerToggleInline({ kind: "bold", markers: ["**"] })
-editor.registerInlineWrapperAffinity([{ kind: "bold", inclusive: true }])
+editor.registerToggleInline({ kind: "bold", markers: ["**"] });
+editor.registerInlineWrapperAffinity([{ kind: "bold", inclusive: true }]);
 ```
 
 ### DOM Rendering
@@ -55,7 +55,7 @@ editor.registerBlockRenderer((block, context) => Node | Node[] | null)
 ### UI Components
 
 ```ts
-editor.registerUI(MyComponent)
+editor.registerUI(MyComponent);
 ```
 
 ## Editor Methods
@@ -88,14 +88,14 @@ export const boldExtension: CakeExtension = (editor) => {
 
   // Register toggle helper for **bold** syntax
   disposers.push(
-    editor.registerToggleInline({ kind: "bold", markers: ["**"] })
+    editor.registerToggleInline({ kind: "bold", markers: ["**"] }),
   );
 
   // Register keyboard shortcut
   disposers.push(
     editor.registerKeybindings([
       { key: "b", meta: true, command: { type: "toggle-bold" } },
-    ])
+    ]),
   );
 
   // Handle the toggle-bold command
@@ -105,7 +105,7 @@ export const boldExtension: CakeExtension = (editor) => {
         return { type: "toggle-inline", marker: "**" } as EditCommand;
       }
       return null;
-    })
+    }),
   );
 
   // Parse **bold** syntax
@@ -123,7 +123,7 @@ export const boldExtension: CakeExtension = (editor) => {
         },
         nextPos: close + 2,
       };
-    })
+    }),
   );
 
   // Render bold as <strong>
@@ -139,7 +139,7 @@ export const boldExtension: CakeExtension = (editor) => {
         }
       }
       return el;
-    })
+    }),
   );
 
   return () => disposers.reverse().forEach((d) => d());
@@ -226,7 +226,7 @@ new CakeEditor({
 import { CakeEditor } from "../react";
 import { bundledExtensions } from "../extensions";
 
-<CakeEditor value={value} onChange={setValue} extensions={bundledExtensions} />
+<CakeEditor value={value} onChange={setValue} extensions={bundledExtensions} />;
 ```
 
 ## More Examples
