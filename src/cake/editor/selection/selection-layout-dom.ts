@@ -366,6 +366,7 @@ function measureLineRows(params: {
     const nextRowStart = findNextRowStartOffset(searchFrom, currentRowTop);
     const currentRowEnd = nextRowStart ?? params.lineLength;
     const domRect = rowRects[rowIndex] ?? params.lineRect;
+    const glyphRect = fullLineRects[rowIndex];
 
     rows.push({
       startOffset: currentRowStart,
@@ -375,6 +376,16 @@ function measureLineRows(params: {
         containerRect: params.containerRect,
         scroll: params.scroll,
       }),
+      glyphBand: glyphRect
+        ? {
+            top: glyphRect.top - params.containerRect.top + params.scroll.top,
+            bottom:
+              glyphRect.top +
+              glyphRect.height -
+              params.containerRect.top +
+              params.scroll.top,
+          }
+        : undefined,
     });
 
     if (nextRowStart === null) {
@@ -659,135 +670,35 @@ export function hitTestFromLayout(params: {
     return null;
   }
 
-  // Derive a vertical "glyph band" for each row by probing a small character
-  // range within that row. This captures line-height gaps that are NOT covered
-  // by the measured layout row rects in some engines.
-  const glyphBandsByRow = new Map<
-    LayoutRow,
-    { top: number; bottom: number }
-  >();
-  const resolverByLineIndex = new Map<number, ReturnType<typeof createDomPositionResolver>>();
-  const lineElementByLineIndex = new Map<number, HTMLElement>();
-  const scratchRange = document.createRange();
-
-  const getLineElementCached = (lineIndex: number): HTMLElement | null => {
-    const cached = lineElementByLineIndex.get(lineIndex) ?? null;
-    if (cached) {
-      return cached;
-    }
-    const element = getLineElement(root, lineIndex);
-    if (!element) {
-      return null;
-    }
-    lineElementByLineIndex.set(lineIndex, element);
-    return element;
-  };
-
-  const getResolverCached = (
-    lineIndex: number,
-    lineElement: HTMLElement,
-  ): ReturnType<typeof createDomPositionResolver> => {
-    const cached = resolverByLineIndex.get(lineIndex);
-    if (cached) {
-      return cached;
-    }
-    const resolver = createDomPositionResolver(lineElement);
-    resolverByLineIndex.set(lineIndex, resolver);
-    return resolver;
-  };
-
-  const measureGlyphBand = (rowInfo: (typeof allRows)[number]): {
-    top: number;
-    bottom: number;
-  } => {
-    const cached = glyphBandsByRow.get(rowInfo.row);
-    if (cached) {
-      return cached;
-    }
-
-    const lineInfo = lines[rowInfo.lineIndex];
-    const lineElement = getLineElementCached(rowInfo.lineIndex);
-    if (!lineInfo || !lineElement) {
-      const fallback = {
-        top: rowInfo.row.rect.top,
-        bottom: rowInfo.row.rect.top + rowInfo.row.rect.height,
-      };
-      glyphBandsByRow.set(rowInfo.row, fallback);
-      return fallback;
-    }
-
-    const resolvePosition = getResolverCached(rowInfo.lineIndex, lineElement);
-
-    const rowStart = rowInfo.row.startOffset;
-    const rowEnd = rowInfo.row.endOffset;
-
-    // Probe a handful of offsets to find a glyph rect with non-zero height.
-    const PROBE_LIMIT = 8;
-    for (
-      let offset = rowStart;
-      offset < rowEnd && offset < rowStart + PROBE_LIMIT;
-      offset += 1
-    ) {
-      const fromCodeUnit = cursorOffsetToCodeUnit(
-        lineInfo.cursorToCodeUnit,
-        offset,
-      );
-      const toCodeUnit = cursorOffsetToCodeUnit(
-        lineInfo.cursorToCodeUnit,
-        Math.min(offset + 1, lineInfo.cursorLength),
-      );
-      if (toCodeUnit === fromCodeUnit) {
-        continue;
-      }
-      const fromPos = resolvePosition(fromCodeUnit);
-      const toPos = resolvePosition(toCodeUnit);
-      scratchRange.setStart(fromPos.node, fromPos.offset);
-      scratchRange.setEnd(toPos.node, toPos.offset);
-
-      const rects = scratchRange.getClientRects();
-      const list = rects.length > 0 ? Array.from(rects) : [];
-      const rect = list.find((r) => r.height > 0 && r.width > 0) ?? null;
-      if (!rect) {
-        continue;
-      }
-      const top = rect.top - containerRect.top + scroll.top;
-      const bottom = rect.bottom - containerRect.top + scroll.top;
-      const band = { top, bottom };
-      glyphBandsByRow.set(rowInfo.row, band);
-      return band;
-    }
-
-    const fallback = {
+  // Choose the row whose glyph band is closest to the click Y. This properly
+  // handles line-height gaps: when clicking between rows, the click goes to
+  // the row whose glyphs are closer (not to the row whose clamped rect contains it).
+  let targetRowInfo = allRows[0];
+  const glyphBandDistance = (rowInfo: (typeof allRows)[number]): number => {
+    const band = rowInfo.row.glyphBand ?? {
       top: rowInfo.row.rect.top,
       bottom: rowInfo.row.rect.top + rowInfo.row.rect.height,
     };
-    glyphBandsByRow.set(rowInfo.row, fallback);
-    return fallback;
-  };
-
-  // Choose the row whose glyph band is vertically closest to the click.
-  // Tie-break to the upper row (matches existing "gap midpoint" expectations).
-  let targetRowInfo = allRows[0];
-  const bandDistance = (band: { top: number; bottom: number }): number => {
     if (relativeY < band.top) {
       return band.top - relativeY;
     }
     if (relativeY > band.bottom) {
       return relativeY - band.bottom;
     }
-    return 0;
+    return 0; // Click is inside the glyph band
   };
-  let smallestDistance = bandDistance(measureGlyphBand(targetRowInfo));
+  let smallestDistance = glyphBandDistance(targetRowInfo);
   const TIE_EPS_PX = 0.01;
   for (let i = 1; i < allRows.length; i++) {
     const rowInfo = allRows[i]!;
-    const distance = bandDistance(measureGlyphBand(rowInfo));
+    const distance = glyphBandDistance(rowInfo);
     if (distance + TIE_EPS_PX < smallestDistance) {
       smallestDistance = distance;
       targetRowInfo = rowInfo;
       continue;
     }
     if (Math.abs(distance - smallestDistance) <= TIE_EPS_PX) {
+      // Tie-break to the upper row
       if (rowInfo.row.rect.top < targetRowInfo.row.rect.top) {
         targetRowInfo = rowInfo;
       }
@@ -795,6 +706,7 @@ export function hitTestFromLayout(params: {
   }
 
   const { lineIndex, lineStartOffset, row } = targetRowInfo;
+  const scratchRange = document.createRange();
   const lineInfo = lines[lineIndex];
   if (!lineInfo) {
     return null;
@@ -811,8 +723,7 @@ export function hitTestFromLayout(params: {
   // boundaries (e.g. when a trailing space lives in a text node that ends right
   // before an inline wrapper like <a>). Prefer collapsed ranges (caret positions)
   // and pick the fragment that belongs to the target visual row.
-  const resolvePosition =
-    resolverByLineIndex.get(lineIndex) ?? createDomPositionResolver(lineElement);
+  const resolvePosition = createDomPositionResolver(lineElement);
   const rowTop = row.rect.top;
 
   const approximateX = (cursorOffsetInLine: number): number => {

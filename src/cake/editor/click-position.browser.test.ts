@@ -1,10 +1,14 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { commands } from "vitest/browser";
+import { commands, page } from "vitest/browser";
 import { createTestHarness, type TestHarness } from "../test/harness";
 
 declare module "vitest/browser" {
   interface BrowserCommands {
-    clickAtCoordinates: (x: number, y: number) => Promise<void>;
+    clickAtCoordinates: (
+      x: number,
+      y: number,
+      debug?: boolean,
+    ) => Promise<void>;
   }
 }
 
@@ -212,6 +216,101 @@ describe("CakeEditor click positioning", () => {
       // Should find position near char 14 on the second visual row
       expect(harness.selection.start).toBeGreaterThanOrEqual(13);
       expect(harness.selection.start).toBeLessThanOrEqual(15);
+    });
+
+    it("scanning across 2nd visual row with real clicks places caret correctly at each position", async () => {
+      // Use real Playwright mouse clicks (not synthetic events).
+      // Click across the second row in 5px increments and verify
+      // the caret ends up at the expected position each time.
+      const WRAP_CSS = `
+        .cake {
+          font-family: monospace;
+          font-size: 16px;
+          line-height: 2;
+        }
+        .cake-content {
+          width: 160px;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+      `;
+
+      const longWord = "d".repeat(80);
+      harness = createTestHarness({
+        value: longWord,
+        css: WRAP_CSS,
+      });
+
+      await harness.focus();
+
+      const rows = harness.getVisualRows(0);
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+
+      const row0 = rows[0]!;
+      const row1 = rows[1]!;
+
+      console.log("=== SCANNING 2ND ROW WITH REAL CLICKS ===");
+      console.log(`Row 0: offsets [${row0.startOffset}-${row0.endOffset}], top=${row0.top}, bottom=${row0.bottom}`);
+      console.log(`Row 1: offsets [${row1.startOffset}-${row1.endOffset}], top=${row1.top}, bottom=${row1.bottom}, left=${row1.left}, right=${row1.right}`);
+
+      // Also log actual char rects to verify row boundaries
+      const firstCharRow1 = harness.getCharRect(row1.startOffset);
+      const lastCharRow1 = harness.getCharRect(row1.endOffset);
+      console.log(`First char of row 1 (offset ${row1.startOffset}): top=${firstCharRow1.top}, bottom=${firstCharRow1.bottom}`);
+      console.log(`Last char of row 1 (offset ${row1.endOffset}): top=${lastCharRow1.top}, bottom=${lastCharRow1.bottom}`);
+
+      // Build a map of character boundaries on row 1
+      const charBoundaries: { offset: number; left: number; right: number }[] =
+        [];
+      for (let i = row1.startOffset; i <= row1.endOffset; i++) {
+        const rect = harness.getCharRect(i);
+        charBoundaries.push({ offset: i, left: rect.left, right: rect.right });
+      }
+
+      // Y coordinate: middle of the actual character (not the full line-height row)
+      const clickY = firstCharRow1.top + firstCharRow1.height / 2;
+
+      // Calculate click position: middle of row 1
+      const midX = (row1.left + row1.right) / 2;
+
+      // Vitest browser mode runs in an iframe that may have coordinate scaling.
+      // Detect the scale factor by doing a probe click and comparing clientX vs
+      // the coordinates we passed in.
+      let capturedEvent: PointerEvent | null = null;
+      const listener = (e: PointerEvent) => {
+        capturedEvent = e;
+      };
+      harness.container.addEventListener("pointerdown", listener, {
+        capture: true,
+      });
+
+      // Probe click to detect scale factor
+      await commands.clickAtCoordinates(100, 100, false);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const scaleX = capturedEvent ? capturedEvent.clientX / 100 : 1;
+      const scaleY = capturedEvent ? capturedEvent.clientY / 100 : 1;
+
+      // Click at the adjusted coordinates to compensate for scaling
+      const adjustedMidX = midX / scaleX;
+      const adjustedClickY = clickY / scaleY;
+
+      capturedEvent = null;
+      await commands.clickAtCoordinates(adjustedMidX, adjustedClickY, false);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      harness.container.removeEventListener("pointerdown", listener, {
+        capture: true,
+      });
+
+      const caretRect = harness.getCaretRect();
+
+      // Assert caret is VISUALLY on row 1, not row 0
+      // This catches the bug where clicking in the middle of row 1 places the
+      // caret at the end of row 0 instead.
+      expect(caretRect).not.toBeNull();
+      expect(caretRect!.top).toBeGreaterThanOrEqual(firstCharRow1.top - 5);
+      expect(caretRect!.top).toBeLessThanOrEqual(firstCharRow1.bottom + 5);
     });
   });
 

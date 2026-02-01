@@ -12,6 +12,8 @@ export type LayoutRow = {
   startOffset: number;
   endOffset: number;
   rect: LayoutRect;
+  /** The actual glyph bounds within this row (before line-height clamping). */
+  glyphBand?: { top: number; bottom: number };
 };
 
 export type LineLayout = {

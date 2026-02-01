@@ -341,7 +341,9 @@ export function getCaretRect(params: {
     // the *next* visual row even when we explicitly want backward affinity
     // (e.g. "end of visual row"). Anchor the caret to the previous row fragment
     // when a forward-probe indicates there is a next row.
-    if (affinity === "backward" && forwardRect) {
+    // IMPORTANT: Only do this at actual wrap boundaries, not for middle-of-row
+    // positions that happen to have backward affinity.
+    if (atWrapBoundary && affinity === "backward" && forwardRect) {
       const startPos = resolveDomPosition(
         lineElement,
         cursorOffsetToDomOffset(lineInfo.cursorToCodeUnit, 0),
