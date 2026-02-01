@@ -290,6 +290,21 @@ export class CakeEditor {
   // selection handling and hide the custom caret overlay
   private lastTouchTime = 0;
 
+  // Debug logging for iOS selection tracing - enable via window.CAKE_DEBUG_SELECTION = true
+  private debugLog(category: string, ...args: unknown[]) {
+    if (
+      typeof window !== "undefined" &&
+      (window as unknown as { CAKE_DEBUG_SELECTION?: boolean })
+        .CAKE_DEBUG_SELECTION
+    ) {
+      console.log(
+        `[Cake:${category}]`,
+        performance.now().toFixed(2),
+        ...args,
+      );
+    }
+  }
+
   // Detect if this is a touch-primary device (mobile/tablet)
   // We check for touch support AND coarse pointer to exclude laptops with touchscreens
   private isTouchDevice(): boolean {
@@ -1129,23 +1144,38 @@ export class CakeEditor {
   }
 
   private handleSelectionChange() {
+    const isRecentTouchForLog = Date.now() - this.lastTouchTime < 2000;
+    this.debugLog("selectionchange", "fired", {
+      isRecentTouch: isRecentTouchForLog,
+      suppressSelectionChange: this.suppressSelectionChange,
+      isApplyingSelection: this.isApplyingSelection,
+      isComposing: this.isComposing,
+      ignoreTouchUntil: this.ignoreTouchNativeSelectionUntil,
+      pendingTouchSelectionChangeId: this.pendingTouchSelectionChangeId,
+    });
+
     if (this.isComposing) {
+      this.debugLog("selectionchange", "skip: isComposing");
       return;
     }
     if (
       this.ignoreTouchNativeSelectionUntil !== null &&
       performance.now() < this.ignoreTouchNativeSelectionUntil
     ) {
+      this.debugLog("selectionchange", "skip: ignoreTouchNativeSelectionUntil");
       return;
     }
     if (this.suppressSelectionChange) {
+      this.debugLog("selectionchange", "skip: suppressSelectionChange");
       return;
     }
     if (this.isApplyingSelection) {
+      this.debugLog("selectionchange", "skip: isApplyingSelection");
       return;
     }
     const domSelection = window.getSelection();
     if (!domSelection || domSelection.rangeCount === 0) {
+      this.debugLog("selectionchange", "skip: no DOM selection");
       return;
     }
     const anchorNode = domSelection.anchorNode;
@@ -1156,16 +1186,20 @@ export class CakeEditor {
       (!this.container.contains(anchorNode) &&
         !this.container.contains(focusNode))
     ) {
+      this.debugLog("selectionchange", "skip: selection outside container");
       return;
     }
 
     if (!this.domMap) {
+      this.debugLog("selectionchange", "skip: no domMap");
       return;
     }
     const selection = readDomSelection(this.domMap);
     if (!selection) {
+      this.debugLog("selectionchange", "skip: could not read DOM selection");
       return;
     }
+    this.debugLog("selectionchange", "read DOM selection", selection);
 
     if (
       this.lastAppliedSelection &&
@@ -1203,13 +1237,24 @@ export class CakeEditor {
       // then the final caret at the tapped position). Debounce to the next frame
       // so we sync state once, using the final DOM selection.
       this.pendingTouchSelection = selection;
+      this.debugLog("selectionchange", "touch mode - storing pending", {
+        selection,
+        alreadyScheduled: this.pendingTouchSelectionChangeId !== null,
+      });
       if (this.pendingTouchSelectionChangeId !== null) {
+        this.debugLog(
+          "selectionchange",
+          "RAF already scheduled, updated pending selection",
+        );
         return;
       }
       this.pendingTouchSelectionChangeId = window.requestAnimationFrame(() => {
         this.pendingTouchSelectionChangeId = null;
         const pending = this.pendingTouchSelection;
         this.pendingTouchSelection = null;
+        this.debugLog("selectionchange", "RAF callback - applying pending", {
+          pending,
+        });
         if (!pending) {
           return;
         }
@@ -1222,6 +1267,10 @@ export class CakeEditor {
   }
 
   private applyDomSelectionChange(selection: Selection) {
+    this.debugLog("applyDomSelectionChange", "applying", {
+      selection,
+      previousSelection: this.state.selection,
+    });
     // For collapsed selections (cursor moves), check if we landed on an atomic block
     // and skip over it in the direction of movement
     const adjustedSelection = this.adjustSelectionForAtomicBlocks(
@@ -1358,6 +1407,15 @@ export class CakeEditor {
   }
 
   private handleClick(event: MouseEvent) {
+    const isRecentTouchForLog = Date.now() - this.lastTouchTime < 2000;
+    this.debugLog("click", "fired", {
+      detail: event.detail,
+      isRecentTouch: isRecentTouchForLog,
+      isTouchDevice: this.isTouchDevice(),
+      x: event.clientX,
+      y: event.clientY,
+    });
+
     if (this.isComposing) {
       return;
     }
@@ -1383,6 +1441,7 @@ export class CakeEditor {
       // applies the native caret placement.
       const isRecentTouch = Date.now() - this.lastTouchTime < 2000;
       if (this.isTouchDevice() || isRecentTouch) {
+        this.debugLog("click", "skip: touch device / recent touch");
         return;
       }
 
@@ -3335,6 +3394,9 @@ export class CakeEditor {
   }
 
   private notifySelectionChange() {
+    this.debugLog("notifySelectionChange", "notifying", {
+      selection: this.state.selection,
+    });
     this.onSelectionChangeOption?.(this.state.selection);
     for (const callback of this.selectionChangeSubscribers) {
       callback(this.state.selection);
@@ -3754,6 +3816,11 @@ export class CakeEditor {
       // context menus. We track the touch time to hide the custom caret overlay
       // and trust selectionchange events to sync state.
       this.lastTouchTime = Date.now();
+      this.debugLog("pointerdown", "touch event - letting browser handle", {
+        x: event.clientX,
+        y: event.clientY,
+        currentSelection: this.state.selection,
+      });
       return;
     }
 

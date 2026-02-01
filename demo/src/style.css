@@ -190,6 +190,26 @@ body {
   word-break: break-word;
   outline: none;
   caret-color: transparent;
+  line-height: 2;
+}
+
+/* On touch mode, use margin instead of line-height to fix Safari iOS caret height bug */
+.main .cake-content.cake-touch-mode {
+  line-height: normal;
+}
+
+.main .cake-content.cake-touch-mode .cake-line {
+  margin-bottom: 1em;
+}
+
+/* Show native caret and selection during touch/mobile interaction */
+.main .cake-content.cake-touch-mode {
+  caret-color: auto;
+}
+
+.main .cake-content.cake-touch-mode::selection,
+.main .cake-content.cake-touch-mode *::selection {
+  background: Highlight;
 }
 
 .main .cake-content:focus,
