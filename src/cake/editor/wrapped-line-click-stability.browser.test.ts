@@ -73,19 +73,20 @@ describe("wrapped line click stability (desktop)", () => {
 
     // Click far to the right so that if the wrong row is chosen, we snap to the
     // end of that (wrong) row.
-    const x1 = contentRect.right - 2;
-    const x2 = contentRect.right - 6;
+    const xs = [
+      contentRect.right - 2,
+      contentRect.right - 6,
+      contentRect.right - 10,
+      contentRect.right - 14,
+      contentRect.right - 18,
+    ];
 
-    // First click: should place caret on row 2 (snap to row 2 end), not row 1 end.
-    await harness.clickAtCoords(x1, y);
-    expect(harness.selection.start).toBeGreaterThanOrEqual(start);
-    expect(harness.selection.start).toBeLessThanOrEqual(endExclusive);
-    expect(harness.selection.start).toBeGreaterThan(firstRow.endOffset + 1);
-
-    // Second click: moving again within the "second visual line" must stay on row 2.
-    await harness.clickAtCoords(x2, y);
-    expect(harness.selection.start).toBeGreaterThanOrEqual(start);
-    expect(harness.selection.start).toBeLessThanOrEqual(endExclusive);
-    expect(harness.selection.start).toBeGreaterThan(firstRow.endOffset + 1);
+    // Repeated clicks in this gap must consistently choose the second visual row.
+    for (const x of xs) {
+      await harness.clickAtCoords(x, y);
+      expect(harness.selection.start).toBeGreaterThanOrEqual(start);
+      expect(harness.selection.start).toBeLessThanOrEqual(endExclusive);
+      expect(harness.selection.start).toBeGreaterThan(firstRow.endOffset + 1);
+    }
   });
 });

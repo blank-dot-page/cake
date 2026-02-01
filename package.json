@@ -27,6 +27,7 @@
     "build:demo": "npm run build && npm --workspace demo run build",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
+    "test:browser:ios": "vitest run --project browser-ios",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",

@@ -17,6 +17,19 @@ const clickAtCoordinates: BrowserCommand<[x: number, y: number]> = async (
   await page.mouse.click(iframeX, iframeY);
 };
 
+const tapAtCoordinates: BrowserCommand<[x: number, y: number]> = async (
+  ctx,
+  x,
+  y,
+) => {
+  const page = ctx.page;
+  const iframeElement = ctx.iframe.locator(":root");
+  const iframeBox = await iframeElement.boundingBox();
+  const iframeX = iframeBox ? x + iframeBox.x : x;
+  const iframeY = iframeBox ? y + iframeBox.y : y;
+  await page.touchscreen.tap(iframeX, iframeY);
+};
+
 export default defineConfig({
   plugins: [react()] as unknown as ViteUserConfig["plugins"],
   test: {
@@ -35,6 +48,7 @@ export default defineConfig({
             "**/dist/**",
             "**/demo/**",
             "**/*.browser.test.{ts,tsx}",
+            "**/*.ios.browser.test.{ts,tsx}",
           ],
         },
       },
@@ -43,6 +57,7 @@ export default defineConfig({
         test: {
           name: "browser",
           include: ["**/*.browser.test.{ts,tsx}"],
+          exclude: ["**/*.ios.browser.test.{ts,tsx}"],
           browser: {
             enabled: true,
             provider: playwright(),
@@ -51,6 +66,33 @@ export default defineConfig({
             screenshotDirectory: ".vitest-screenshots",
             commands: {
               clickAtCoordinates,
+              tapAtCoordinates,
+            },
+          },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "browser-ios",
+          include: ["**/*.ios.browser.test.{ts,tsx}"],
+          browser: {
+            enabled: true,
+            provider: playwright({
+              contextOptions: {
+                // Approximate iPhone Safari conditions in Playwright WebKit.
+                isMobile: true,
+                hasTouch: true,
+                viewport: { width: 390, height: 844 },
+                deviceScaleFactor: 3,
+              },
+            }),
+            headless: true,
+            instances: [{ browser: "webkit" }],
+            screenshotDirectory: ".vitest-screenshots",
+            commands: {
+              clickAtCoordinates,
+              tapAtCoordinates,
             },
           },
         },

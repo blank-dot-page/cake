@@ -29,3 +29,9 @@ await page.screenshot({
 ```
 
 The path should be relative from the test file location to the project root's `.vitest-screenshots/` folder.
+
+## Testing
+
+Browser tests use Vitest browser mode (`*.browser.test.ts`), not Playwright. Use `createTestHarness()` from `../test/harness` for all browser tests.
+
+Playwright (`e2e/` folder) is only for debugging against the demo app with temporary tests. Do not use Playwright for actual test coverage - always use Vitest browser tests instead.

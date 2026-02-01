@@ -945,8 +945,7 @@ export class CakeEditor {
     }
     if (!this.contentRoot) {
       // Overlay roots are positioned absolutely; ensure the container forms a
-      // positioning context so browser hit-testing APIs (caretRangeFromPoint)
-      // keep resolving into line nodes after scrolling.
+      // positioning context and doesn't scroll out from under them.
       const containerPosition = window.getComputedStyle(
         this.container,
       ).position;
@@ -4676,29 +4675,6 @@ function findTextNodeAtOrAfter(
     if (found) {
       return found;
     }
-  }
-  return null;
-}
-
-function caretPositionFromPoint(
-  x: number,
-  y: number,
-): { offsetNode: Node; offset: number } | null {
-  const doc = document as {
-    caretPositionFromPoint?: (
-      x: number,
-      y: number,
-    ) => { offsetNode: Node; offset: number } | null;
-  };
-  if (typeof doc.caretPositionFromPoint === "function") {
-    return doc.caretPositionFromPoint(x, y);
-  }
-  return null;
-}
-
-function caretRangeFromPoint(x: number, y: number): Range | null {
-  if (typeof document.caretRangeFromPoint === "function") {
-    return document.caretRangeFromPoint(x, y);
   }
   return null;
 }
