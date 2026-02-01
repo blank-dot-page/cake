@@ -219,8 +219,20 @@ export function computeCaretRect(
 ): SelectionRect | null {
   const height = caret.fontSize * 1.2;
   if (caret.lineLength === 0) {
+    // For empty lines, vertically center the caret within the line box
+    const contentHeight =
+      caret.lineRect.height > 0
+        ? Math.max(
+            0,
+            caret.lineRect.height - caret.padding.top - caret.padding.bottom,
+          )
+        : 0;
+    const top =
+      contentHeight > 0
+        ? caret.lineRect.top + caret.padding.top + (contentHeight - height) / 2
+        : caret.lineRect.top + (caret.lineRect.height - height) / 2;
     return {
-      top: caret.lineRect.top,
+      top,
       left: caret.lineRect.left,
       width: 0,
       height,

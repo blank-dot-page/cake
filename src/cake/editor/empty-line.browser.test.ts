@@ -129,5 +129,40 @@ describe("CakeEditor empty line handling", () => {
       // The empty line's caret should match the paragraph caret, NOT the heading caret
       expect(caretHeightOnEmptyLine).toBe(caretHeightOnParagraph);
     });
+
+    it("caret on empty line is vertically centered within the line box", async () => {
+      harness = createTestHarness("hello\n\nworld");
+
+      // Helper to wait for requestAnimationFrame
+      const waitFrame = () =>
+        new Promise((resolve) => requestAnimationFrame(resolve));
+
+      // Click on a line with content (line 0)
+      await harness.clickAt(0, 0);
+      await waitFrame();
+      const line0Rect = harness.getLineRect(0);
+      const caretOnContent = harness.getCaretRect();
+      expect(caretOnContent).not.toBeNull();
+
+      // Click on empty line (line 1)
+      const line1Rect = harness.getLineRect(1);
+      await harness.clickAtCoords(
+        line1Rect.left + 5,
+        line1Rect.top + line1Rect.height / 2,
+      );
+      await waitFrame();
+      const caretOnEmpty = harness.getCaretRect();
+      expect(caretOnEmpty).not.toBeNull();
+
+      // The caret vertical position relative to its line box should match
+      // between a content line and an empty line
+      const contentCaretRelativeTop = caretOnContent!.top - line0Rect.top;
+      const emptyCaretRelativeTop = caretOnEmpty!.top - line1Rect.top;
+
+      // Both should have same relative vertical position (within tolerance)
+      expect(
+        Math.abs(contentCaretRelativeTop - emptyCaretRelativeTop),
+      ).toBeLessThan(2);
+    });
   });
 });

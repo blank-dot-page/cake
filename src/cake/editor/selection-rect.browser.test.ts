@@ -62,10 +62,14 @@ describe("selection rect positioning", () => {
     expect(selection.start).toBe(15);
     expect(selection.end).toBe(15);
 
-    // Caret should be on the empty line
+    // Caret should be on the empty line (vertically centered within line bounds)
     const caretRect = harness.getCaretRect();
     expect(caretRect).not.toBeNull();
-    expect(caretRect!.top).toBe(emptyLineRect.top);
+    // The caret is centered within the line, so its top may be slightly above the line top
+    // Check that the caret center is within the line bounds
+    const caretCenter = caretRect!.top + caretRect!.height / 2;
+    const lineCenter = emptyLineRect.top + emptyLineRect.height / 2;
+    expect(Math.abs(caretCenter - lineCenter)).toBeLessThan(2);
   });
 
   it("triple-click on empty line selects the line with full-width rect", async () => {
