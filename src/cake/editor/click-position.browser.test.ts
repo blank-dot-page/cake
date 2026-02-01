@@ -250,14 +250,22 @@ describe("CakeEditor click positioning", () => {
       const row1 = rows[1]!;
 
       console.log("=== SCANNING 2ND ROW WITH REAL CLICKS ===");
-      console.log(`Row 0: offsets [${row0.startOffset}-${row0.endOffset}], top=${row0.top}, bottom=${row0.bottom}`);
-      console.log(`Row 1: offsets [${row1.startOffset}-${row1.endOffset}], top=${row1.top}, bottom=${row1.bottom}, left=${row1.left}, right=${row1.right}`);
+      console.log(
+        `Row 0: offsets [${row0.startOffset}-${row0.endOffset}], top=${row0.top}, bottom=${row0.bottom}`,
+      );
+      console.log(
+        `Row 1: offsets [${row1.startOffset}-${row1.endOffset}], top=${row1.top}, bottom=${row1.bottom}, left=${row1.left}, right=${row1.right}`,
+      );
 
       // Also log actual char rects to verify row boundaries
       const firstCharRow1 = harness.getCharRect(row1.startOffset);
       const lastCharRow1 = harness.getCharRect(row1.endOffset);
-      console.log(`First char of row 1 (offset ${row1.startOffset}): top=${firstCharRow1.top}, bottom=${firstCharRow1.bottom}`);
-      console.log(`Last char of row 1 (offset ${row1.endOffset}): top=${lastCharRow1.top}, bottom=${lastCharRow1.bottom}`);
+      console.log(
+        `First char of row 1 (offset ${row1.startOffset}): top=${firstCharRow1.top}, bottom=${firstCharRow1.bottom}`,
+      );
+      console.log(
+        `Last char of row 1 (offset ${row1.endOffset}): top=${lastCharRow1.top}, bottom=${lastCharRow1.bottom}`,
+      );
 
       // Build a map of character boundaries on row 1
       const charBoundaries: { offset: number; left: number; right: number }[] =

@@ -1302,3 +1302,96 @@ describe("list type conversion", () => {
     expect(harness.engine.getValue()).toBe("1. A\n  1. B\n2. C");
   });
 });
+
+describe("dash vs cmd-shift-8 parity", () => {
+  let harness: TestHarness | null = null;
+
+  afterEach(() => {
+    harness?.destroy();
+    harness = null;
+  });
+
+  test("cmd-shift-8: selecting all text and toggling list maintains full selection (expected to pass)", async () => {
+    harness = createTestHarness("text");
+
+    await harness.focus();
+    // Select all text
+    harness.engine.selectAll();
+    expect(harness.selection.start).toBe(0);
+    expect(harness.selection.end).toBe(4);
+
+    // Use cmd-shift-8 to create bullet list
+    await harness.pressKey("8", modShift);
+
+    // Document should be "- text"
+    expect(harness.engine.getValue()).toBe("- text");
+
+    // After creating list, selection should expand to cover the full line
+    // including the newly inserted "- " prefix.
+    // "- text" in cursor space is 6 chars (- and space are included)
+    // cmd-shift-8 correctly maintains selection over the full content
+    expect(harness.selection.start).toBe(0);
+    expect(harness.selection.end).toBe(6);
+  });
+
+  test("dash: selecting all text and typing dash maintains full selection", async () => {
+    harness = createTestHarness("text");
+
+    await harness.focus();
+    // Select all text
+    harness.engine.selectAll();
+    expect(harness.selection.start).toBe(0);
+    expect(harness.selection.end).toBe(4);
+
+    // Type dash to create bullet list
+    await harness.typeText("-");
+
+    // Document should be "- text"
+    expect(harness.engine.getValue()).toBe("- text");
+
+    // After creating list, selection should expand to cover the full line
+    // (same as cmd-shift-8 behavior)
+    expect(harness.selection.start).toBe(0);
+    expect(harness.selection.end).toBe(6);
+  });
+
+  test("cmd-shift-8: selecting bullet list and toggling removes list (expected to pass)", async () => {
+    harness = createTestHarness("- text");
+
+    await harness.focus();
+    // Select all
+    harness.engine.selectAll();
+    expect(harness.selection.start).toBe(0);
+    expect(harness.selection.end).toBe(6);
+
+    // Use cmd-shift-8 to toggle off bullet list
+    await harness.pressKey("8", modShift);
+
+    // Document should be "text" (list removed)
+    expect(harness.engine.getValue()).toBe("text");
+
+    // Selection should cover the remaining content
+    expect(harness.selection.start).toBe(0);
+    expect(harness.selection.end).toBe(4);
+  });
+
+  test("dash: selecting bullet list and typing dash removes list (untoggle)", async () => {
+    harness = createTestHarness("- text");
+
+    await harness.focus();
+    // Select all
+    harness.engine.selectAll();
+    expect(harness.selection.start).toBe(0);
+    expect(harness.selection.end).toBe(6);
+
+    // Type dash - this should untoggle the list (same as cmd-shift-8)
+    await harness.typeText("-");
+
+    // Document should be "text" (list removed)
+    expect(harness.engine.getValue()).toBe("text");
+
+    // Selection should cover the remaining content
+    expect(harness.selection.start).toBe(0);
+    expect(harness.selection.end).toBe(4);
+  });
+});

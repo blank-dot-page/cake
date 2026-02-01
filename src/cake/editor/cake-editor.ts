@@ -297,11 +297,7 @@ export class CakeEditor {
       (window as unknown as { CAKE_DEBUG_SELECTION?: boolean })
         .CAKE_DEBUG_SELECTION
     ) {
-      console.log(
-        `[Cake:${category}]`,
-        performance.now().toFixed(2),
-        ...args,
-      );
+      console.log(`[Cake:${category}]`, performance.now().toFixed(2), ...args);
     }
   }
 

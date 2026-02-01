@@ -22,7 +22,9 @@ describe("iOS-like WebKit: touch click does not hit-test selection", () => {
     await harness.focus();
 
     // Ensure iOS-like project actually puts us in touch mode.
-    expect(harness.contentRoot.classList.contains("cake-touch-mode")).toBe(true);
+    expect(harness.contentRoot.classList.contains("cake-touch-mode")).toBe(
+      true,
+    );
 
     // Start at a known selection.
     harness.engine.setSelection({ start: 0, end: 0, affinity: "forward" });
@@ -59,4 +61,3 @@ describe("iOS-like WebKit: touch click does not hit-test selection", () => {
     expect(harness.selection.end).toBe(0);
   });
 });
-

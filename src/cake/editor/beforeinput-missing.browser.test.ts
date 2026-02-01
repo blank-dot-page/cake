@@ -48,4 +48,3 @@ describe("input reconciliation when beforeinput is missing", () => {
     expect(harness.engine.getText()).toBe("abcxy");
   });
 });
-

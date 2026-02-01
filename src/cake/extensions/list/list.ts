@@ -970,20 +970,51 @@ function handleMarkerSwitch(
 
   // If there's a selection, try to convert lines to list
   if (selection.start !== selection.end) {
-    // For multi-line selections, use toggle-bullet-list behavior (like Cmd+Shift+8)
-    // which doesn't require exact line boundary alignment
+    // Only handle list markers
+    if (insertedChar !== "-" && insertedChar !== "*" && insertedChar !== "+") {
+      return null;
+    }
+
+    // Check if selection covers full lines (starts at line start, ends at line end)
     const { startLine, endLine } = getSelectionLineRange(
       source,
       selection,
       map,
     );
-    if (
-      startLine !== endLine &&
-      (insertedChar === "-" || insertedChar === "*" || insertedChar === "+")
-    ) {
+    const lines = getSourceLines(source);
+
+    let startLineOffset = 0;
+    for (let i = 0; i < startLine; i++) {
+      startLineOffset += lines[i].length + 1;
+    }
+    let endLineOffset = startLineOffset;
+    for (let i = startLine; i <= endLine; i++) {
+      endLineOffset += lines[i].length + (i < endLine ? 1 : 0);
+    }
+
+    const selStart = Math.min(selection.start, selection.end);
+    const selEnd = Math.max(selection.start, selection.end);
+    const selStartSource = map.cursorToSource(selStart, "backward");
+    const selEndSource = map.cursorToSource(selEnd, "forward");
+
+    const startsAtLineStart = selStartSource === startLineOffset;
+    const endsAtLineEnd = selEndSource === endLineOffset;
+
+    // For multi-line selections, always use toggle-bullet-list behavior
+    // (like Cmd+Shift+8) - this handles both full and partial line selections
+    // by converting all touched lines to list items
+    if (startLine !== endLine) {
       return { type: "toggle-bullet-list" };
     }
-    return handleInsertListMarkerWithSelection(state, insertedChar);
+
+    // For single-line full selections, use toggle-bullet-list
+    // to ensure consistent behavior with Cmd+Shift+8 (maintains selection, toggles off)
+    if (startsAtLineStart && endsAtLineEnd) {
+      return { type: "toggle-bullet-list" };
+    }
+
+    // For single-line partial selections, don't convert to list - let default behavior handle it
+    return null;
   }
 
   if (insertedChar !== "-" && insertedChar !== "*" && insertedChar !== "+") {
