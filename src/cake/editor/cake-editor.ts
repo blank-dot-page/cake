@@ -1346,6 +1346,15 @@ export class CakeEditor {
     // For single clicks (detail=1), selection was already applied in pointerdown.
     // Skip if user just created a selection via drag (mouse moved since pointer down)
     if (event.detail === 1 && !this.hasMovedSincePointerDown) {
+      // On touch devices we rely on native caret/selection behavior and sync via
+      // `selectionchange`. Avoid programmatic click hit-testing here: it can
+      // briefly set the selection to a wrong boundary (flash) before iOS Safari
+      // applies the native caret placement.
+      const isRecentTouch = Date.now() - this.lastTouchTime < 2000;
+      if (this.isTouchDevice() || isRecentTouch) {
+        return;
+      }
+
       // For shift+click, let the browser handle selection extension
       // (we didn't capture pendingClickHit for shift+click in pointerdown)
       if (event.shiftKey) {
