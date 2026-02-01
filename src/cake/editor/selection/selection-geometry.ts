@@ -218,25 +218,18 @@ export function computeCaretRect(
   caret: SelectionCaretMeasurement,
 ): SelectionRect | null {
   const height = caret.fontSize * 1.2;
-  const contentHeight =
-    caret.lineRect.height > 0
-      ? Math.max(
-          0,
-          caret.lineRect.height - caret.padding.top - caret.padding.bottom,
-        )
-      : 0;
-  const emptyLineTop =
-    contentHeight > 0
-      ? caret.lineRect.top + caret.padding.top + (contentHeight - height) / 2
-      : caret.lineRect.top + (caret.lineRect.height - height) / 2;
+  if (caret.lineLength === 0) {
+    return {
+      top: caret.lineRect.top,
+      left: caret.lineRect.left,
+      width: 0,
+      height,
+    };
+  }
+
   const top =
-    caret.lineLength === 0
-      ? emptyLineTop
-      : caret.caretRect.height > 0
-        ? caret.caretRect.top
-        : caret.lineRect.top;
-  const left =
-    caret.lineLength === 0 ? caret.lineRect.left : caret.caretRect.left;
+    caret.caretRect.height > 0 ? caret.caretRect.top : caret.lineRect.top;
+  const left = caret.caretRect.left;
   return {
     top,
     left,

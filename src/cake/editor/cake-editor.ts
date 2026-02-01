@@ -1444,6 +1444,26 @@ export class CakeEditor {
     const lines = getDocLines(this.state.doc);
 
     if (event.detail === 2) {
+      const lineOffsets = getLineOffsets(lines);
+      const { lineIndex } = resolveOffsetToLine(lines, hit.cursorOffset);
+      const lineInfo = lines[lineIndex];
+      if (lineInfo && lineInfo.cursorLength === 0) {
+        const lineStart = lineOffsets[lineIndex] ?? 0;
+        const selection: Selection = {
+          start: lineStart,
+          end: lineStart,
+          affinity: "forward",
+        };
+        event.preventDefault();
+        this.state = this.runtime.updateSelection(this.state, selection, {
+          kind: "dom",
+        });
+        this.applySelection(this.state.selection);
+        this.notifySelectionChange();
+        this.suppressSelectionChange = false;
+        return;
+      }
+
       const visibleText = getVisibleText(lines);
       const visibleOffset = cursorOffsetToVisibleOffset(
         lines,
