@@ -174,6 +174,8 @@ export class CakeEditor {
   private blockTrustedTextDrag = false;
   private selectedAtomicLineIndex: number | null = null;
   private lastAppliedSelection: Selection | null = null;
+  private pendingTouchSelectionChangeId: number | null = null;
+  private pendingTouchSelection: Selection | null = null;
   private compositionCommit = false;
   private compositionCommitTimeoutId: number | null = null;
   private overlayRoot: HTMLDivElement | null = null;
@@ -1191,11 +1193,41 @@ export class CakeEditor {
       return;
     }
 
+    const isRecentTouch = Date.now() - this.lastTouchTime < 2000;
+    const isTouchMode =
+      (this.contentRoot?.classList.contains("cake-touch-mode") ?? false) ||
+      this.isTouchDevice() ||
+      isRecentTouch;
+    if (isTouchMode) {
+      // On iOS Safari, a single tap can produce multiple selectionchange events
+      // in quick succession (e.g. an intermediate caret at a word boundary,
+      // then the final caret at the tapped position). Debounce to the next frame
+      // so we sync state once, using the final DOM selection.
+      this.pendingTouchSelection = selection;
+      if (this.pendingTouchSelectionChangeId !== null) {
+        return;
+      }
+      this.pendingTouchSelectionChangeId = window.requestAnimationFrame(() => {
+        this.pendingTouchSelectionChangeId = null;
+        const pending = this.pendingTouchSelection;
+        this.pendingTouchSelection = null;
+        if (!pending) {
+          return;
+        }
+        this.applyDomSelectionChange(pending);
+      });
+      return;
+    }
+
+    this.applyDomSelectionChange(selection);
+  }
+
+  private applyDomSelectionChange(selection: Selection) {
     // For collapsed selections (cursor moves), check if we landed on an atomic block
     // and skip over it in the direction of movement
     const adjustedSelection = this.adjustSelectionForAtomicBlocks(
       selection,
-      previous,
+      this.state.selection,
     );
 
     this.selectedAtomicLineIndex = null;
