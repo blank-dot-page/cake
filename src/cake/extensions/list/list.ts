@@ -761,7 +761,7 @@ function handleToggleList(
   state: RuntimeState,
   isBullet: boolean,
 ): EditResult | null {
-  const { source, selection, map } = state;
+  const { source, selection, map, runtime } = state;
   const { startLine, endLine } = getSelectionLineRange(source, selection, map);
   const lines = getSourceLines(source);
 
@@ -850,25 +850,30 @@ function handleToggleList(
   }
 
   // Calculate new selection to preserve the selected range
-  let newStartOffset = 0;
+  const newSourceLines = getSourceLines(newSource);
+  let newStartSourceOffset = 0;
   for (let i = 0; i < startLine; i++) {
-    newStartOffset += newLines[i].length + 1;
+    newStartSourceOffset += newSourceLines[i].length + 1;
   }
 
-  let newEndOffset = newStartOffset;
+  let newEndSourceOffset = newStartSourceOffset;
   for (let i = startLine; i <= endLine; i++) {
-    newEndOffset += newLines[i].length;
+    newEndSourceOffset += newSourceLines[i].length;
     if (i < endLine) {
-      newEndOffset += 1;
+      newEndSourceOffset += 1;
     }
   }
+
+  const next = runtime.createState(newSource);
+  const startCursor = next.map.sourceToCursor(newStartSourceOffset, "forward");
+  const endCursor = next.map.sourceToCursor(newEndSourceOffset, "forward");
 
   return {
     source: newSource,
     selection: {
-      start: newStartOffset,
-      end: newEndOffset,
-      affinity: "forward",
+      start: startCursor.cursorOffset,
+      end: endCursor.cursorOffset,
+      affinity: startCursor.affinity,
     },
   };
 }

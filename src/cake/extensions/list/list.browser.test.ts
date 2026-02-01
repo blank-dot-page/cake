@@ -1065,6 +1065,155 @@ describe("selecting multiple lines with keyboard and typing dash", () => {
     // The heading should remain unchanged - this is the bug we're tracking
     expect(harness.engine.getValue()).toBe("# Hello\n- one\n- two\n- three");
   });
+
+  test("creating bullet list should select from start of first list marker", async () => {
+    // Document: "# Hello\none\ntwo\nthree"
+    // After creating list: "# Hello\n- one\n- two\n- three"
+    // Selection should be: "# Hello\n<selstart>- one\n- two\n- three<selend>"
+    // NOT: "# Hello\n- <selstart>one\n- two\n- three<selend>"
+    harness = createTestHarness("# Hello\none\ntwo\nthree");
+
+    await harness.focus();
+
+    // Select from after heading to end
+    harness.engine.selectAll();
+    const cursorLength = harness.selection.end;
+    harness.engine.setSelection({
+      start: 6, // After "Hello\n"
+      end: cursorLength,
+      affinity: "forward",
+    });
+
+    // Type dash to create bullet list
+    await userEvent.keyboard("-");
+
+    // Verify the document
+    expect(harness.engine.getValue()).toBe("# Hello\n- one\n- two\n- three");
+
+    // Selection should start at the beginning of "- one" line, not after "- ".
+    const selectionAfterToggle = { ...harness.selection };
+
+    harness.engine.selectAll();
+    const newCursorLength = harness.selection.end;
+
+    // The selection start should be at the beginning of the first list item line
+    // which is cursor position 6 (after "Hello" and newline)
+    expect(selectionAfterToggle.start).toBe(6);
+    expect(selectionAfterToggle.end).toBe(newCursorLength);
+  });
+
+  test("creating numbered list should select from start of first list marker", async () => {
+    // Document: "# Hello\none\ntwo\nthree"
+    // After creating list: "# Hello\n1. one\n2. two\n3. three"
+    // Selection should be: "# Hello\n<selstart>1. one\n2. two\n3. three<selend>"
+    harness = createTestHarness("# Hello\none\ntwo\nthree");
+
+    await harness.focus();
+
+    // Select from after heading to end
+    harness.engine.selectAll();
+    const cursorLength = harness.selection.end;
+    harness.engine.setSelection({
+      start: 6, // After "Hello\n"
+      end: cursorLength,
+      affinity: "forward",
+    });
+
+    // Use Cmd+Shift+7 to create numbered list
+    await harness.pressKey("7", modShift);
+
+    // Verify the document
+    expect(harness.engine.getValue()).toBe("# Hello\n1. one\n2. two\n3. three");
+
+    // Selection should start at the beginning of "1. one" line
+    const selectionAfterToggle = { ...harness.selection };
+
+    harness.engine.selectAll();
+    const newCursorLength = harness.selection.end;
+
+    expect(selectionAfterToggle.start).toBe(6);
+    expect(selectionAfterToggle.end).toBe(newCursorLength);
+  });
+
+  test("removing bullet list should preserve selection over the same content", async () => {
+    // Start with a list: "# Hello\n- one\n- two\n- three"
+    // Select all list items: "# Hello\n<selstart>- one\n- two\n- three<selend>"
+    // After removing list: "# Hello\n<selstart>one\ntwo\nthree<selend>"
+    // The selection should still cover "one\ntwo\nthree", NOT "on<selstart>e\ntwo\nthree<selend>"
+    harness = createTestHarness("# Hello\n- one\n- two\n- three");
+
+    await harness.focus();
+
+    // Select all list items (from start of "- one" to end)
+    harness.engine.selectAll();
+    const cursorLength = harness.selection.end;
+
+    // Find where the list starts (after "Hello\n")
+    // In "# Hello\n- one\n- two\n- three", cursor position 6 is start of "- one" line
+    harness.engine.setSelection({
+      start: 6,
+      end: cursorLength,
+      affinity: "forward",
+    });
+
+    // Type dash to remove the list
+    await userEvent.keyboard("-");
+
+    // Verify the document - list markers should be removed
+    expect(harness.engine.getValue()).toBe("# Hello\none\ntwo\nthree");
+
+    // Selection should cover "one\ntwo\nthree" starting from position 6
+    // NOT shifted incorrectly like "on<selstart>e\ntwo\nthree<selend>"
+    expect(harness.selection.start).toBe(6);
+
+    // The end should be at the end of the document
+    harness.engine.selectAll();
+    const newCursorLength = harness.selection.end;
+    // Restore our expected selection to check
+    harness.engine.setSelection({
+      start: 6,
+      end: newCursorLength,
+      affinity: "forward",
+    });
+    expect(harness.selection.end).toBe(newCursorLength);
+  });
+
+  test("removing numbered list should preserve selection over the same content", async () => {
+    // Start with a list: "# Hello\n1. one\n2. two\n3. three"
+    // Select all list items
+    // After removing list: "# Hello\none\ntwo\nthree"
+    // Selection should still cover "one\ntwo\nthree"
+    harness = createTestHarness("# Hello\n1. one\n2. two\n3. three");
+
+    await harness.focus();
+
+    // Select all list items
+    harness.engine.selectAll();
+    const cursorLength = harness.selection.end;
+    harness.engine.setSelection({
+      start: 6,
+      end: cursorLength,
+      affinity: "forward",
+    });
+
+    // Use Cmd+Shift+7 to remove numbered list
+    await harness.pressKey("7", modShift);
+
+    // Verify the document - list markers should be removed
+    expect(harness.engine.getValue()).toBe("# Hello\none\ntwo\nthree");
+
+    // Selection should cover "one\ntwo\nthree" starting from position 6
+    expect(harness.selection.start).toBe(6);
+
+    harness.engine.selectAll();
+    const newCursorLength = harness.selection.end;
+    harness.engine.setSelection({
+      start: 6,
+      end: newCursorLength,
+      affinity: "forward",
+    });
+    expect(harness.selection.end).toBe(newCursorLength);
+  });
 });
 
 describe("list type conversion", () => {
