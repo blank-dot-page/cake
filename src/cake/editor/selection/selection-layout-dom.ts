@@ -637,16 +637,37 @@ export function hitTestFromLayout(params: {
     lineIndex: number;
     lineStartOffset: number;
     row: LayoutRow;
+    rowSlotTop: number;
+    rowSlotHeight: number;
     centerY: number;
   }> = [];
 
   for (const lineLayout of layout.lines) {
-    for (const row of lineLayout.rows) {
-      const centerY = row.rect.top + row.rect.height / 2;
+    const rowCount = lineLayout.rows.length;
+    const lineHeight = lineLayout.lineBox.height;
+    const canUseSlots =
+      rowCount > 1 && Number.isFinite(lineHeight) && lineHeight > 0;
+    const rowSlotHeight = canUseSlots ? lineHeight / rowCount : 0;
+
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      const row = lineLayout.rows[rowIndex];
+      if (!row) {
+        continue;
+      }
+      // Use the line box "slot" (not the glyph-tight row rect) for vertical hit
+      // testing. With large `line-height`, users can click in leading/line-gap
+      // areas that are visually part of a row but not covered by glyph rects.
+      const slotTop = canUseSlots
+        ? lineLayout.lineBox.top + rowSlotHeight * rowIndex
+        : row.rect.top;
+      const slotHeight = canUseSlots ? rowSlotHeight : row.rect.height;
+      const centerY = slotTop + slotHeight / 2;
       allRows.push({
         lineIndex: lineLayout.lineIndex,
         lineStartOffset: lineLayout.lineStartOffset,
         row,
+        rowSlotTop: slotTop,
+        rowSlotHeight: slotHeight,
         centerY,
       });
     }
@@ -668,7 +689,8 @@ export function hitTestFromLayout(params: {
     }
   }
 
-  const { lineIndex, lineStartOffset, row } = targetRowInfo;
+  const { lineIndex, lineStartOffset, row, rowSlotTop, rowSlotHeight } =
+    targetRowInfo;
   const lineInfo = lines[lineIndex];
   if (!lineInfo) {
     return null;
@@ -687,7 +709,7 @@ export function hitTestFromLayout(params: {
   // and pick the fragment that belongs to the target visual row.
   const resolvePosition = createDomPositionResolver(lineElement);
   const scratchRange = document.createRange();
-  const rowTop = row.rect.top;
+  const rowTop = rowSlotTop;
 
   const approximateX = (cursorOffsetInLine: number): number => {
     const clamped = Math.max(
@@ -703,7 +725,7 @@ export function hitTestFromLayout(params: {
   };
 
   const measureCaretXOnRow = (cursorOffsetInLine: number): number | null => {
-    const maxRowTopDelta = Math.max(2, row.rect.height / 2);
+    const maxRowTopDelta = Math.max(2, rowSlotHeight / 2);
 
     const measureCharEdgeX = (
       from: number,
