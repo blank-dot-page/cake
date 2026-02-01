@@ -1972,9 +1972,6 @@ export class CakeEditor {
     if (!this.isEventTargetInContentRoot(event.target)) {
       return;
     }
-    if (this.beforeInputHandled) {
-      return;
-    }
 
     if (this.compositionCommit && event.inputType === "insertText") {
       this.clearCompositionCommit();
@@ -1994,6 +1991,18 @@ export class CakeEditor {
       event.inputType === "historyRedo"
     ) {
       return;
+    }
+
+    // Some WebKit/iOS flows can dispatch `input` without a corresponding `beforeinput`
+    // while our beforeinput-handled suppression window is still active. In that case,
+    // we must not drop the edit; reconcile if the DOM diverged from the model.
+    if (this.beforeInputHandled) {
+      const domText = this.readDomText();
+      const lines = getDocLines(this.state.doc);
+      const modelText = getVisibleText(lines);
+      if (domText === modelText) {
+        return;
+      }
     }
 
     if (!this.domMap) {
