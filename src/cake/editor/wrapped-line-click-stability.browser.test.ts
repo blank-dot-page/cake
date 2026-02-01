@@ -45,46 +45,47 @@ describe("wrapped line click stability (desktop)", () => {
     const firstRow = rows[0]!;
     const secondRow = rows[1]!;
 
-    // Approximate the "visual row slot" by splitting the total line box height.
-    // This includes line-height leading that is NOT covered by glyph rects.
-    const rowCount = rows.length;
-    const slotHeight = lineRect.height / rowCount;
-    const slotTop = lineRect.top + slotHeight * 1; // second row
-    const slotBottom = slotTop + slotHeight;
+    const contentRect = harness.contentRoot.getBoundingClientRect();
+
+    // Derive the "line-height leading gap" between the last glyph on row 1 and
+    // the first glyph on row 2 (matches the symptom described by the user).
+    const firstCharRect = harness.getCharRect(0);
+    const firstRowTop = firstCharRect.top;
+    let lastCharOnFirstRow = 0;
+    for (let i = 1; i < harness.engine.getText().length; i += 1) {
+      const rect = harness.getCharRect(i);
+      if (rect.top > firstRowTop + 5) {
+        break;
+      }
+      lastCharOnFirstRow = i;
+    }
+    const lastCharRect = harness.getCharRect(lastCharOnFirstRow);
+    const firstCharSecondRowIndex = lastCharOnFirstRow + 1;
+    const firstCharSecondRowRect = harness.getCharRect(firstCharSecondRowIndex);
+    const gap = firstCharSecondRowRect.top - lastCharRect.bottom;
+    expect(gap).toBeGreaterThan(0);
+
+    // Click in the lower part of the gap (closer to row 2). This should map to row 2.
+    const y = lastCharRect.bottom + gap * 0.9;
 
     const start = secondRow.startOffset;
     const endExclusive = secondRow.endOffset + 1;
 
-    // Probe several offsets within the second row.
-    const probeOffsets: number[] = [];
-    for (let offset = start + 2; offset < endExclusive - 2; offset += 3) {
-      probeOffsets.push(offset);
-      if (probeOffsets.length >= 6) {
-        break;
-      }
-    }
-    expect(probeOffsets.length).toBeGreaterThan(0);
+    // Click far to the right so that if the wrong row is chosen, we snap to the
+    // end of that (wrong) row.
+    const x1 = contentRect.right - 2;
+    const x2 = contentRect.right - 6;
 
-    for (const offset of probeOffsets) {
-      const charRect = harness.getCharRect(offset);
-      const x = charRect.left + charRect.width / 2;
+    // First click: should place caret on row 2 (snap to row 2 end), not row 1 end.
+    await harness.clickAtCoords(x1, y);
+    expect(harness.selection.start).toBeGreaterThanOrEqual(start);
+    expect(harness.selection.start).toBeLessThanOrEqual(endExclusive);
+    expect(harness.selection.start).toBeGreaterThan(firstRow.endOffset + 1);
 
-      // 1) Click on the character itself (should obviously land on row 2).
-      const yOnChar = charRect.top + charRect.height / 2;
-      await harness.clickAtCoords(x, yOnChar);
-      expect(harness.selection.start).toBeGreaterThanOrEqual(start);
-      expect(harness.selection.start).toBeLessThanOrEqual(endExclusive);
-
-      // 2) Click again at the same X but near the *top* of the row slot.
-      // With large line-height, this can be in the leading area between visual rows.
-      // This should still target row 2 (not snap back to row 1 end).
-      const yInRowSlot = slotTop + 1;
-      await harness.clickAtCoords(x, yInRowSlot);
-
-      // Regression guard: selection must not jump back to end of row 1.
-      expect(harness.selection.start).toBeGreaterThan(firstRow.endOffset + 1);
-      expect(harness.selection.start).toBeGreaterThanOrEqual(start);
-      expect(harness.selection.start).toBeLessThanOrEqual(endExclusive);
-    }
+    // Second click: moving again within the "second visual line" must stay on row 2.
+    await harness.clickAtCoords(x2, y);
+    expect(harness.selection.start).toBeGreaterThanOrEqual(start);
+    expect(harness.selection.start).toBeLessThanOrEqual(endExclusive);
+    expect(harness.selection.start).toBeGreaterThan(firstRow.endOffset + 1);
   });
 });
