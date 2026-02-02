@@ -1538,6 +1538,43 @@ describe("CakeEditor (browser)", () => {
 
     engine.destroy();
   });
+
+  it("getActiveMarks returns active marks at cursor position", async () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "**bold** *italic* ***both*** normal",
+      selection: createSelection(0, 0),
+    });
+
+    // Wait for render
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Test 1: Cursor in bold text
+    engine.setSelection({ start: 3, end: 3 }); // Inside "bold"
+    expect(engine.getActiveMarks()).toEqual(["bold"]);
+
+    // Test 2: Cursor in italic text
+    engine.setSelection({ start: 8, end: 8 }); // Inside "italic" (at 'l')
+    expect(engine.getActiveMarks()).toEqual(["italic"]);
+
+    // Test 3: Cursor in text with both bold and italic
+    engine.setSelection({ start: 14, end: 14 }); // Inside "both" (at 't')
+    expect(engine.getActiveMarks()).toEqual(["bold", "italic"]);
+
+    // Test 4: Cursor in normal text
+    engine.setSelection({ start: 19, end: 19 }); // Inside "normal" (at 'r')
+    expect(engine.getActiveMarks()).toEqual([]);
+
+    // Test 5: Selection spanning multiple marks
+    engine.setSelection({ start: 3, end: 8 }); // From "bold" to "italic"
+    expect(engine.getActiveMarks()).toEqual([]);
+
+    // Note: Boundary behavior (positions 0 and 4) is complex and depends on affinity
+    // The main functionality works for positions clearly inside marks
+
+    engine.destroy();
+  });
 });
 
 describe("CakeEditor Cmd+Backspace then backspace", () => {

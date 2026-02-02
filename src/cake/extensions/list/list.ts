@@ -782,12 +782,37 @@ function handleToggleList(
     }
   }
 
-  if (!hasNonEmpty) {
-    return null;
-  }
-
   const newLines = [...lines];
   let listNumber = 1;
+
+  if (!hasNonEmpty) {
+    // Special case: If we're on a single empty line, insert the list marker
+    if (selection.start === selection.end && startLine === endLine && lines[startLine] === "") {
+      const marker = isBullet ? "- " : "1. ";
+      newLines[startLine] = marker;
+
+      // Calculate new selection position (after the marker)
+      let newCursorPos = 0;
+      for (let i = 0; i < startLine; i++) {
+        newCursorPos += lines[i].length + 1; // +1 for newline
+      }
+      newCursorPos += marker.length;
+
+      const newSource = newLines.join("\n");
+
+      return {
+        source: newSource,
+        selection: {
+          start: newCursorPos,
+          end: newCursorPos,
+          affinity: "forward",
+        },
+      };
+    }
+
+    // Otherwise, if multiple lines or non-empty selection, return null
+    return null;
+  }
 
   if (allInTarget) {
     // Toggle off - remove list markers

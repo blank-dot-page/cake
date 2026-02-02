@@ -532,6 +532,139 @@ export class CakeEditor {
     };
   }
 
+  getActiveMarks(): string[] {
+    // Only get marks if selection is collapsed (cursor position)
+    if (this.state.selection.start !== this.state.selection.end) {
+      return [];
+    }
+
+    const cursorOffset = this.state.selection.start;
+    const affinity = this.state.selection.affinity ?? "forward";
+
+    // Traverse the document to find marks at cursor position
+    let currentOffset = 0;
+
+    for (const block of this.state.doc.blocks) {
+      const result = this.getMarksInBlock(block, cursorOffset, currentOffset, affinity);
+      if (result.found) {
+        return result.marks;
+      }
+      currentOffset = result.nextOffset;
+    }
+
+    return [];
+  }
+
+  private getMarksInBlock(
+    block: Block,
+    targetOffset: number,
+    startOffset: number,
+    affinity: "forward" | "backward"
+  ): { found: boolean; marks: string[]; nextOffset: number } {
+    if (block.type === "block-wrapper") {
+      let offset = startOffset;
+      for (const childBlock of block.blocks) {
+        const result = this.getMarksInBlock(childBlock, targetOffset, offset, affinity);
+        if (result.found) {
+          return result;
+        }
+        offset = result.nextOffset;
+      }
+      return { found: false, marks: [], nextOffset: offset };
+    }
+
+    if (block.type === "block-atom") {
+      // Atomic blocks have cursor length of 1
+      const nextOffset = startOffset + 1;
+      return { found: false, marks: [], nextOffset };
+    }
+
+    if (block.type === "paragraph") {
+      // Process paragraph content to find marks
+      const result = this.getMarksInParagraph(block.content, targetOffset, startOffset, affinity);
+      return result;
+    }
+
+    return { found: false, marks: [], nextOffset: startOffset };
+  }
+
+  private getMarksInParagraph(
+    content: Inline[],
+    targetOffset: number,
+    startOffset: number,
+    affinity: "forward" | "backward"
+  ): { found: boolean; marks: string[]; nextOffset: number } {
+    let offset = startOffset;
+    const markStack: string[] = [];
+
+    const processInline = (inline: Inline): { found: boolean; marks: string[] } | null => {
+      if (inline.type === "text") {
+        // Count grapheme clusters (cursor positions)
+        const graphemes = Array.from(
+          new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(inline.text)
+        );
+        const endOffset = offset + graphemes.length;
+
+        if (offset < targetOffset && targetOffset < endOffset) {
+          // Found the position inside the text
+          return { found: true, marks: [...markStack] };
+        } else if (targetOffset === offset && affinity === "forward" && offset > 0) {
+          // At start boundary with forward affinity (but not at document start)
+          return { found: true, marks: [...markStack] };
+        } else if (targetOffset === endOffset && affinity === "backward") {
+          // At end boundary with backward affinity
+          return { found: true, marks: [...markStack] };
+        }
+
+        offset = endOffset;
+        return null;
+      }
+
+      if (inline.type === "inline-atom") {
+        // Inline atoms have cursor length of 1
+        const endOffset = offset + 1;
+
+        if (offset <= targetOffset && targetOffset < endOffset) {
+          return { found: true, marks: [...markStack] };
+        } else if (targetOffset === endOffset && affinity === "backward") {
+          return { found: true, marks: [...markStack] };
+        }
+
+        offset = endOffset;
+        return null;
+      }
+
+      if (inline.type === "inline-wrapper") {
+        // Push mark onto stack
+        markStack.push(inline.kind);
+
+        // Process children
+        for (const child of inline.children) {
+          const result = processInline(child);
+          if (result) {
+            return result;
+          }
+        }
+
+        // Pop mark from stack
+        markStack.pop();
+        return null;
+      }
+
+      return null;
+    };
+
+    // Process all inlines
+    for (const inline of content) {
+      const result = processInline(inline);
+      if (result) {
+        return { found: true, marks: result.marks, nextOffset: offset };
+      }
+    }
+
+    return { found: false, marks: [], nextOffset: offset };
+  }
+
   setTextSelection(selection: { start: number; end: number }) {
     const lines = getDocLines(this.state.doc);
     const start = visibleOffsetToCursorOffset(lines, selection.start);

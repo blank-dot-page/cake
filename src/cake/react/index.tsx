@@ -93,6 +93,7 @@ export interface CakeEditorRef {
   getCursorLength: () => number;
   insertText: (text: string) => void;
   replaceText: (oldText: string, newText: string) => void;
+  getActiveMarks: () => string[];
 }
 
 export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
@@ -286,6 +287,7 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
         replaceText: (oldText: string, newText: string) => {
           engineRef.current?.replaceText(oldText, newText);
         },
+        getActiveMarks: () => engineRef.current?.getActiveMarks() ?? [],
       };
     }, [props.value]);
 

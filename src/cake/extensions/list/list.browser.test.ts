@@ -878,6 +878,60 @@ describe("list toggle commands", () => {
 
     expect(harness.engine.getValue()).toBe("hello world");
   });
+
+  test("toggle-bullet-list on empty line creates bullet list marker", async () => {
+    harness = createTestHarness("");
+
+    await harness.focus();
+    harness.engine.setSelection({ start: 0, end: 0, affinity: "forward" });
+
+    harness.engine.executeCommand({ type: "toggle-bullet-list" });
+
+    expect(harness.engine.getValue()).toBe("- ");
+    // Cursor should be positioned after the marker
+    expect(harness.engine.getSelection()).toEqual({ start: 2, end: 2, affinity: "forward" });
+  });
+
+  test("toggle-numbered-list on empty line creates numbered list marker", async () => {
+    harness = createTestHarness("");
+
+    await harness.focus();
+    harness.engine.setSelection({ start: 0, end: 0, affinity: "forward" });
+
+    harness.engine.executeCommand({ type: "toggle-numbered-list" });
+
+    expect(harness.engine.getValue()).toBe("1. ");
+    // Cursor should be positioned after the marker
+    expect(harness.engine.getSelection()).toEqual({ start: 3, end: 3, affinity: "forward" });
+  });
+
+  test("toggle-bullet-list on empty line in middle of document", async () => {
+    harness = createTestHarness("line one\n\nline three");
+
+    await harness.focus();
+    // Position cursor on the empty line (after first newline)
+    harness.engine.setSelection({ start: 9, end: 9, affinity: "forward" });
+
+    harness.engine.executeCommand({ type: "toggle-bullet-list" });
+
+    expect(harness.engine.getValue()).toBe("line one\n- \nline three");
+    // Cursor should be positioned after the marker on the middle line
+    expect(harness.engine.getSelection()).toEqual({ start: 11, end: 11, affinity: "forward" });
+  });
+
+  test("toggle-numbered-list on empty line in middle of document", async () => {
+    harness = createTestHarness("line one\n\nline three");
+
+    await harness.focus();
+    // Position cursor on the empty line (after first newline)
+    harness.engine.setSelection({ start: 9, end: 9, affinity: "forward" });
+
+    harness.engine.executeCommand({ type: "toggle-numbered-list" });
+
+    expect(harness.engine.getValue()).toBe("line one\n1. \nline three");
+    // Cursor should be positioned after the marker on the middle line
+    expect(harness.engine.getSelection()).toEqual({ start: 12, end: 12, affinity: "forward" });
+  });
 });
 
 describe("typing dash with partial selection", () => {
