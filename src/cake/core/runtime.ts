@@ -1656,6 +1656,7 @@ export function createRuntimeFromRegistry(registry: {
         return "forward";
       }
     }
+
     return preferredAffinityAtGap(left, right, fallback);
   }
 

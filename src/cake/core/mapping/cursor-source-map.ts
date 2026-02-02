@@ -40,6 +40,14 @@ export function createCursorSourceMap(
       const lastIndex = boundaries.length - 1;
       const lastBoundary = boundaries[lastIndex];
       if (sourceOffset >= lastBoundary.sourceForward) {
+        if (lastBoundary.sourceBackward !== lastBoundary.sourceForward) {
+          if (sourceOffset === lastBoundary.sourceBackward) {
+            return { cursorOffset: lastIndex, affinity: "backward" };
+          }
+          if (sourceOffset === lastBoundary.sourceForward) {
+            return { cursorOffset: lastIndex, affinity: "forward" };
+          }
+        }
         return { cursorOffset: lastIndex, affinity: bias };
       }
 
@@ -55,6 +63,19 @@ export function createCursorSourceMap(
           }
           const prevIndex = Math.max(0, i - 1);
           return { cursorOffset: prevIndex, affinity: "backward" };
+        }
+
+        // If the source offset lands exactly on one side of a source-only span
+        // (e.g. markdown markers that don't take cursor units), preserve which
+        // side of the boundary it came from. This prevents caret drift when
+        // marker characters become source-only after reparsing.
+        if (boundary.sourceBackward !== boundary.sourceForward) {
+          if (sourceOffset === boundary.sourceBackward) {
+            return { cursorOffset: i, affinity: "backward" };
+          }
+          if (sourceOffset === boundary.sourceForward) {
+            return { cursorOffset: i, affinity: "forward" };
+          }
         }
 
         return { cursorOffset: i, affinity: bias };

@@ -44,4 +44,35 @@ describe("CursorSourceMap", () => {
     expect(mapped.cursorOffset).toBe(2);
     expect(mapped.affinity).toBe("backward");
   });
+
+  it("preserves boundary side when mapping a source offset that lands on a source-only span edge", () => {
+    const builder = new CursorSourceBuilder();
+    builder.appendSourceOnly("**");
+    builder.appendText("a");
+    builder.appendSourceOnly("**");
+    const { map } = builder.build();
+
+    // Cursor after "a" has a source-only close span:
+    // - sourceBackward points before the close markers
+    // - sourceForward points after the close markers
+    expect(map.boundaries[1]).toEqual({ sourceBackward: 3, sourceForward: 5 });
+
+    // Snap to the correct boundary side, regardless of bias.
+    expect(map.sourceToCursor(3, "forward")).toEqual({
+      cursorOffset: 1,
+      affinity: "backward",
+    });
+    expect(map.sourceToCursor(3, "backward")).toEqual({
+      cursorOffset: 1,
+      affinity: "backward",
+    });
+    expect(map.sourceToCursor(5, "forward")).toEqual({
+      cursorOffset: 1,
+      affinity: "forward",
+    });
+    expect(map.sourceToCursor(5, "backward")).toEqual({
+      cursorOffset: 1,
+      affinity: "forward",
+    });
+  });
 });

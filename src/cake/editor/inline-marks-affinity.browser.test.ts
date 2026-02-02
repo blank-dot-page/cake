@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestHarness } from "../test/harness";
 
+const mod =
+  typeof navigator !== "undefined" &&
+  typeof navigator.platform === "string" &&
+  navigator.platform.toLowerCase().includes("mac")
+    ? { meta: true }
+    : { ctrl: true };
+
 describe("Inline marks affinity (browser)", () => {
   afterEach(() => {
     const selection = window.getSelection();
@@ -12,6 +19,9 @@ describe("Inline marks affinity (browser)", () => {
     const h = createTestHarness("");
 
     await h.focus();
+
+    // Press backspace to set affinity to backward
+    await h.pressBackspace();
 
     // Type opening bold markers
     await h.typeText("**");
@@ -50,6 +60,9 @@ describe("Inline marks affinity (browser)", () => {
 
     await h.focus();
 
+    // Press backspace to set affinity to backward
+    await h.pressBackspace();
+
     // Type opening italic markers
     await h.typeText("*");
 
@@ -85,6 +98,9 @@ describe("Inline marks affinity (browser)", () => {
     const h = createTestHarness("");
 
     await h.focus();
+
+    // Press backspace to set affinity to backward
+    await h.pressBackspace();
 
     // Type opening strikethrough markers
     await h.typeText("~~");
@@ -122,6 +138,9 @@ describe("Inline marks affinity (browser)", () => {
 
     await h.focus();
 
+    // Press backspace to set affinity to backward
+    await h.pressBackspace();
+
     // Type opening underline markers
     await h.typeText("<u>");
 
@@ -158,6 +177,9 @@ describe("Inline marks affinity (browser)", () => {
 
     await h.focus();
 
+    // Press backspace to set affinity to backward
+    await h.pressBackspace();
+
     // Type opening bold+italic markers
     await h.typeText("***");
 
@@ -189,6 +211,21 @@ describe("Inline marks affinity (browser)", () => {
     // Ensure " normal" is not inside any formatted element
     const textAfterFormatting = strong?.nextSibling?.textContent || "";
     expect(textAfterFormatting).toBe(" normal");
+
+    h.destroy();
+  });
+
+  it("toggle bold on/off via cmd+b should only bold the intended text", async () => {
+    const h = createTestHarness("");
+
+    await h.focus();
+
+    await h.pressKey("b", mod);
+    await h.typeText("bold");
+    await h.pressKey("b", mod);
+    await h.typeText(" not bold");
+
+    expect(h.engine.getValue()).toBe("**bold** not bold");
 
     h.destroy();
   });
