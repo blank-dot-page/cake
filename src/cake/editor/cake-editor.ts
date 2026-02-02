@@ -775,10 +775,6 @@ export class CakeEditor {
     return this.uiComponents.slice();
   }
 
-  openLinkPopover(isEditing: boolean) {
-    this.openLinkPopoverForSelection(isEditing);
-  }
-
   onChange(
     callback: (value: string, selection: Selection) => void,
   ): () => void {
@@ -943,9 +939,6 @@ export class CakeEditor {
     command: EditCommand,
     options?: { restoreFocus?: boolean },
   ): boolean {
-    // Check for openPopover flag on any command (used by link extension)
-    const shouldOpenLinkPopover =
-      "openPopover" in command && command.openPopover === true;
     const nextState = this.runtime.applyEdit(command, this.state);
     if (nextState === this.state) {
       return false;
@@ -962,14 +955,6 @@ export class CakeEditor {
     // (marks may change even when selection position doesn't)
     this.notifySelectionChange();
     this.scheduleScrollCaretIntoView();
-    if (shouldOpenLinkPopover) {
-      // The popover is rendered via React overlays, and its event listeners are
-      // registered in `useEffect`. Dispatch after a frame so the overlay has a
-      // chance to commit and attach listeners across engines.
-      window.requestAnimationFrame(() => {
-        this.openLinkPopoverForSelection(true);
-      });
-    }
     if (options?.restoreFocus) {
       this.focus();
       this.applySelection(this.state.selection);
@@ -3570,33 +3555,6 @@ export class CakeEditor {
 
   private handleResize() {
     this.scheduleOverlayUpdate();
-  }
-
-  private openLinkPopoverForSelection(isEditing: boolean) {
-    if (!this.contentRoot || !this.domMap) {
-      return;
-    }
-    const selection = this.state.selection;
-    const focus =
-      selection.start === selection.end
-        ? selection.start
-        : Math.max(selection.start, selection.end);
-    const affinity = selection.affinity ?? "forward";
-    const domPoint = this.domMap.domAtCursor(focus, affinity);
-    if (!domPoint) {
-      return;
-    }
-    const link =
-      domPoint.node.parentElement?.closest("a.cake-link") ??
-      this.contentRoot.querySelector("a.cake-link");
-    if (!link || !(link instanceof HTMLAnchorElement)) {
-      return;
-    }
-    const event = new CustomEvent("cake-link-popover-open", {
-      bubbles: true,
-      detail: { link, isEditing },
-    });
-    this.contentRoot.dispatchEvent(event);
   }
 
   private scheduleOverlayUpdate() {
