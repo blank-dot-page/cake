@@ -247,8 +247,13 @@ export function CakeLinkPopover({
       openForLink(link, { isEditing: true });
     }
 
-    const unsubscribeChange = editor.onChange(() => handleUpdate());
-    const unsubscribeSelection = editor.onSelectionChange(() => handleUpdate());
+    const unsubscribeChange = editor.onChange(() => {
+      // Defer check to next frame so DOM selection has settled
+      requestAnimationFrame(() => handleUpdate());
+    });
+    const unsubscribeSelection = editor.onSelectionChange(() => {
+      requestAnimationFrame(() => handleUpdate());
+    });
     handleUpdate();
     return () => {
       unsubscribeChange();
