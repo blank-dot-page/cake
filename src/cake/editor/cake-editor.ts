@@ -1200,9 +1200,12 @@ export class CakeEditor {
     if (!only || only.type !== "paragraph") {
       return false;
     }
-    const hasVisibleInlineContent = (inline: (typeof only.content)[number]) => {
+    const hasVisibleInlineContent = (inline: (typeof only.content)[number]): boolean => {
       if (inline.type === "text") {
-        return inline.text.length > 0;
+        // Zero-width spaces (\u200B) are used as placeholders for empty marks
+        // and should not be considered visible content
+        const visibleText = inline.text.replace(/\u200B/g, "");
+        return visibleText.length > 0;
       }
       if (inline.type === "inline-wrapper") {
         return inline.children.some(hasVisibleInlineContent);
