@@ -421,10 +421,7 @@ export function CakeLinkPopover({
         </form>
       ) : (
         <>
-          <div
-            className={cx("cake-link-url", styles?.url)}
-            title={displayUrl}
-          >
+          <div className={cx("cake-link-url", styles?.url)}>
             {displayUrl}
           </div>
           <div className={cx("cake-link-actions", styles?.actions)}>
