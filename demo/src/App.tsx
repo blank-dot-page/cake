@@ -254,7 +254,7 @@ export default function App() {
             placeholder="Start typing..."
             spellCheck={spellCheck}
             extensions={extensions}
-            style={{ height: "100%", padding: 24 }}
+            style={{ padding: 24 }}
           />
         </section>
 
