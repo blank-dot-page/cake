@@ -951,6 +951,9 @@ export class CakeEditor {
     // frame (which can vary across engines in test and headless environments).
     this.flushOverlayUpdate();
     this.notifyChange();
+    // Notify selection change so consumers can update active marks state
+    // (marks may change even when selection position doesn't)
+    this.notifySelectionChange();
     this.scheduleScrollCaretIntoView();
     if (shouldOpenLinkPopover) {
       // The popover is rendered via React overlays, and its event listeners are
