@@ -272,7 +272,6 @@ body {
 .main .cake-placeholder {
   position: absolute;
   inset: 0;
-  padding: 24px;
   color: rgba(18, 18, 18, 0.35);
   pointer-events: none;
   user-select: none;
