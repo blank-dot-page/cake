@@ -4,8 +4,9 @@ import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { CakeEditor, type CakeEditorRef } from "../../react/index";
 import { bundledExtensions } from "../../extensions";
+import { linkExtension } from "./link";
 
-function renderEditor(markdown: string) {
+function renderEditor(markdown: string, options?: { extensions?: any[] }) {
   const ref = createRef<CakeEditorRef>();
   render(
     <CakeEditor
@@ -13,7 +14,7 @@ function renderEditor(markdown: string) {
       value={markdown}
       onChange={() => undefined}
       placeholder=""
-      extensions={bundledExtensions}
+      extensions={options?.extensions ?? bundledExtensions}
       style={{ height: 300, overflow: "auto" }}
     />,
   );
@@ -172,5 +173,48 @@ describe("cake link popover", () => {
 
     // The link element should no longer exist
     await expect.element(page.getByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("merges default cake classes with custom style classes", async () => {
+    renderEditor("hello [world](https://example.com)", {
+      extensions: [
+        linkExtension({
+          styles: {
+            popover: "my-popover",
+            input: "my-input",
+            saveButton: "my-save",
+            cancelButton: "my-cancel",
+          },
+        }),
+      ],
+    });
+
+    const link = page.getByRole("link", { name: "world" });
+    await expect.element(link).toBeVisible();
+    await userEvent.click(link);
+
+    const popover = document.querySelector(".cake-link-popover");
+    expect(popover).not.toBeNull();
+    expect(popover?.classList.contains("cake-link-popover")).toBe(true);
+    expect(popover?.classList.contains("my-popover")).toBe(true);
+
+    const editButton = page.getByRole("button", { name: "Edit link" });
+    await expect.element(editButton).toBeVisible();
+    await userEvent.click(editButton);
+
+    const input = document.querySelector(".cake-link-input");
+    expect(input).not.toBeNull();
+    expect(input?.classList.contains("cake-link-input")).toBe(true);
+    expect(input?.classList.contains("my-input")).toBe(true);
+
+    const saveButton = page.getByRole("button", { name: "Save" });
+    await expect.element(saveButton).toBeVisible();
+    expect(saveButton.element().classList.contains("cake-link-save")).toBe(true);
+    expect(saveButton.element().classList.contains("my-save")).toBe(true);
+
+    const cancelButton = page.getByRole("button", { name: "Cancel" });
+    await expect.element(cancelButton).toBeVisible();
+    expect(cancelButton.element().classList.contains("cake-link-cancel")).toBe(true);
+    expect(cancelButton.element().classList.contains("my-cancel")).toBe(true);
   });
 });

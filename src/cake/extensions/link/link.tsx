@@ -12,6 +12,7 @@ import {
   getVisibleText,
 } from "../../editor/selection/visible-text";
 import { ensureHttpsProtocol, isUrl } from "../../shared/url";
+import type { CakeEditor } from "../../editor/cake-editor";
 
 const LINK_KIND = "link";
 
@@ -32,7 +33,28 @@ export type UnlinkCommand = {
 /** All link extension commands */
 export type LinkCommand = WrapLinkCommand | UnlinkCommand;
 
-export const linkExtension: CakeExtension = (editor) => {
+export type OnRequestLinkInput = (
+  editor: CakeEditor,
+) => Promise<{ url: string; text: string } | null>;
+
+export type LinkExtensionStyles = {
+  popover?: string;
+  editor?: string;
+  input?: string;
+  saveButton?: string;
+  cancelButton?: string;
+  url?: string;
+  actions?: string;
+  iconButton?: string;
+  icon?: string;
+};
+
+export type LinkExtensionOptions = {
+  onRequestLinkInput?: OnRequestLinkInput;
+  styles?: LinkExtensionStyles;
+};
+
+function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions) {
   const disposers: Array<() => void> = [];
 
   disposers.push(
@@ -47,10 +69,36 @@ export const linkExtension: CakeExtension = (editor) => {
         meta: true,
         shift: true,
         command: (state) => {
-          if (state.selection.start === state.selection.end) {
+          if (state.selection.start !== state.selection.end) {
+            return { type: "wrap-link", openPopover: true };
+          }
+
+          const isInLink = editor.getActiveMarks().includes(LINK_KIND);
+          if (isInLink) {
+            window.requestAnimationFrame(() => editor.openLinkPopover(true));
+            return { type: "noop" };
+          }
+
+          if (!options.onRequestLinkInput) {
             return null;
           }
-          return { type: "wrap-link", openPopover: true };
+
+          options
+            .onRequestLinkInput(editor)
+            .then((result) => {
+              if (!result) {
+                return;
+              }
+              editor.executeCommand(
+                { type: "insert", text: `[${result.text}](${result.url})` },
+                { restoreFocus: true },
+              );
+            })
+            .catch(() => {
+              // Treat as cancel.
+            });
+
+          return { type: "noop" };
         },
       },
       {
@@ -58,10 +106,36 @@ export const linkExtension: CakeExtension = (editor) => {
         ctrl: true,
         shift: true,
         command: (state) => {
-          if (state.selection.start === state.selection.end) {
+          if (state.selection.start !== state.selection.end) {
+            return { type: "wrap-link", openPopover: true };
+          }
+
+          const isInLink = editor.getActiveMarks().includes(LINK_KIND);
+          if (isInLink) {
+            window.requestAnimationFrame(() => editor.openLinkPopover(true));
+            return { type: "noop" };
+          }
+
+          if (!options.onRequestLinkInput) {
             return null;
           }
-          return { type: "wrap-link", openPopover: true };
+
+          options
+            .onRequestLinkInput(editor)
+            .then((result) => {
+              if (!result) {
+                return;
+              }
+              editor.executeCommand(
+                { type: "insert", text: `[${result.text}](${result.url})` },
+                { restoreFocus: true },
+              );
+            })
+            .catch(() => {
+              // Treat as cancel.
+            });
+
+          return { type: "noop" };
         },
       },
     ]),
@@ -275,7 +349,10 @@ export const linkExtension: CakeExtension = (editor) => {
     }),
   );
 
-  disposers.push(editor.registerUI(CakeLinkPopover));
+  const LinkPopoverUI = ({ editor }: { editor: CakeEditor }) => (
+    <CakeLinkPopover editor={editor} styles={options.styles} />
+  );
+  disposers.push(editor.registerUI(LinkPopoverUI));
 
   return () =>
     disposers
@@ -283,3 +360,15 @@ export const linkExtension: CakeExtension = (editor) => {
       .reverse()
       .forEach((d) => d());
 };
+
+export function linkExtension(editor: CakeEditor): void | (() => void);
+export function linkExtension(options?: LinkExtensionOptions): CakeExtension;
+export function linkExtension(
+  arg?: CakeEditor | LinkExtensionOptions,
+): void | (() => void) | CakeExtension {
+  if (arg && typeof arg === "object" && "registerKeybindings" in arg) {
+    return installLinkExtension(arg as CakeEditor, {});
+  }
+  const options = (arg ?? {}) as LinkExtensionOptions;
+  return (editor) => installLinkExtension(editor, options);
+}

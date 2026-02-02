@@ -775,6 +775,10 @@ export class CakeEditor {
     return this.uiComponents.slice();
   }
 
+  openLinkPopover(isEditing: boolean) {
+    this.openLinkPopoverForSelection(isEditing);
+  }
+
   onChange(
     callback: (value: string, selection: Selection) => void,
   ): () => void {

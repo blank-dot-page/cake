@@ -10,6 +10,7 @@ import { ExternalLink, Pencil, Unlink } from "lucide-react";
 import { ensureHttpsProtocol } from "../../shared/url";
 import type { EditCommand } from "../../core/runtime";
 import type { CakeEditor } from "../../editor/cake-editor";
+import type { LinkExtensionStyles } from "./link";
 
 type PopoverPosition = { top: number; left: number };
 
@@ -50,7 +51,17 @@ function getPopoverPosition(params: {
   };
 }
 
-export function CakeLinkPopover({ editor }: { editor: CakeEditor }) {
+function cx(...parts: Array<string | undefined | null | false>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+export function CakeLinkPopover({
+  editor,
+  styles,
+}: {
+  editor: CakeEditor;
+  styles?: LinkExtensionStyles;
+}) {
   const container = editor.getContainer();
   const contentRoot = editor.getContentRoot();
   if (!contentRoot) {
@@ -291,7 +302,7 @@ export function CakeLinkPopover({ editor }: { editor: CakeEditor }) {
 
   return (
     <div
-      className="cake-link-popover"
+      className={cx("cake-link-popover", styles?.popover)}
       ref={popoverRef}
       style={{
         position: "absolute",
@@ -304,14 +315,14 @@ export function CakeLinkPopover({ editor }: { editor: CakeEditor }) {
     >
       {state.isEditing ? (
         <form
-          className="cake-link-editor"
+          className={cx("cake-link-editor", styles?.editor)}
           onSubmit={(event) => {
             event.preventDefault();
             handleSave();
           }}
         >
           <input
-            className="cake-link-input"
+            className={cx("cake-link-input", styles?.input)}
             type="text"
             value={state.draftUrl}
             ref={inputRef}
@@ -326,12 +337,15 @@ export function CakeLinkPopover({ editor }: { editor: CakeEditor }) {
             onKeyDown={handleInputKeyDown}
             placeholder="https://"
           />
-          <button type="submit" className="cake-link-save">
+          <button
+            type="submit"
+            className={cx("cake-link-save", styles?.saveButton)}
+          >
             Save
           </button>
           <button
             type="button"
-            className="cake-link-cancel"
+            className={cx("cake-link-cancel", styles?.cancelButton)}
             onClick={handleCancel}
           >
             Cancel
@@ -339,36 +353,39 @@ export function CakeLinkPopover({ editor }: { editor: CakeEditor }) {
         </form>
       ) : (
         <>
-          <div className="cake-link-url" title={displayUrl}>
+          <div
+            className={cx("cake-link-url", styles?.url)}
+            title={displayUrl}
+          >
             {displayUrl}
           </div>
-          <div className="cake-link-actions">
+          <div className={cx("cake-link-actions", styles?.actions)}>
             <button
               type="button"
-              className="cake-link-icon-action"
+              className={cx("cake-link-icon-action", styles?.iconButton)}
               onClick={handleEdit}
               title="Edit link"
               aria-label="Edit link"
             >
-              <Pencil className="cake-link-icon" />
+              <Pencil className={cx("cake-link-icon", styles?.icon)} />
             </button>
             <button
               type="button"
-              className="cake-link-icon-action"
+              className={cx("cake-link-icon-action", styles?.iconButton)}
               onClick={handleOpen}
               title="Open link"
               aria-label="Open link"
             >
-              <ExternalLink className="cake-link-icon" />
+              <ExternalLink className={cx("cake-link-icon", styles?.icon)} />
             </button>
             <button
               type="button"
-              className="cake-link-icon-action"
+              className={cx("cake-link-icon-action", styles?.iconButton)}
               onClick={handleUnlink}
               title="Remove link"
               aria-label="Remove link"
             >
-              <Unlink className="cake-link-icon" />
+              <Unlink className={cx("cake-link-icon", styles?.icon)} />
             </button>
           </div>
         </>
