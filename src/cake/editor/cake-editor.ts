@@ -608,9 +608,12 @@ export class CakeEditor {
         if (offset < targetOffset && targetOffset < endOffset) {
           // Found the position inside the text
           return { found: true, marks: [...markStack] };
-        } else if (targetOffset === offset && affinity === "forward" && offset > 0) {
-          // At start boundary with forward affinity (but not at document start)
-          return { found: true, marks: [...markStack] };
+        } else if (targetOffset === offset && affinity === "forward") {
+          // At start boundary with forward affinity - return marks if we're inside a wrapper
+          // (markStack is non-empty), otherwise continue searching
+          if (markStack.length > 0) {
+            return { found: true, marks: [...markStack] };
+          }
         } else if (targetOffset === endOffset && affinity === "backward") {
           // At end boundary with backward affinity
           return { found: true, marks: [...markStack] };
