@@ -54,6 +54,25 @@ export type LinkExtensionOptions = {
   styles?: LinkExtensionStyles;
 };
 
+function isDomSelectionInsideLink(editor: CakeEditor): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const contentRoot = editor.getContentRoot();
+  if (!contentRoot) {
+    return false;
+  }
+  const selection = window.getSelection();
+  const focusNode = selection?.focusNode ?? null;
+  const focusElement =
+    focusNode instanceof Element ? focusNode : focusNode?.parentElement ?? null;
+  if (!focusElement || !contentRoot.contains(focusElement)) {
+    return false;
+  }
+  const link = focusElement.closest("a.cake-link");
+  return link instanceof HTMLAnchorElement;
+}
+
 function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions) {
   const disposers: Array<() => void> = [];
 
@@ -73,8 +92,7 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
             return { type: "wrap-link", openPopover: true };
           }
 
-          const isInLink = editor.getActiveMarks().includes(LINK_KIND);
-          if (isInLink) {
+          if (isDomSelectionInsideLink(editor)) {
             return { type: "noop" };
           }
 
@@ -109,8 +127,7 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
             return { type: "wrap-link", openPopover: true };
           }
 
-          const isInLink = editor.getActiveMarks().includes(LINK_KIND);
-          if (isInLink) {
+          if (isDomSelectionInsideLink(editor)) {
             return { type: "noop" };
           }
 

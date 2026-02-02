@@ -159,16 +159,6 @@ export function CakeLinkPopover({
     [toOverlayRect],
   );
 
-  const openEditForSelectionLink = useCallback(() => {
-    const link =
-      getLinkFromDomSelection(contentRoot) ??
-      contentRoot.querySelector<HTMLAnchorElement>("a.cake-link");
-    if (!link) {
-      return;
-    }
-    openForLink(link, { isEditing: true });
-  }, [contentRoot, openForLink]);
-
   useEffect(() => {
     if (state.status !== "open") {
       return;
@@ -223,19 +213,19 @@ export function CakeLinkPopover({
       if (selection.start !== selection.end) {
         return;
       }
-      const isInLink = editor.getActiveMarks().includes("link");
-      if (!isInLink) {
+      const link = getLinkFromDomSelection(contentRoot);
+      if (!link) {
         return;
       }
       event.preventDefault();
-      openEditForSelectionLink();
+      openForLink(link, { isEditing: true });
     }
 
     contentRoot.addEventListener("keydown", handleKeyDown);
     return () => {
       contentRoot.removeEventListener("keydown", handleKeyDown);
     };
-  }, [contentRoot, editor, openEditForSelectionLink]);
+  }, [contentRoot, editor, openForLink]);
 
   useEffect(() => {
     function handleUpdate() {
@@ -244,10 +234,6 @@ export function CakeLinkPopover({
       }
       const selection = editor.getSelection();
       if (selection.start !== selection.end) {
-        return;
-      }
-      const isInLink = editor.getActiveMarks().includes("link");
-      if (!isInLink) {
         return;
       }
       const link = getLinkFromDomSelection(contentRoot);
