@@ -217,6 +217,23 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
       const cursorStart = Math.min(selection.start, selection.end);
       const cursorEnd = Math.max(selection.start, selection.end);
       if (cursorStart === cursorEnd) {
+        // Collapsed selection - trigger callback if available
+        if (options.onRequestLinkInput && !isDomSelectionInsideLink(editor)) {
+          options
+            .onRequestLinkInput(editor)
+            .then((result) => {
+              if (!result) {
+                return;
+              }
+              editor.executeCommand(
+                { type: "insert", text: `[${result.text}](${result.url})` },
+                { restoreFocus: true },
+              );
+            })
+            .catch(() => {
+              // Treat as cancel.
+            });
+        }
         return null;
       }
       const from = state.map.cursorToSource(cursorStart, "forward");
