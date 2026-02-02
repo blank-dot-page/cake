@@ -213,6 +213,9 @@ export function CakeLinkPopover({
       if (selection.start !== selection.end) {
         return;
       }
+      if (!contentRoot) {
+        return;
+      }
       const link = getLinkFromDomSelection(contentRoot);
       if (!link) {
         return;
@@ -221,6 +224,9 @@ export function CakeLinkPopover({
       openForLink(link, { isEditing: true });
     }
 
+    if (!contentRoot) {
+      return;
+    }
     contentRoot.addEventListener("keydown", handleKeyDown);
     return () => {
       contentRoot.removeEventListener("keydown", handleKeyDown);
@@ -234,6 +240,9 @@ export function CakeLinkPopover({
       }
       const selection = editor.getSelection();
       if (selection.start !== selection.end) {
+        return;
+      }
+      if (!contentRoot) {
         return;
       }
       const link = getLinkFromDomSelection(contentRoot);

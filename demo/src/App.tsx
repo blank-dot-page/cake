@@ -1,8 +1,32 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { CakeEditor, CakeEditorRef } from "@blankdotpage/cake/react";
-import { bundledExtensions } from "@blankdotpage/cake";
+import {
+  bundledExtensionsWithoutImage,
+  imageExtension,
+  linkExtension,
+} from "@blankdotpage/cake";
+import type { OnRequestLinkInput } from "@blankdotpage/cake";
 
 type FontStyle = "sans" | "serif" | "mono";
+
+async function requestLinkInput(): Promise<{
+  text: string;
+  url: string;
+} | null> {
+  const text = window.prompt("Link text:");
+  if (!text) {
+    return null;
+  }
+  const url = window.prompt("Link URL:");
+  if (!url) {
+    return null;
+  }
+  return { text, url };
+}
+
+const onRequestLinkInput: OnRequestLinkInput = async () => {
+  return requestLinkInput();
+};
 
 export default function App() {
   const editorRef = useRef<CakeEditorRef>(null);
@@ -16,6 +40,17 @@ export default function App() {
     end: number;
     affinity: "forward" | "backward";
   } | null>(null);
+
+  const extensions = useMemo(() => {
+    const extensionsWithoutLink = bundledExtensionsWithoutImage.filter(
+      (ext) => ext !== linkExtension,
+    );
+    return [
+      ...extensionsWithoutLink,
+      linkExtension({ onRequestLinkInput }),
+      imageExtension,
+    ];
+  }, []);
 
   const hasSelection = selection && selection.start !== selection.end;
 
@@ -93,14 +128,28 @@ export default function App() {
               </button>
               <button
                 className="toolbarButton"
-                onClick={() =>
-                  editorRef.current?.executeCommand(
-                    { type: "wrap-link", openPopover: true },
-                    { restoreFocus: true },
-                  )
-                }
+                onClick={async () => {
+                  if (hasSelection) {
+                    editorRef.current?.executeCommand(
+                      { type: "wrap-link", openPopover: true },
+                      { restoreFocus: true },
+                    );
+                  } else {
+                    const result = await requestLinkInput();
+                    if (result) {
+                      editorRef.current?.executeCommand(
+                        {
+                          type: "insert",
+                          text: `[${result.text}](${result.url})`,
+                        },
+                        { restoreFocus: true },
+                      );
+                    } else {
+                      editorRef.current?.focus();
+                    }
+                  }
+                }}
                 title="Link (Cmd+Shift+U)"
-                disabled={!hasSelection}
               >
                 Link
               </button>
@@ -204,7 +253,7 @@ export default function App() {
             }}
             placeholder="Start typing..."
             spellCheck={spellCheck}
-            extensions={bundledExtensions}
+            extensions={extensions}
             style={{ height: "100%", padding: 24 }}
           />
         </section>
