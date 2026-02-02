@@ -254,10 +254,63 @@ describe("Fuzz-like testing for mark toggling", () => {
     document.body.innerHTML = "";
   });
 
-  it("random toggle sequences starting from empty doc should never leak asterisks", async () => {
-    // Test various toggle sequences to ensure no asterisks leak into visible text
-    // NOTE: Sequences that create interleaved markers (like ***z*** for bold+italic)
-    // have known limitations in the current parser, so we test simpler sequences here.
+  it("cmd+i then many cmd+b should not leak asterisks", async () => {
+    h = createTestHarness("");
+    await h.focus();
+
+    // cmd+i once
+    await h.pressKey("i", mod);
+
+    // cmd+b 10 times
+    for (let i = 0; i < 10; i++) {
+      await h.pressKey("b", mod);
+      const visibleText = h.getLine(0).textContent ?? "";
+      expect(visibleText).not.toContain("*");
+    }
+  });
+
+  it("cmd+b then many cmd+i should not leak asterisks", async () => {
+    h = createTestHarness("");
+    await h.focus();
+
+    // cmd+b once
+    await h.pressKey("b", mod);
+
+    // cmd+i 10 times
+    for (let i = 0; i < 10; i++) {
+      await h.pressKey("i", mod);
+      const visibleText = h.getLine(0).textContent ?? "";
+      expect(visibleText).not.toContain("*");
+    }
+  });
+
+  it("alternating cmd+i and cmd+b should not leak asterisks", async () => {
+    h = createTestHarness("");
+    await h.focus();
+
+    // Alternate between i and b 12 times
+    for (let i = 0; i < 12; i++) {
+      const key = i % 2 === 0 ? "i" : "b";
+      await h.pressKey(key, mod);
+      const visibleText = h.getLine(0).textContent ?? "";
+      expect(visibleText).not.toContain("*");
+    }
+  });
+
+  it("alternating cmd+b and cmd+i should not leak asterisks", async () => {
+    h = createTestHarness("");
+    await h.focus();
+
+    // Alternate between b and i 12 times
+    for (let i = 0; i < 12; i++) {
+      const key = i % 2 === 0 ? "b" : "i";
+      await h.pressKey(key, mod);
+      const visibleText = h.getLine(0).textContent ?? "";
+      expect(visibleText).not.toContain("*");
+    }
+  });
+
+  it("random toggle sequences with typing should not leak asterisks", async () => {
     const testCases = [
       // [operations, expectedTextWithoutZWS]
       [["b", "type:x", "i", "i", "i"], "x"],

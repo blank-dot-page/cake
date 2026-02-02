@@ -1998,17 +1998,15 @@ export function createRuntimeFromRegistry(registry: {
         const entering = around.right.slice(around.left.length);
         if (entering.some((mark) => mark.kind === markerKind)) {
           const insertAtBackward = map.cursorToSource(caret, "backward");
-          // Check if there's a placeholder-only wrapper starting at this position
-          // The wrapper markers are between insertAtBackward and the placeholder
-          // Look for pattern: openMarker + placeholder + closeMarker at insertAtBackward
+          const insertAtForward = map.cursorToSource(caret, "forward");
           const after = source.slice(insertAtBackward);
+
+          // Simple case: pattern is exactly openMarker + placeholder + closeMarker
           if (after.startsWith(openMarker + placeholder + closeMarker)) {
-            // Remove the entire wrapper
             const nextSource =
               source.slice(0, insertAtBackward) +
               source.slice(insertAtBackward + openLen + 1 + closeLen);
             const next = createState(nextSource);
-            // Position cursor at the same location
             const startCursor = next.map.sourceToCursor(
               insertAtBackward,
               "backward",
@@ -2021,6 +2019,52 @@ export function createRuntimeFromRegistry(registry: {
                 affinity: "backward",
               },
             };
+          }
+
+          // Complex case: nested wrappers containing only placeholder
+          // e.g., ***​*** where we want to remove ** (bold) but keep * (italic)
+          // The opening markers are from insertAtBackward to insertAtForward
+          // Check if structure is: openMarkers + placeholder + closeMarkers
+          const openMarkers = source.slice(insertAtBackward, insertAtForward);
+          // Find the placeholder position
+          const placeholderIdx = source.indexOf(placeholder, insertAtForward);
+          if (placeholderIdx === insertAtForward) {
+            // Placeholder immediately follows the opening markers
+            // Check if closing markers mirror the opening
+            const closeStart = placeholderIdx + 1;
+            const closeMarkers = source.slice(
+              closeStart,
+              closeStart + openMarkers.length,
+            );
+            if (closeMarkers === openMarkers) {
+              // We have a symmetric nested structure like ***​***
+              // Remove our marker from both open and close sequences
+              if (openMarkers.includes(openMarker)) {
+                // Find where our marker appears in the sequence
+                // For *** removing **, we get *
+                const newOpenMarkers = openMarkers.replace(openMarker, "");
+                const newCloseMarkers = closeMarkers.replace(closeMarker, "");
+                const nextSource =
+                  source.slice(0, insertAtBackward) +
+                  newOpenMarkers +
+                  placeholder +
+                  newCloseMarkers +
+                  source.slice(closeStart + closeMarkers.length);
+                const next = createState(nextSource);
+                const startCursor = next.map.sourceToCursor(
+                  insertAtBackward,
+                  "backward",
+                );
+                return {
+                  ...next,
+                  selection: {
+                    start: startCursor.cursorOffset,
+                    end: startCursor.cursorOffset,
+                    affinity: "backward",
+                  },
+                };
+              }
+            }
           }
         }
       }
