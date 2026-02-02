@@ -33,6 +33,21 @@ function getLinkFromEventTarget(
   return target.closest("a.cake-link");
 }
 
+function getLinkFromDomSelection(contentRoot: HTMLElement): HTMLAnchorElement | null {
+  const selection = window.getSelection();
+  const focusNode = selection?.focusNode ?? null;
+  const focusElement =
+    focusNode instanceof Element ? focusNode : focusNode?.parentElement ?? null;
+  if (!focusElement || !contentRoot.contains(focusElement)) {
+    return null;
+  }
+  const link = focusElement.closest("a.cake-link");
+  if (!link || !(link instanceof HTMLAnchorElement)) {
+    return null;
+  }
+  return link;
+}
+
 function getPopoverPosition(params: {
   anchor: HTMLElement;
   toOverlayRect: (rect: DOMRectReadOnly) => {
@@ -97,7 +112,12 @@ export function CakeLinkPopover({
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [state, setState] = useState<LinkPopoverState>({ status: "closed" });
+  const stateRef = useRef<LinkPopoverState>(state);
   const isEditing = state.status === "open" ? state.isEditing : false;
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const close = useCallback(() => {
     anchorRef.current = null;
@@ -138,6 +158,16 @@ export function CakeLinkPopover({
     },
     [toOverlayRect],
   );
+
+  const openEditForSelectionLink = useCallback(() => {
+    const link =
+      getLinkFromDomSelection(contentRoot) ??
+      contentRoot.querySelector<HTMLAnchorElement>("a.cake-link");
+    if (!link) {
+      return;
+    }
+    openForLink(link, { isEditing: true });
+  }, [contentRoot, openForLink]);
 
   useEffect(() => {
     if (state.status !== "open") {
@@ -184,23 +214,61 @@ export function CakeLinkPopover({
   }, [close, contentRoot, openForLink]);
 
   useEffect(() => {
-    function handleLinkOpen(event: Event) {
-      const customEvent = event as CustomEvent<{
-        link?: HTMLAnchorElement;
-        isEditing?: boolean;
-      }>;
-      const link = customEvent.detail?.link;
-      if (!link || !(link instanceof HTMLAnchorElement)) {
+    function handleKeyDown(event: KeyboardEvent) {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      if (key !== "u" || !event.shiftKey || (!event.metaKey && !event.ctrlKey)) {
         return;
       }
-      openForLink(link, { isEditing: customEvent.detail?.isEditing });
+      const selection = editor.getSelection();
+      if (selection.start !== selection.end) {
+        return;
+      }
+      const isInLink = editor.getActiveMarks().includes("link");
+      if (!isInLink) {
+        return;
+      }
+      event.preventDefault();
+      openEditForSelectionLink();
     }
 
-    contentRoot.addEventListener("cake-link-popover-open", handleLinkOpen);
+    contentRoot.addEventListener("keydown", handleKeyDown);
     return () => {
-      contentRoot.removeEventListener("cake-link-popover-open", handleLinkOpen);
+      contentRoot.removeEventListener("keydown", handleKeyDown);
     };
-  }, [contentRoot, openForLink]);
+  }, [contentRoot, editor, openEditForSelectionLink]);
+
+  useEffect(() => {
+    function handleUpdate() {
+      if (stateRef.current.status !== "closed") {
+        return;
+      }
+      const selection = editor.getSelection();
+      if (selection.start !== selection.end) {
+        return;
+      }
+      const isInLink = editor.getActiveMarks().includes("link");
+      if (!isInLink) {
+        return;
+      }
+      const link = getLinkFromDomSelection(contentRoot);
+      if (!link) {
+        return;
+      }
+      const href = link.getAttribute("href") ?? "";
+      if (href !== "") {
+        return;
+      }
+      openForLink(link, { isEditing: true });
+    }
+
+    const unsubscribeChange = editor.onChange(() => handleUpdate());
+    const unsubscribeSelection = editor.onSelectionChange(() => handleUpdate());
+    handleUpdate();
+    return () => {
+      unsubscribeChange();
+      unsubscribeSelection();
+    };
+  }, [contentRoot, editor, openForLink]);
 
   useEffect(() => {
     if (state.status !== "open") {

@@ -54,30 +54,6 @@ export type LinkExtensionOptions = {
   styles?: LinkExtensionStyles;
 };
 
-function openLinkPopoverFromDomSelection(editor: CakeEditor, isEditing: boolean) {
-  const contentRoot = editor.getContentRoot();
-  if (!contentRoot) {
-    return;
-  }
-
-  const selection = window.getSelection();
-  const focusNode = selection?.focusNode ?? null;
-  const focusElement =
-    focusNode instanceof Element ? focusNode : focusNode?.parentElement ?? null;
-  const candidate =
-    focusElement && contentRoot.contains(focusElement) ? focusElement : null;
-  const link =
-    candidate?.closest("a.cake-link") ?? contentRoot.querySelector("a.cake-link");
-  if (!link || !(link instanceof HTMLAnchorElement)) {
-    return;
-  }
-  const event = new CustomEvent("cake-link-popover-open", {
-    bubbles: true,
-    detail: { link, isEditing },
-  });
-  contentRoot.dispatchEvent(event);
-}
-
 function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions) {
   const disposers: Array<() => void> = [];
 
@@ -99,9 +75,6 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
 
           const isInLink = editor.getActiveMarks().includes(LINK_KIND);
           if (isInLink) {
-            window.requestAnimationFrame(() =>
-              openLinkPopoverFromDomSelection(editor, true),
-            );
             return { type: "noop" };
           }
 
@@ -138,9 +111,6 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
 
           const isInLink = editor.getActiveMarks().includes(LINK_KIND);
           if (isInLink) {
-            window.requestAnimationFrame(() =>
-              openLinkPopoverFromDomSelection(editor, true),
-            );
             return { type: "noop" };
           }
 
@@ -242,11 +212,6 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
       const linkMarkdown = `[${label}](${url})`;
       const nextSource =
         state.source.slice(0, from) + linkMarkdown + state.source.slice(to);
-      if (command.openPopover) {
-        window.requestAnimationFrame(() =>
-          openLinkPopoverFromDomSelection(editor, true),
-        );
-      }
       return {
         source: nextSource,
         selection: {
