@@ -18,16 +18,6 @@ afterEach(async () => {
 
 const HELLO_KIND = "hello-inline";
 
-function toOverlayRect(container: HTMLElement, rect: DOMRectReadOnly) {
-  const containerRect = container.getBoundingClientRect();
-  return {
-    top: rect.top - containerRect.top,
-    left: rect.left - containerRect.left,
-    width: rect.width,
-    height: rect.height,
-  };
-}
-
 const helloInlineExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
 
@@ -137,7 +127,7 @@ function HelloPopoverUI({ editor }: { editor: CakeEditor }) {
       close();
       return;
     }
-    const rect = toOverlayRect(container, nextAnchor.getBoundingClientRect());
+    const rect = editor.toOverlayRect(nextAnchor.getBoundingClientRect());
     setPosition({ top: rect.top + rect.height + 6, left: rect.left });
   };
 

@@ -1969,6 +1969,7 @@ export function createRuntimeFromRegistry(registry: {
 
     if (selection.start === selection.end) {
       const caret = selection.start;
+      const placeholder = "\u200B";
 
       // When the caret is at the end boundary of an inline wrapper, toggling the
       // wrapper should "exit" it (so the next character types outside). This is
@@ -1982,7 +1983,6 @@ export function createRuntimeFromRegistry(registry: {
         const exiting = around.left.slice(around.right.length);
         if (exiting.some((mark) => mark.kind === markerKind)) {
           if (exiting.length > 1) {
-            const placeholder = "\u200B";
             const insertAtForward = map.cursorToSource(caret, "forward");
             const insertAtBackward = map.cursorToSource(caret, "backward");
             const between = source.slice(insertAtBackward, insertAtForward);
@@ -2020,13 +2020,93 @@ export function createRuntimeFromRegistry(registry: {
         }
       }
 
+      // When the caret is at the start boundary of an inline wrapper containing
+      // only a placeholder, toggling should remove that wrapper. This handles
+      // the case of toggling off a mark that was just toggled on but not typed into.
+      if (
+        isMarksPrefix(around.left, around.right) &&
+        around.right.length > around.left.length
+      ) {
+        const entering = around.right.slice(around.left.length);
+        if (entering.some((mark) => mark.kind === markerKind)) {
+          const insertAtBackward = map.cursorToSource(caret, "backward");
+          const insertAtForward = map.cursorToSource(caret, "forward");
+          const after = source.slice(insertAtBackward);
+
+          // Simple case: pattern is exactly openMarker + placeholder + closeMarker
+          if (after.startsWith(openMarker + placeholder + closeMarker)) {
+            const nextSource =
+              source.slice(0, insertAtBackward) +
+              source.slice(insertAtBackward + openLen + 1 + closeLen);
+            const next = createState(nextSource);
+            const startCursor = next.map.sourceToCursor(
+              insertAtBackward,
+              "backward",
+            );
+            return {
+              ...next,
+              selection: {
+                start: startCursor.cursorOffset,
+                end: startCursor.cursorOffset,
+                affinity: "backward",
+              },
+            };
+          }
+
+          // Complex case: nested wrappers containing only placeholder
+          // e.g., ***​*** where we want to remove ** (bold) but keep * (italic)
+          // The opening markers are from insertAtBackward to insertAtForward
+          // Check if structure is: openMarkers + placeholder + closeMarkers
+          const openMarkers = source.slice(insertAtBackward, insertAtForward);
+          // Find the placeholder position
+          const placeholderIdx = source.indexOf(placeholder, insertAtForward);
+          if (placeholderIdx === insertAtForward) {
+            // Placeholder immediately follows the opening markers
+            // Check if closing markers mirror the opening
+            const closeStart = placeholderIdx + 1;
+            const closeMarkers = source.slice(
+              closeStart,
+              closeStart + openMarkers.length,
+            );
+            if (closeMarkers === openMarkers) {
+              // We have a symmetric nested structure like ***​***
+              // Remove our marker from both open and close sequences
+              if (openMarkers.includes(openMarker)) {
+                // Find where our marker appears in the sequence
+                // For *** removing **, we get *
+                const newOpenMarkers = openMarkers.replace(openMarker, "");
+                const newCloseMarkers = closeMarkers.replace(closeMarker, "");
+                const nextSource =
+                  source.slice(0, insertAtBackward) +
+                  newOpenMarkers +
+                  placeholder +
+                  newCloseMarkers +
+                  source.slice(closeStart + closeMarkers.length);
+                const next = createState(nextSource);
+                const startCursor = next.map.sourceToCursor(
+                  insertAtBackward,
+                  "backward",
+                );
+                return {
+                  ...next,
+                  selection: {
+                    start: startCursor.cursorOffset,
+                    end: startCursor.cursorOffset,
+                    affinity: "backward",
+                  },
+                };
+              }
+            }
+          }
+        }
+      }
+
       // Otherwise, insert an empty marker pair with a zero-width placeholder
       // selected so the next typed character replaces it.
       //
       // If the caret is already positioned before an existing placeholder (e.g.
       // Cmd+B then Cmd+I), wrap the existing placeholder rather than inserting
       // a second one so typing produces combined emphasis (***text***).
-      const placeholder = "\u200B";
       const insertAtForward = map.cursorToSource(caret, "forward");
       const insertAtBackward = map.cursorToSource(caret, "backward");
       const placeholderPos = (() => {
@@ -2041,9 +2121,16 @@ export function createRuntimeFromRegistry(registry: {
         }
         return null;
       })();
+      // When at a boundary between cursor positions (insertAtBackward !== insertAtForward),
+      // prefer insertAtBackward to keep new markers inside the current formatting context.
+      // However, only do this if the new marker length is <= the boundary marker length,
+      // otherwise we create ambiguous marker sequences (e.g., *italic**​*** doesn't parse).
+      const betweenLen = insertAtForward - insertAtBackward;
+      const preferBackward =
+        insertAtBackward !== insertAtForward && openLen <= betweenLen;
       const insertAt =
         placeholderPos ??
-        map.cursorToSource(caret, selection.affinity ?? "forward");
+        (preferBackward ? insertAtBackward : insertAtForward);
 
       const nextSource =
         placeholderPos !== null

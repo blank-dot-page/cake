@@ -1,6 +1,7 @@
 import { boldExtension } from "./bold/bold";
 import { combinedEmphasisExtension } from "./combined-emphasis/combined-emphasis";
 import { linkExtension } from "./link/link";
+export type { OnRequestLinkInput, LinkExtensionOptions } from "./link/link";
 import { blockquoteExtension } from "./blockquote/blockquote";
 import { italicExtension } from "./italic/italic";
 import { headingExtension } from "./heading/heading";

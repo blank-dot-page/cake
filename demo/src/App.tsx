@@ -1,6 +1,12 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { CakeEditor, CakeEditorRef } from "@blankdotpage/cake/react";
-import { bundledExtensions, mentionExtension } from "@blankdotpage/cake";
+import {
+  bundledExtensionsWithoutImage,
+  imageExtension,
+  linkExtension,
+  mentionExtension,
+} from "@blankdotpage/cake";
+import type { OnRequestLinkInput } from "@blankdotpage/cake";
 
 type FontStyle = "sans" | "serif" | "mono";
 
@@ -10,6 +16,8 @@ type User = {
   name: string;
   avatarUrl: string;
 };
+
+type MentionUser = User & { label: string };
 
 const USERS: User[] = [
   {
@@ -51,6 +59,24 @@ const USERS: User[] = [
 
 const userById = new Map(USERS.map((u) => [u.id, u]));
 
+async function requestLinkInput(): Promise<{
+  text: string;
+  url: string;
+} | null> {
+  const text = window.prompt("Link text:");
+  if (!text) {
+    return null;
+  }
+  const url = window.prompt("Link URL:");
+  if (!url) {
+    return null;
+  }
+  return { text, url };
+}
+
+const onRequestLinkInput: OnRequestLinkInput = async () => {
+  return requestLinkInput();
+};
 export default function App() {
   const editorRef = useRef<CakeEditorRef>(null);
   const [value, setValue] = useState(
@@ -63,6 +89,76 @@ export default function App() {
     end: number;
     affinity: "forward" | "backward";
   } | null>(null);
+
+  const extensions = useMemo(() => {
+    const extensionsWithoutLink = bundledExtensionsWithoutImage.filter(
+      (ext) => ext !== linkExtension,
+    );
+    return [
+      ...extensionsWithoutLink,
+      linkExtension({ onRequestLinkInput }),
+      imageExtension,
+      mentionExtension<MentionUser>({
+        getItems: async (query) => {
+          // Simulate an async network call, so we exercise the cancellation logic.
+          await new Promise<void>((resolve) =>
+            window.setTimeout(() => resolve(), 120),
+          );
+          const q = query.trim().toLowerCase();
+          if (!q) {
+            return USERS.slice(0, 5).map((u) => ({
+              ...u,
+              label: u.username,
+            }));
+          }
+          return USERS.filter((u) => {
+            return (
+              u.username.toLowerCase().includes(q) ||
+              u.name.toLowerCase().includes(q)
+            );
+          }).map((u) => ({
+            ...u,
+            label: u.username,
+          }));
+        },
+        renderItem: (item) => {
+          const u = item as unknown as User & { label: string };
+          return (
+            <div className="demoMentionItem">
+              <img
+                className="demoMentionAvatar"
+                src={u.avatarUrl}
+                alt=""
+                width={22}
+                height={22}
+              />
+              <div className="demoMentionText">
+                <div className="demoMentionName">{u.name}</div>
+                <div className="demoMentionUsername">@{u.username}</div>
+              </div>
+            </div>
+          );
+        },
+        decorateMentionElement: ({ element, mention }) => {
+          // Example: hydrate additional attributes from the mention id.
+          const u = userById.get(mention.id);
+          element.classList.add("demoMention");
+          element.setAttribute("data-demo-platform", "social");
+          if (u) {
+            element.setAttribute("data-user-name", u.name);
+            element.setAttribute("data-user-username", u.username);
+            element.setAttribute("data-user-avatar", u.avatarUrl);
+          }
+        },
+        styles: {
+          popover: "demoMentionPopover",
+          popoverItem: "demoMentionPopoverItem",
+          popoverItemActive: "demoMentionPopoverItemActive",
+          mention: "demoMention",
+        },
+      }),
+    ];
+  }, []);
 
   const hasSelection = selection && selection.start !== selection.end;
 
@@ -140,14 +236,28 @@ export default function App() {
               </button>
               <button
                 className="toolbarButton"
-                onClick={() =>
-                  editorRef.current?.executeCommand(
-                    { type: "wrap-link", openPopover: true },
-                    { restoreFocus: true },
-                  )
-                }
+                onClick={async () => {
+                  if (hasSelection) {
+                    editorRef.current?.executeCommand(
+                      { type: "wrap-link", openPopover: true },
+                      { restoreFocus: true },
+                    );
+                  } else {
+                    const result = await requestLinkInput();
+                    if (result) {
+                      editorRef.current?.executeCommand(
+                        {
+                          type: "insert",
+                          text: `[${result.text}](${result.url})`,
+                        },
+                        { restoreFocus: true },
+                      );
+                    } else {
+                      editorRef.current?.focus();
+                    }
+                  }
+                }}
                 title="Link (Cmd+Shift+U)"
-                disabled={!hasSelection}
               >
                 Link
               </button>
@@ -251,71 +361,8 @@ export default function App() {
             }}
             placeholder="Start typing..."
             spellCheck={spellCheck}
-            extensions={[
-              ...bundledExtensions,
-              mentionExtension<User>({
-                getItems: async (query) => {
-                  // Simulate an async network call, so we exercise the cancellation logic.
-                  await new Promise<void>((resolve) =>
-                    window.setTimeout(() => resolve(), 120),
-                  );
-                  const q = query.trim().toLowerCase();
-                  if (!q) {
-                    return USERS.slice(0, 5).map((u) => ({
-                      id: u.id,
-                      label: u.username,
-                      ...u,
-                    }));
-                  }
-                  return USERS.filter((u) => {
-                    return (
-                      u.username.toLowerCase().includes(q) ||
-                      u.name.toLowerCase().includes(q)
-                    );
-                  }).map((u) => ({
-                    id: u.id,
-                    label: u.username,
-                    ...u,
-                  }));
-                },
-                renderItem: (item) => {
-                  const u = item as unknown as User & { label: string };
-                  return (
-                    <div className="demoMentionItem">
-                      <img
-                        className="demoMentionAvatar"
-                        src={u.avatarUrl}
-                        alt=""
-                        width={22}
-                        height={22}
-                      />
-                      <div className="demoMentionText">
-                        <div className="demoMentionName">{u.name}</div>
-                        <div className="demoMentionUsername">@{u.username}</div>
-                      </div>
-                    </div>
-                  );
-                },
-                decorateMentionElement: ({ element, mention }) => {
-                  // Example: hydrate additional attributes from the mention id.
-                  const u = userById.get(mention.id);
-                  element.classList.add("demoMention");
-                  element.setAttribute("data-demo-platform", "social");
-                  if (u) {
-                    element.setAttribute("data-user-name", u.name);
-                    element.setAttribute("data-user-username", u.username);
-                    element.setAttribute("data-user-avatar", u.avatarUrl);
-                  }
-                },
-                styles: {
-                  popover: "demoMentionPopover",
-                  popoverItem: "demoMentionPopoverItem",
-                  popoverItemActive: "demoMentionPopoverItemActive",
-                  mention: "demoMention",
-                },
-              }),
-            ]}
-            style={{ height: "100%", padding: 24 }}
+            extensions={extensions}
+            style={{ padding: 24 }}
           />
         </section>
 

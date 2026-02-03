@@ -52,12 +52,14 @@ describe("link shortcut (Cmd+Shift+U)", () => {
 
   it("collapsed selection prompts and inserts [text](url)", async () => {
     let calls = 0;
+    let receivedEditor: unknown = null;
     harness = createTestHarness({
       value: "hello ",
       extensions: [
         linkExtension({
-          onRequestLinkInput: async () => {
+          onRequestLinkInput: async (editor) => {
             calls += 1;
+            receivedEditor = editor;
             return { text: "world", url: "https://example.com" };
           },
         }),
@@ -72,6 +74,7 @@ describe("link shortcut (Cmd+Shift+U)", () => {
       .poll(() => harness!.engine.getValue())
       .toBe("hello [world](https://example.com)");
     expect(calls).toBe(1);
+    expect(receivedEditor).toBe(harness.engine);
 
     const selection = harness.engine.getSelection();
     expect(selection.start).toBe(selection.end);
@@ -80,12 +83,14 @@ describe("link shortcut (Cmd+Shift+U)", () => {
 
   it("collapsed selection cancel does nothing", async () => {
     let calls = 0;
+    let receivedEditor: unknown = null;
     harness = createTestHarness({
       value: "hello ",
       extensions: [
         linkExtension({
-          onRequestLinkInput: async () => {
+          onRequestLinkInput: async (editor) => {
             calls += 1;
+            receivedEditor = editor;
             return null;
           },
         }),
@@ -99,9 +104,10 @@ describe("link shortcut (Cmd+Shift+U)", () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(harness.engine.getValue()).toBe("hello ");
     expect(calls).toBe(1);
+    expect(receivedEditor).toBe(harness.engine);
   });
 
-  it("collapsed selection inside a link opens the existing popover (no callback)", async () => {
+  it("collapsed selection inside a link opens the popover in edit mode with URL prefilled (no callback)", async () => {
     let calls = 0;
     harness = createTestHarness({
       value: "hello [world](https://example.com)",
@@ -131,6 +137,11 @@ describe("link shortcut (Cmd+Shift+U)", () => {
     await expect
       .poll(() => document.querySelector(".cake-link-popover"))
       .not.toBeNull();
+    await expect
+      .poll(() => document.querySelector<HTMLInputElement>(".cake-link-input"))
+      .not.toBeNull();
+    const input = document.querySelector<HTMLInputElement>(".cake-link-input");
+    expect(input?.value).toBe("https://example.com");
     expect(calls).toBe(0);
   });
 
@@ -163,5 +174,26 @@ describe("link shortcut (Cmd+Shift+U)", () => {
     } finally {
       window.removeEventListener("unhandledrejection", onUnhandled);
     }
+  });
+
+  it("moving the caret into an existing link does not auto-open the popover", async () => {
+    harness = createTestHarness({
+      value: "hello [world](https://example.com)",
+      renderOverlays: true,
+    });
+    // Wait for React to commit overlay effects
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+
+    // Move caret inside link text without clicking or pressing shortcut.
+    harness.engine.setSelection({ start: 7, end: 7, affinity: "forward" });
+    await harness.focus();
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(document.querySelector(".cake-link-popover")).toBeNull();
   });
 });

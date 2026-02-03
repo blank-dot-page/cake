@@ -294,16 +294,13 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
     const containerStyle = props.style
       ? { ...props.style }
       : ({} satisfies React.CSSProperties);
-    if (!containerStyle.position) {
-      containerStyle.position = "relative";
-    }
 
     const containerClassName = props.className
       ? `cake ${props.className}`
       : "cake";
 
     return (
-      <div style={{ position: "relative", height: "100%" }}>
+      <>
         <div
           ref={containerRef}
           className={containerClassName}
@@ -321,7 +318,7 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
               engineRef.current.getOverlayRoot(),
             )
           : null}
-      </div>
+      </>
     );
   },
 );
