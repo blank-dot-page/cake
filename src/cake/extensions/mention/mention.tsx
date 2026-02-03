@@ -63,12 +63,13 @@ export type MentionExtensionOptions<Item extends MentionItem = MentionItem> = {
   };
 };
 
-export function mentionExtension(
-  options: MentionExtensionOptions,
+export function mentionExtension<Item extends MentionItem = MentionItem>(
+  options: MentionExtensionOptions<Item>,
 ): CakeExtension {
-  const getItemId = options.getItemId ?? ((item: any) => String(item.id ?? ""));
+  const getItemId =
+    options.getItemId ?? ((item: Item) => String(item.id ?? ""));
   const getItemLabel =
-    options.getItemLabel ?? ((item: any) => String(item.label ?? ""));
+    options.getItemLabel ?? ((item: Item) => String(item.label ?? ""));
   const serializeMention =
     options.serializeMention ??
     ((mention: { id: string; label: string }) =>
@@ -168,7 +169,7 @@ export function mentionExtension(
     );
 
     const MentionUI = ({ editor }: { editor: CakeEditor }) => (
-      <CakeMentionUI
+      <CakeMentionUI<Item>
         editor={editor}
         getItems={options.getItems}
         getItemId={getItemId}
@@ -298,18 +299,13 @@ function getTriggerQuery(textBeforeCursor: string): string | null {
 }
 
 function getPopoverPositionFromCaret(editor: CakeEditor): PopoverPosition | null {
-  const rect = editor.getFocusRect();
+  const rect = editor.getCursorOverlayRect();
   if (!rect) {
     return null;
   }
-  // `editor.getFocusRect()` is in the same coordinate space as the selection
-  // overlay, which scrolls with the container content. Extension overlays are
-  // "pinned" (they counteract scroll via transform), so convert into viewport
-  // coordinates by subtracting the container scroll offsets.
-  const container = editor.getContainer();
   return {
-    top: rect.top - container.scrollTop + rect.height + 6,
-    left: rect.left - container.scrollLeft,
+    top: rect.top + rect.height + 6,
+    left: rect.left,
   };
 }
 
@@ -317,11 +313,10 @@ function getPopoverPositionFromElement(
   editor: CakeEditor,
   anchor: HTMLElement,
 ): PopoverPosition {
-  const containerRect = editor.getContainer().getBoundingClientRect();
-  const rect = anchor.getBoundingClientRect();
+  const rect = editor.toOverlayRect(anchor.getBoundingClientRect());
   return {
-    top: rect.top - containerRect.top + rect.height + 6,
-    left: rect.left - containerRect.left,
+    top: rect.top + rect.height + 6,
+    left: rect.left,
   };
 }
 
