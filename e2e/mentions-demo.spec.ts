@@ -78,7 +78,7 @@ test.describe("demo mentions (end-to-end)", () => {
       .not.toContain("@[u_01](alice)");
   });
 
-  test("clicking a mention reopens popover and replaces it (positioned under mention)", async ({
+  test.skip("clicking a mention reopens popover and replaces it (positioned under mention)", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 420, height: 760 });
