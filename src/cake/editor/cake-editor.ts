@@ -3933,6 +3933,21 @@ export class CakeEditor {
       return;
     }
 
+    const maxScrollTop = Math.max(
+      0,
+      container.scrollHeight - container.clientHeight,
+    );
+    const selection = this.state.selection;
+    const isEndOfDoc =
+      selection.start === selection.end &&
+      selection.end === this.state.map.cursorLength;
+    if (isEndOfDoc) {
+      if (Math.abs(maxScrollTop - container.scrollTop) > 0.5) {
+        container.scrollTop = maxScrollTop;
+      }
+      return;
+    }
+
     const styles = window.getComputedStyle(this.contentRoot);
     const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
     const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
@@ -3950,10 +3965,6 @@ export class CakeEditor {
       return;
     }
 
-    const maxScrollTop = Math.max(
-      0,
-      container.scrollHeight - container.clientHeight,
-    );
     const clamped = Math.max(0, Math.min(nextScrollTop, maxScrollTop));
     if (Math.abs(clamped - container.scrollTop) > 0.5) {
       container.scrollTop = clamped;
