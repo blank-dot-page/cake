@@ -195,6 +195,8 @@ export class CakeEditor {
   private readOnly: boolean;
   private spellCheckEnabled: boolean;
   private extensionsRoot: HTMLDivElement | null = null;
+  private extensionsViewportOffset: { x: number; y: number } = { x: 0, y: 0 };
+  private extensionsViewportPinUntil: number | null = null;
   private placeholderRoot: HTMLDivElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private lastFocusRect: SelectionRect | null = null;
@@ -761,6 +763,80 @@ export class CakeEditor {
 
   getContentRoot() {
     return this.contentRoot;
+  }
+
+  toOverlayRect(domRect: DOMRect): {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } {
+    const containerRect = this.container.getBoundingClientRect();
+    const borderTop = this.container.clientTop;
+    const borderLeft = this.container.clientLeft;
+    return {
+      top: domRect.top - containerRect.top - borderTop,
+      left: domRect.left - containerRect.left - borderLeft,
+      width: domRect.width,
+      height: domRect.height,
+    };
+  }
+
+  getCursorOverlayRect(): {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null {
+    if (!this.contentRoot) {
+      return null;
+    }
+    const lines = getDocLines(this.state.doc);
+    const geometry = getSelectionGeometry({
+      root: this.contentRoot,
+      container: this.container,
+      docLines: lines,
+      selection: this.state.selection,
+    });
+    const focus = geometry.caretRect ?? geometry.focusRect;
+    if (!focus) {
+      return null;
+    }
+    const { x, y } = this.computeExtensionsViewportOffset();
+    return {
+      top: focus.top - y,
+      left: focus.left - x,
+      width: focus.width,
+      height: focus.height,
+    };
+  }
+
+  getSelectionOverlayRects(): Array<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  }> {
+    if (!this.contentRoot) {
+      return [];
+    }
+    const lines = getDocLines(this.state.doc);
+    const geometry = getSelectionGeometry({
+      root: this.contentRoot,
+      container: this.container,
+      docLines: lines,
+      selection: this.state.selection,
+    });
+    if (geometry.selectionRects.length === 0) {
+      return [];
+    }
+    const { x, y } = this.computeExtensionsViewportOffset();
+    return geometry.selectionRects.map((rect) => ({
+      top: rect.top - y,
+      left: rect.left - x,
+      width: rect.width,
+      height: rect.height,
+    }));
   }
 
   getLines() {
@@ -3549,6 +3625,11 @@ export class CakeEditor {
   }
 
   private handleScroll() {
+    // During elastic overscroll / rubber-banding, browsers can visually move
+    // content without meaningfully updating scrollTop. Keep the viewport overlay
+    // pinned for a short period after scroll activity so UI chrome (e.g.
+    // scrollbars) doesn't "bounce" with the content.
+    this.extensionsViewportPinUntil = Date.now() + 500;
     this.scheduleOverlayUpdate();
     this.updateExtensionsOverlayPosition();
   }
@@ -3568,6 +3649,14 @@ export class CakeEditor {
       this.overlayUpdateId = null;
       this.updateExtensionsOverlayPosition();
       this.updateSelectionOverlay();
+      if (
+        this.extensionsViewportPinUntil !== null &&
+        Date.now() < this.extensionsViewportPinUntil
+      ) {
+        this.scheduleOverlayUpdate();
+      } else {
+        this.extensionsViewportPinUntil = null;
+      }
     });
   }
 
@@ -3661,14 +3750,30 @@ export class CakeEditor {
     if (!this.extensionsRoot) {
       return;
     }
-    // Clamp to non-negative to prevent movement during elastic bounce/overscroll
-    const scrollTop = Math.max(0, this.container.scrollTop);
-    const scrollLeft = Math.max(0, this.container.scrollLeft);
-    if (scrollTop === 0 && scrollLeft === 0) {
+    const { x, y } = this.computeExtensionsViewportOffset();
+    this.extensionsViewportOffset = { x, y };
+    if (x === 0 && y === 0) {
       this.extensionsRoot.style.transform = "";
       return;
     }
-    this.extensionsRoot.style.transform = `translate(${scrollLeft}px, ${scrollTop}px)`;
+    this.extensionsRoot.style.transform = `translate(${x}px, ${y}px)`;
+  }
+
+  private computeExtensionsViewportOffset(): { x: number; y: number } {
+    if (!this.contentRoot) {
+      return this.extensionsViewportOffset;
+    }
+    const containerRect = this.container.getBoundingClientRect();
+    const contentRect = this.contentRoot.getBoundingClientRect();
+    const styles = window.getComputedStyle(this.container);
+    const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+    const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+    const originTop = containerRect.top + this.container.clientTop + paddingTop;
+    const originLeft =
+      containerRect.left + this.container.clientLeft + paddingLeft;
+    const y = originTop - contentRect.top;
+    const x = originLeft - contentRect.left;
+    return { x, y };
   }
 
   private updateSelectionOverlay() {

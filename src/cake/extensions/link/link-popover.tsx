@@ -50,16 +50,14 @@ function getLinkFromDomSelection(contentRoot: HTMLElement): HTMLAnchorElement | 
 
 function getPopoverPosition(params: {
   anchor: HTMLElement;
-  toOverlayRect: (rect: DOMRectReadOnly) => {
+  toOverlayRect: (rect: DOMRect) => {
     top: number;
     left: number;
     width: number;
     height: number;
   };
 }): PopoverPosition {
-  const anchorRect = params.toOverlayRect(
-    params.anchor.getBoundingClientRect(),
-  );
+  const anchorRect = params.toOverlayRect(params.anchor.getBoundingClientRect());
   return {
     top: anchorRect.top + anchorRect.height + 6,
     left: anchorRect.left,
@@ -77,23 +75,11 @@ export function CakeLinkPopover({
   editor: CakeEditor;
   styles?: LinkExtensionStyles;
 }) {
-  const container = editor.getContainer();
   const contentRoot = editor.getContentRoot();
   if (!contentRoot) {
     return null;
   }
-  const toOverlayRect = useCallback(
-    (rect: DOMRectReadOnly) => {
-      const containerRect = container.getBoundingClientRect();
-      return {
-        top: rect.top - containerRect.top,
-        left: rect.left - containerRect.left,
-        width: rect.width,
-        height: rect.height,
-      };
-    },
-    [container],
-  );
+  const toOverlayRect = useCallback((rect: DOMRect) => editor.toOverlayRect(rect), [editor]);
   const getSelection = useCallback(() => {
     const selection = editor.getSelection();
     const focus =
@@ -274,13 +260,14 @@ export function CakeLinkPopover({
     if (state.status !== "open") {
       return;
     }
+    const container = editor.getContainer();
     container.addEventListener("scroll", close, { passive: true });
     window.addEventListener("resize", reposition);
     return () => {
       container.removeEventListener("scroll", close);
       window.removeEventListener("resize", reposition);
     };
-  }, [close, container, reposition, state.status]);
+  }, [close, editor, reposition, state.status]);
 
   const handleMouseDown = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
