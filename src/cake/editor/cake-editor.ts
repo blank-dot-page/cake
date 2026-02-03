@@ -797,11 +797,13 @@ export class CakeEditor {
     const containerRect = this.container.getBoundingClientRect();
     const borderTop = this.container.clientTop;
     const borderLeft = this.container.clientLeft;
+    const width = domRect.width || domRect.right - domRect.left;
+    const height = domRect.height || domRect.bottom - domRect.top;
     return {
       top: domRect.top - containerRect.top - borderTop,
       left: domRect.left - containerRect.left - borderLeft,
-      width: domRect.width,
-      height: domRect.height,
+      width,
+      height,
     };
   }
 

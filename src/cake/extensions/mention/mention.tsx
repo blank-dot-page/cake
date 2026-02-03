@@ -338,7 +338,6 @@ function CakeMentionUI<Item extends MentionItem>({
   styles?: MentionExtensionOptions<Item>["styles"];
 }) {
   const container = editor.getContainer();
-  const contentRoot = editor.getContentRoot();
   const requestIdRef = useRef(0);
   const stateRef = useRef<MentionPopoverState<Item>>({ status: "closed" });
   const [state, setState] = useState<MentionPopoverState<Item>>({
@@ -488,19 +487,22 @@ function CakeMentionUI<Item extends MentionItem>({
   }, [close, editor, fetch, open]);
 
   useEffect(() => {
-    if (!contentRoot) {
-      return;
-    }
-
     function handleClick(event: MouseEvent) {
       const target = event.target;
       if (!(target instanceof Element)) {
         close();
         return;
       }
+      // Ignore clicks inside the popover itself.
+      if (target.closest("[data-testid=\"cake-mention-popover\"]")) {
+        return;
+      }
       const mention = target.closest<HTMLElement>("[data-cake-mention]");
       if (!mention) {
-      if (stateRef.current.status === "open" && stateRef.current.mode === "replace") {
+        if (
+          stateRef.current.status === "open" &&
+          stateRef.current.mode === "replace"
+        ) {
           close();
         }
         return;
@@ -528,25 +530,31 @@ function CakeMentionUI<Item extends MentionItem>({
           domSelection.addRange(range);
           editor.syncSelectionFromDOM();
         }
-      });
 
-      const position = getPopoverPositionFromElement(editor, mention);
-      open({
-        status: "open",
-        mode: "replace",
-        query: "",
-        replaceChars: 1,
-        replaceAdvanceCursor: placeBefore ? 1 : 0,
-        position,
+        // Defer opening until the next frame so any caret auto-scroll triggered
+        // by the selection sync finishes before we show the popover.
+        requestAnimationFrame(() => {
+          const position =
+            getPopoverPositionFromCaret(editor) ??
+            getPopoverPositionFromElement(editor, mention);
+          open({
+            status: "open",
+            mode: "replace",
+            query: "",
+            replaceChars: 1,
+            replaceAdvanceCursor: placeBefore ? 1 : 0,
+            position,
+          });
+          fetch("");
+        });
       });
-      fetch("");
     }
 
-    contentRoot.addEventListener("click", handleClick);
+    container.addEventListener("click", handleClick);
     return () => {
-      contentRoot.removeEventListener("click", handleClick);
+      container.removeEventListener("click", handleClick);
     };
-  }, [close, contentRoot, editor, fetch, open]);
+  }, [close, container, editor, fetch, open]);
 
   useEffect(() => {
     return editor.registerKeyDownInterceptor((event) => {
