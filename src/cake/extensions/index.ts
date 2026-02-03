@@ -9,6 +9,7 @@ import { plainTextListExtension } from "./list/list";
 import { scrollbarExtension } from "./scrollbar";
 import { strikethroughExtension } from "./strikethrough/strikethrough";
 import { underlineExtension } from "./underline/underline";
+import { mentionExtension } from "./mention/mention";
 
 export {
   boldExtension,
@@ -22,6 +23,7 @@ export {
   scrollbarExtension,
   strikethroughExtension,
   underlineExtension,
+  mentionExtension,
 };
 
 export const bundledExtensionsWithoutImage = [

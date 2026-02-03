@@ -1,9 +1,11 @@
 import { test, expect } from "playwright/test";
+import { getDemoBaseURL } from "./utils";
 
 test("arrow right at end of visual row moves caret to beginning of next row", async ({
   page,
 }) => {
-  await page.goto("/");
+  const baseURL = await getDemoBaseURL();
+  await page.goto(`${baseURL}/`);
 
   // Click the editor to focus it
   const editor = page.locator(".cake-content");

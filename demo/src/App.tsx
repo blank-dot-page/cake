@@ -1,13 +1,60 @@
 import { useRef, useState } from "react";
 import { CakeEditor, CakeEditorRef } from "@blankdotpage/cake/react";
-import { bundledExtensions } from "@blankdotpage/cake";
+import { bundledExtensions, mentionExtension } from "@blankdotpage/cake";
 
 type FontStyle = "sans" | "serif" | "mono";
+
+type User = {
+  id: string;
+  username: string;
+  name: string;
+  avatarUrl: string;
+};
+
+const USERS: User[] = [
+  {
+    id: "u_01",
+    username: "alice",
+    name: "Alice Nguyen",
+    avatarUrl:
+      "https://api.dicebear.com/9.x/thumbs/svg?seed=alice&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf",
+  },
+  {
+    id: "u_02",
+    username: "bob",
+    name: "Bob Smith",
+    avatarUrl:
+      "https://api.dicebear.com/9.x/thumbs/svg?seed=bob&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf",
+  },
+  {
+    id: "u_03",
+    username: "carmen",
+    name: "Carmen Lee",
+    avatarUrl:
+      "https://api.dicebear.com/9.x/thumbs/svg?seed=carmen&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf",
+  },
+  {
+    id: "u_04",
+    username: "devon",
+    name: "Devon Patel",
+    avatarUrl:
+      "https://api.dicebear.com/9.x/thumbs/svg?seed=devon&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf",
+  },
+  {
+    id: "u_05",
+    username: "mina",
+    name: "Mina Kim",
+    avatarUrl:
+      "https://api.dicebear.com/9.x/thumbs/svg?seed=mina&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf",
+  },
+];
+
+const userById = new Map(USERS.map((u) => [u.id, u]));
 
 export default function App() {
   const editorRef = useRef<CakeEditorRef>(null);
   const [value, setValue] = useState(
-    "# Cake Demo\n\nTry **bold**, *italic*, ~~strike~~, <u>underline</u>, and [links](https://example.com).",
+    "# Cake Demo\n\nTry **bold**, *italic*, ~~strike~~, <u>underline</u>, and [links](https://example.com).\n\nType @ to mention someone (social-style).",
   );
   const [spellCheck, setSpellCheck] = useState(false);
   const [fontStyle, setFontStyle] = useState<FontStyle>("sans");
@@ -204,7 +251,70 @@ export default function App() {
             }}
             placeholder="Start typing..."
             spellCheck={spellCheck}
-            extensions={bundledExtensions}
+            extensions={[
+              ...bundledExtensions,
+              mentionExtension<User>({
+                getItems: async (query) => {
+                  // Simulate an async network call, so we exercise the cancellation logic.
+                  await new Promise<void>((resolve) =>
+                    window.setTimeout(() => resolve(), 120),
+                  );
+                  const q = query.trim().toLowerCase();
+                  if (!q) {
+                    return USERS.slice(0, 5).map((u) => ({
+                      id: u.id,
+                      label: u.username,
+                      ...u,
+                    }));
+                  }
+                  return USERS.filter((u) => {
+                    return (
+                      u.username.toLowerCase().includes(q) ||
+                      u.name.toLowerCase().includes(q)
+                    );
+                  }).map((u) => ({
+                    id: u.id,
+                    label: u.username,
+                    ...u,
+                  }));
+                },
+                renderItem: (item) => {
+                  const u = item as unknown as User & { label: string };
+                  return (
+                    <div className="demoMentionItem">
+                      <img
+                        className="demoMentionAvatar"
+                        src={u.avatarUrl}
+                        alt=""
+                        width={22}
+                        height={22}
+                      />
+                      <div className="demoMentionText">
+                        <div className="demoMentionName">{u.name}</div>
+                        <div className="demoMentionUsername">@{u.username}</div>
+                      </div>
+                    </div>
+                  );
+                },
+                decorateMentionElement: ({ element, mention }) => {
+                  // Example: hydrate additional attributes from the mention id.
+                  const u = userById.get(mention.id);
+                  element.classList.add("demoMention");
+                  element.setAttribute("data-demo-platform", "social");
+                  if (u) {
+                    element.setAttribute("data-user-name", u.name);
+                    element.setAttribute("data-user-username", u.username);
+                    element.setAttribute("data-user-avatar", u.avatarUrl);
+                  }
+                },
+                styles: {
+                  popover: "demoMentionPopover",
+                  popoverItem: "demoMentionPopoverItem",
+                  popoverItemActive: "demoMentionPopoverItemActive",
+                  mention: "demoMention",
+                },
+              }),
+            ]}
             style={{ height: "100%", padding: 24 }}
           />
         </section>

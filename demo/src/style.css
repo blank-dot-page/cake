@@ -343,3 +343,64 @@ body {
   border-left: 2px solid rgba(18, 18, 18, 0.2);
   border-radius: 0 4px 4px 0;
 }
+
+/* Mentions (social-style) */
+.main .cake .demoMention.cake-mention {
+  background: rgba(29, 155, 240, 0.12);
+  color: rgb(29, 155, 240);
+  border: 1px solid rgba(29, 155, 240, 0.28);
+  padding: 0 8px;
+}
+
+.main .cake .demoMentionPopover {
+  width: 320px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
+  padding: 8px;
+}
+
+.main .cake .demoMentionPopoverItem {
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+
+.main .cake .demoMentionPopoverItem:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.main .cake .demoMentionPopoverItemActive {
+  background: rgba(29, 155, 240, 0.12);
+}
+
+.demoMentionItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.demoMentionAvatar {
+  border-radius: 9999px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.demoMentionText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.demoMentionName {
+  font-size: 13px;
+  line-height: 1.1;
+  font-weight: 600;
+  color: rgba(18, 18, 18, 0.92);
+}
+
+.demoMentionUsername {
+  font-size: 12px;
+  line-height: 1.1;
+  color: rgba(18, 18, 18, 0.55);
+}

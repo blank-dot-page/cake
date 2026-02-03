@@ -145,6 +145,7 @@ export class CakeEditor {
     ) => EditResult | EditCommand | null
   > = [];
   private keybindings: KeyBinding[] = [];
+  private keyDownInterceptors: Array<(event: KeyboardEvent) => boolean> = [];
   private onPasteTextHandlers: Array<
     (text: string, state: RuntimeState) => EditCommand | null
   > = [];
@@ -467,6 +468,28 @@ export class CakeEditor {
         removeFromArray(this.keybindings, binding);
       }
     };
+  }
+
+  /**
+   * Register an early keydown interceptor.
+   *
+   * If the interceptor returns true, the editor will treat the event as handled
+   * and will not run its built-in keydown logic for that event.
+   */
+  registerKeyDownInterceptor(fn: (event: KeyboardEvent) => boolean) {
+    this.keyDownInterceptors.push(fn);
+    return () => removeFromArray(this.keyDownInterceptors, fn);
+  }
+
+  /**
+   * Suppress the next `beforeinput` event (if any) that may follow a handled
+   * keydown. This avoids double-applying edits for keys like Enter.
+   */
+  suppressNextBeforeInput() {
+    this.keydownHandledBeforeInput = true;
+    queueMicrotask(() => {
+      this.keydownHandledBeforeInput = false;
+    });
   }
 
   registerInlineRenderer(fn: DomInlineRenderer) {
@@ -799,6 +822,14 @@ export class CakeEditor {
         this.selectionChangeSubscribers.splice(index, 1);
       }
     };
+  }
+
+  /**
+   * Force a one-off selection sync from the current DOM selection.
+   * Useful for extensions that programmatically adjust the DOM selection.
+   */
+  syncSelectionFromDOM() {
+    this.syncSelectionFromDom();
   }
 
   // Placeholder text is provided by the caller via the container's
@@ -1765,6 +1796,12 @@ export class CakeEditor {
     }
     if (!this.isEventTargetInContentRoot(event.target)) {
       return;
+    }
+
+    for (const interceptor of this.keyDownInterceptors) {
+      if (interceptor(event)) {
+        return;
+      }
     }
 
     const mac = isMacPlatform();

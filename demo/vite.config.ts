@@ -18,6 +18,17 @@ export default defineConfig({
     exclude: ["@blankdotpage/cake"],
   },
   server: {
+    // Allow access via LAN/Tailscale (not just localhost).
+    host: true,
+    // Allow Tailscale MagicDNS hosts (and this machine name).
+    allowedHosts: [
+      "localhost",
+      "127.0.0.1",
+      ".ts.net",
+      "macbook",
+      "Mohameds-MacBook-Pro.local",
+      "Mohameds-MacBook-Pro",
+    ],
     port: 5174,
     fs: {
       allow: [path.resolve(__dirname, "..")],

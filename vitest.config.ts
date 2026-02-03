@@ -85,7 +85,12 @@ export default defineConfig({
         test: {
           name: "browser",
           include: ["**/*.browser.test.{ts,tsx}"],
-          exclude: ["**/*.ios.browser.test.{ts,tsx}"],
+          exclude: [
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/demo/**",
+            "**/*.ios.browser.test.{ts,tsx}",
+          ],
           browser: {
             enabled: true,
             provider: playwright(),

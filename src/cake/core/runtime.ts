@@ -814,7 +814,12 @@ export function createRuntimeFromRegistry(registry: {
   };
 
   type Run = {
+    type: "text";
     text: string;
+    marks: Mark[];
+  } | {
+    type: "atom";
+    atom: { kind: string; data?: Record<string, unknown> };
     marks: Mark[];
   };
 
@@ -1455,11 +1460,16 @@ export function createRuntimeFromRegistry(registry: {
       }
       const marks = stack.slice();
       const last = runs[runs.length - 1];
-      if (last && marksEqual(last.marks, marks)) {
+      if (last && last.type === "text" && marksEqual(last.marks, marks)) {
         last.text += text;
         return;
       }
-      runs.push({ text, marks });
+      runs.push({ type: "text", text, marks });
+    };
+
+    const pushAtom = (atom: { kind: string; data?: Record<string, unknown> }) => {
+      const marks = stack.slice();
+      runs.push({ type: "atom", atom, marks });
     };
 
     const walk = (inline: Inline) => {
@@ -1468,7 +1478,10 @@ export function createRuntimeFromRegistry(registry: {
         return;
       }
       if (inline.type === "inline-atom") {
-        pushText(" ");
+        pushAtom({
+          kind: inline.kind,
+          data: inline.data as Record<string, unknown> | undefined,
+        });
         return;
       }
       if (inline.type === "inline-wrapper") {
@@ -1524,8 +1537,8 @@ export function createRuntimeFromRegistry(registry: {
     let remaining = Math.max(0, cursorOffset);
     for (let i = 0; i < runs.length; i += 1) {
       const run = runs[i];
-      const segs = Array.from(graphemeSegments(run.text));
-      const runLen = segs.length;
+      const runLen =
+        run.type === "text" ? Array.from(graphemeSegments(run.text)).length : 1;
       if (remaining === 0) {
         right.push(run, ...runs.slice(i + 1));
         return [left, right];
@@ -1535,6 +1548,12 @@ export function createRuntimeFromRegistry(registry: {
         remaining -= runLen;
         continue;
       }
+      if (run.type !== "text") {
+        // Atom runs cannot be split; the only valid split positions are 0/1.
+        right.push(run, ...runs.slice(i + 1));
+        return [left, right];
+      }
+      const segs = Array.from(graphemeSegments(run.text));
       const leftText = segs
         .slice(0, remaining)
         .map((s) => s.segment)
@@ -1597,11 +1616,12 @@ export function createRuntimeFromRegistry(registry: {
     }
     let remaining = index;
     for (const run of runs) {
-      const segs = Array.from(graphemeSegments(run.text));
-      if (remaining < segs.length) {
+      const runLen =
+        run.type === "text" ? Array.from(graphemeSegments(run.text)).length : 1;
+      if (remaining < runLen) {
         return run.marks;
       }
-      remaining -= segs.length;
+      remaining -= runLen;
     }
     return null;
   }
@@ -1675,12 +1695,16 @@ export function createRuntimeFromRegistry(registry: {
   function normalizeRuns(runs: Run[]): Run[] {
     const next: Run[] = [];
     for (const run of runs) {
-      if (!run.text) {
-        continue;
-      }
       const prev = next[next.length - 1];
-      if (prev && marksEqual(prev.marks, run.marks)) {
-        prev.text += run.text;
+      if (run.type === "text") {
+        if (!run.text) {
+          continue;
+        }
+        if (prev && prev.type === "text" && marksEqual(prev.marks, run.marks)) {
+          prev.text += run.text;
+          continue;
+        }
+        next.push(run);
         continue;
       }
       next.push(run);
@@ -1740,9 +1764,17 @@ export function createRuntimeFromRegistry(registry: {
       openFrom(marks, common);
       openMarks = marks;
 
-      if (run.text) {
-        currentChildren().push({ type: "text", text: run.text });
+      if (run.type === "text") {
+        if (run.text) {
+          currentChildren().push({ type: "text", text: run.text });
+        }
+        continue;
       }
+      currentChildren().push({
+        type: "inline-atom",
+        kind: run.atom.kind,
+        data: run.atom.data,
+      });
     }
 
     closeTo(0);
@@ -2070,6 +2102,10 @@ export function createRuntimeFromRegistry(registry: {
     const splitRunsOnNewlines = (runs: Run[]): Run[] => {
       const split: Run[] = [];
       for (const run of runs) {
+        if (run.type !== "text") {
+          split.push(run);
+          continue;
+        }
         if (!run.text.includes("\n")) {
           split.push(run);
           continue;
@@ -2127,7 +2163,7 @@ export function createRuntimeFromRegistry(registry: {
       }
 
       const updatedSelected = splitRunsOnNewlines(selected).map((run) => {
-        const isNewline = run.text === "\n";
+        const isNewline = run.type === "text" && run.text === "\n";
         const nextMarks = canUnwrap
           ? removeMark(run.marks)
           : isNewline
@@ -2309,7 +2345,8 @@ export function createRuntimeFromRegistry(registry: {
   function runsToHtml(runs: Run[]): string {
     let html = "";
     for (const run of runs) {
-      let content = escapeHtml(run.text);
+      let content =
+        run.type === "text" ? escapeHtml(run.text) : escapeHtml(" ");
 
       // Apply marks in reverse order so outer marks wrap inner marks
       const sortedMarks = [...run.marks].reverse();
@@ -2413,19 +2450,29 @@ export function createRuntimeFromRegistry(registry: {
       }
 
       // Extract plain text to check for list patterns
-      const plainText = runs.map((r) => r.text).join("");
+      const plainText = runs
+        .map((r) => (r.type === "text" ? r.text : " "))
+        .join("");
       const listMatch = plainText.match(/^(\s*)([-*+]|\d+\.)( )(.*)$/);
 
       // Determine the HTML content - strip list prefix if it's a list line
       let lineHtml: string;
       if (listMatch && !wrapperKind) {
         // For list lines, only include the content after the prefix
-        const prefixLength =
-          listMatch[1].length + listMatch[2].length + listMatch[3].length;
+        const prefixLength = Array.from(
+          graphemeSegments(`${listMatch[1]}${listMatch[2]}${listMatch[3]}`),
+        ).length;
         const contentRuns = sliceRuns(
           runs,
           prefixLength,
-          runs.reduce((sum, r) => sum + r.text.length, 0),
+          runs.reduce(
+            (sum, r) =>
+              sum +
+              (r.type === "text"
+                ? Array.from(graphemeSegments(r.text)).length
+                : 1),
+            0,
+          ),
         ).selected;
         lineHtml = runsToHtml(normalizeRuns(contentRuns));
       } else {
