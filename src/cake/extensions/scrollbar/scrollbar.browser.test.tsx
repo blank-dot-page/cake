@@ -19,7 +19,7 @@ async function renderScrollbarEditor(markdown: string, height = 200) {
         onChange={() => undefined}
         placeholder=""
         extensions={[...bundledExtensions, scrollbarExtension]}
-        style={{ height: "100%", overflow: "auto" }}
+        style={{ height: "100%" }}
       />
     </div>,
   );
@@ -32,11 +32,11 @@ function generateLongContent(lines: number): string {
 }
 
 function getCakeContainer(): HTMLElement {
-  const cake = document.querySelector<HTMLElement>(".cake");
-  if (!cake) {
-    throw new Error("Cake container not found");
+  const scroller = document.querySelector<HTMLElement>(".cake-scroller");
+  if (!scroller) {
+    throw new Error("Cake scroller not found");
   }
-  return cake;
+  return scroller;
 }
 
 async function waitForScrollUpdate(

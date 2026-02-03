@@ -362,7 +362,7 @@ export default function App() {
             placeholder="Start typing..."
             spellCheck={spellCheck}
             extensions={extensions}
-            style={{ padding: 24 }}
+            scrollerStyle={{ padding: 24, paddingBottom: 224 }}
           />
         </section>
 

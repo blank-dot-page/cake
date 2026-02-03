@@ -198,7 +198,7 @@ function renderEditor(markdown: string) {
       value={markdown}
       onChange={() => undefined}
       placeholder=""
-      style={{ height: 160, overflow: "auto" }}
+      style={{ height: 160 }}
       extensions={[helloInlineExtension]}
     />,
   );
@@ -207,11 +207,11 @@ function renderEditor(markdown: string) {
 }
 
 function getCakeContainer(): HTMLElement {
-  const cake = document.querySelector<HTMLElement>(".cake");
-  if (!cake) {
+  const scroller = document.querySelector<HTMLElement>(".cake-scroller");
+  if (!scroller) {
     throw new Error("Cake container not found");
   }
-  return cake;
+  return scroller;
 }
 
 function generateLongContent(lines: number): string {

@@ -93,7 +93,8 @@ export function createTestHarness(
       : valueOrOptions;
 
   const container = document.createElement("div");
-  container.className = "cake";
+  // Keep `cake` for backwards-compat in tests, but the production scroller class is `cake-scroller`.
+  container.className = "cake cake-scroller";
   container.style.width = "400px";
   container.style.height = "200px";
   container.style.position = "absolute";

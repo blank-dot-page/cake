@@ -13,7 +13,7 @@ describe("iOS-like WebKit: touch click does not hit-test selection", () => {
     harness = createTestHarness({
       value: "hello world",
       css: `
-        .cake {
+        .cake-scroller {
           font-family: "Cousine", monospace;
           line-height: 2;
         }

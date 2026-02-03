@@ -54,6 +54,12 @@ import { htmlToMarkdownForPaste } from "../../cake/clipboard";
 type EngineOptions = {
   container: HTMLElement;
   contentRoot?: HTMLElement;
+  /**
+   * Optional external root for extension UI (popovers, scrollbars, etc).
+   * When provided, Cake portals UI into this element and will not create/append
+   * an internal extensions overlay inside the scroll container.
+   */
+  extensionsRoot?: HTMLElement;
   value: string;
   selection?: Selection;
   extensions?: CakeExtension[];
@@ -195,9 +201,7 @@ export class CakeEditor {
     [];
   private readOnly: boolean;
   private spellCheckEnabled: boolean;
-  private extensionsRoot: HTMLDivElement | null = null;
-  private extensionsViewportOffset: { x: number; y: number } = { x: 0, y: 0 };
-  private extensionsViewportPinUntil: number | null = null;
+  private extensionsRoot: HTMLElement | null = null;
   private placeholderRoot: HTMLDivElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private lastFocusRect: SelectionRect | null = null;
@@ -315,6 +319,7 @@ export class CakeEditor {
   constructor(options: EngineOptions) {
     this.container = options.container;
     this.contentRoot = options.contentRoot ?? null;
+    this.extensionsRoot = options.extensionsRoot ?? null;
     this.onChangeOption = options.onChange;
     this.onSelectionChangeOption = options.onSelectionChange;
     this.readOnly = options.readOnly ?? false;
@@ -794,14 +799,15 @@ export class CakeEditor {
     width: number;
     height: number;
   } {
-    const containerRect = this.container.getBoundingClientRect();
-    const borderTop = this.container.clientTop;
-    const borderLeft = this.container.clientLeft;
+    const overlayRoot = this.ensureExtensionsRoot();
+    const overlayRect = overlayRoot.getBoundingClientRect();
+    const borderTop = overlayRoot.clientTop;
+    const borderLeft = overlayRoot.clientLeft;
     const width = domRect.width || domRect.right - domRect.left;
     const height = domRect.height || domRect.bottom - domRect.top;
     return {
-      top: domRect.top - containerRect.top - borderTop,
-      left: domRect.left - containerRect.left - borderLeft,
+      top: domRect.top - overlayRect.top - borderTop,
+      left: domRect.left - overlayRect.left - borderLeft,
       width,
       height,
     };
@@ -827,10 +833,24 @@ export class CakeEditor {
     if (!focus) {
       return null;
     }
-    const { x, y } = this.computeExtensionsViewportOffset();
+    const overlayRoot = this.ensureExtensionsRoot();
+    const overlayRect = overlayRoot.getBoundingClientRect();
+    const borderTop = overlayRoot.clientTop;
+    const borderLeft = overlayRoot.clientLeft;
+    const containerRect = this.container.getBoundingClientRect();
+    const top =
+      focus.top -
+      this.container.scrollTop +
+      (containerRect.top - overlayRect.top) -
+      borderTop;
+    const left =
+      focus.left -
+      this.container.scrollLeft +
+      (containerRect.left - overlayRect.left) -
+      borderLeft;
     return {
-      top: focus.top - y,
-      left: focus.left - x,
+      top,
+      left,
       width: focus.width,
       height: focus.height,
     };
@@ -855,10 +875,22 @@ export class CakeEditor {
     if (geometry.selectionRects.length === 0) {
       return [];
     }
-    const { x, y } = this.computeExtensionsViewportOffset();
+    const overlayRoot = this.ensureExtensionsRoot();
+    const overlayRect = overlayRoot.getBoundingClientRect();
+    const borderTop = overlayRoot.clientTop;
+    const borderLeft = overlayRoot.clientLeft;
+    const containerRect = this.container.getBoundingClientRect();
     return geometry.selectionRects.map((rect) => ({
-      top: rect.top - y,
-      left: rect.left - x,
+      top:
+        rect.top -
+        this.container.scrollTop +
+        (containerRect.top - overlayRect.top) -
+        borderTop,
+      left:
+        rect.left -
+        this.container.scrollLeft +
+        (containerRect.left - overlayRect.left) -
+        borderLeft,
       width: rect.width,
       height: rect.height,
     }));
@@ -1210,7 +1242,6 @@ export class CakeEditor {
     this.updateContentRootAttributes();
     if (!this.overlayRoot) {
       const overlay = this.ensureOverlayRoot();
-      const extensionsRoot = this.extensionsRoot;
       const existingContainerChildren = Array.from(this.container.childNodes);
       const isCakeManagedContainerChild = (node: Node): boolean =>
         node instanceof Element &&
@@ -1225,14 +1256,10 @@ export class CakeEditor {
       // otherwise replace container children.
       if (this.contentRoot.parentElement === this.container) {
         this.container.append(overlay);
-        if (extensionsRoot && !extensionsRoot.isConnected) {
-          this.container.append(extensionsRoot);
-        }
       } else {
         this.container.replaceChildren(
           this.contentRoot,
           overlay,
-          ...(extensionsRoot ? [extensionsRoot] : []),
           ...preservedContainerChildren,
         );
       }
@@ -3664,13 +3691,7 @@ export class CakeEditor {
   }
 
   private handleScroll() {
-    // During elastic overscroll / rubber-banding, browsers can visually move
-    // content without meaningfully updating scrollTop. Keep the viewport overlay
-    // pinned for a short period after scroll activity so UI chrome (e.g.
-    // scrollbars) doesn't "bounce" with the content.
-    this.extensionsViewportPinUntil = Date.now() + 500;
     this.scheduleOverlayUpdate();
-    this.updateExtensionsOverlayPosition();
   }
 
   private handleResize() {
@@ -3686,16 +3707,7 @@ export class CakeEditor {
     }
     this.overlayUpdateId = window.requestAnimationFrame(() => {
       this.overlayUpdateId = null;
-      this.updateExtensionsOverlayPosition();
       this.updateSelectionOverlay();
-      if (
-        this.extensionsViewportPinUntil !== null &&
-        Date.now() < this.extensionsViewportPinUntil
-      ) {
-        this.scheduleOverlayUpdate();
-      } else {
-        this.extensionsViewportPinUntil = null;
-      }
     });
   }
 
@@ -3764,7 +3776,7 @@ export class CakeEditor {
     return true;
   }
 
-  private ensureExtensionsRoot(): HTMLDivElement {
+  private ensureExtensionsRoot(): HTMLElement {
     if (this.extensionsRoot) {
       return this.extensionsRoot;
     }
@@ -3780,39 +3792,11 @@ export class CakeEditor {
     root.style.overflow = "hidden";
     this.extensionsRoot = root;
     if (this.overlayRoot && !root.isConnected) {
+      // Fallback for non-React consumers. Prefer passing `extensionsRoot` so the
+      // overlay can live outside the scroll container (avoids rubber-banding).
       this.container.append(root);
     }
     return root;
-  }
-
-  private updateExtensionsOverlayPosition() {
-    if (!this.extensionsRoot) {
-      return;
-    }
-    const { x, y } = this.computeExtensionsViewportOffset();
-    this.extensionsViewportOffset = { x, y };
-    if (x === 0 && y === 0) {
-      this.extensionsRoot.style.transform = "";
-      return;
-    }
-    this.extensionsRoot.style.transform = `translate(${x}px, ${y}px)`;
-  }
-
-  private computeExtensionsViewportOffset(): { x: number; y: number } {
-    if (!this.contentRoot) {
-      return this.extensionsViewportOffset;
-    }
-    const containerRect = this.container.getBoundingClientRect();
-    const contentRect = this.contentRoot.getBoundingClientRect();
-    const styles = window.getComputedStyle(this.container);
-    const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
-    const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
-    const originTop = containerRect.top + this.container.clientTop + paddingTop;
-    const originLeft =
-      containerRect.left + this.container.clientLeft + paddingLeft;
-    const y = originTop - contentRect.top;
-    const x = originLeft - contentRect.left;
-    return { x, y };
   }
 
   private updateSelectionOverlay() {
@@ -3959,14 +3943,6 @@ export class CakeEditor {
     if (this.isComposing) {
       return;
     }
-    if (!this.contentRoot) {
-      return;
-    }
-    const caret = this.lastFocusRect;
-    if (!caret) {
-      return;
-    }
-
     const container = this.container;
     if (container.clientHeight <= 0) {
       return;
@@ -3987,7 +3963,15 @@ export class CakeEditor {
       return;
     }
 
-    const styles = window.getComputedStyle(this.contentRoot);
+    if (!this.contentRoot) {
+      return;
+    }
+    const caret = this.lastFocusRect;
+    if (!caret) {
+      return;
+    }
+
+    const styles = window.getComputedStyle(container);
     const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
     const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
     const viewportTop = container.scrollTop;

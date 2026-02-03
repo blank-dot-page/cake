@@ -51,6 +51,8 @@ export interface CakeEditorProps {
   spellCheck?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  scrollerStyle?: React.CSSProperties;
+  scrollerClassName?: string;
   extensions: CakeExtension[];
   onBlur?: (event?: FocusEvent) => void;
 }
@@ -98,7 +100,9 @@ export interface CakeEditorRef {
 
 export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
   function CakeEditor(props: CakeEditorProps, outerRef) {
+    const rootRef = useRef<HTMLDivElement | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
+    const extensionsRootRef = useRef<HTMLDivElement | null>(null);
     const engineRef = useRef<CakeEditorEngine | null>(null);
     const onChangeRef = useRef(props.onChange);
     const onSelectionChangeRef = useRef(props.onSelectionChange);
@@ -123,8 +127,55 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
         return;
       }
 
+      const extensionsRoot = document.createElement("div");
+      extensionsRoot.className = "cake-extension-overlay";
+      extensionsRoot.contentEditable = "false";
+      document.body.appendChild(extensionsRoot);
+      extensionsRootRef.current = extensionsRoot;
+
+      let rafId: number | null = null;
+      const syncOverlayPosition = () => {
+        rafId = null;
+        if (!extensionsRootRef.current) {
+          return;
+        }
+        const rect = container.getBoundingClientRect();
+        const overlay = extensionsRootRef.current;
+        overlay.style.position = "fixed";
+        overlay.style.top = `${rect.top}px`;
+        overlay.style.left = `${rect.left}px`;
+        overlay.style.width = `${rect.width}px`;
+        overlay.style.height = `${rect.height}px`;
+        overlay.style.pointerEvents = "none";
+        // Important: allow popovers (e.g. mentions) to overflow editor bounds without being clipped.
+        overlay.style.overflow = "visible";
+      };
+
+      const scheduleSync = () => {
+        if (rafId !== null) {
+          return;
+        }
+        rafId = window.requestAnimationFrame(syncOverlayPosition);
+      };
+
+      // Initial positioning before engine mounts overlays.
+      syncOverlayPosition();
+
+      document.addEventListener("scroll", scheduleSync, {
+        capture: true,
+        passive: true,
+      });
+      window.addEventListener("resize", scheduleSync, { passive: true });
+
+      let resizeObserver: ResizeObserver | null = null;
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(scheduleSync);
+        resizeObserver.observe(container);
+      }
+
       const engine = new CakeEditorEngine({
         container,
+        extensionsRoot,
         value: props.value,
         selection: props.selection ?? undefined,
         extensions: extensionsRef.current,
@@ -154,9 +205,19 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
       setUiComponents(engine.getUIComponents());
 
       return () => {
+        document.removeEventListener("scroll", scheduleSync, { capture: true });
+        window.removeEventListener("resize", scheduleSync);
+        if (rafId !== null) {
+          window.cancelAnimationFrame(rafId);
+        }
+        resizeObserver?.disconnect();
+
         engine.destroy();
         engineRef.current = null;
         setUiComponents([]);
+
+        extensionsRootRef.current = null;
+        extensionsRoot.remove();
       };
     }, []);
 
@@ -291,21 +352,36 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
       };
     }, [props.value]);
 
-    const containerStyle = props.style
-      ? { ...props.style }
-      : ({} satisfies React.CSSProperties);
+    const rootStyle = props.style
+      ? { ...props.style, position: props.style.position ?? "relative" }
+      : ({ position: "relative" } satisfies React.CSSProperties);
 
-    const containerClassName = props.className
-      ? `cake ${props.className}`
-      : "cake";
+    const rootClassName = props.className
+      ? `cake-root ${props.className}`
+      : "cake-root";
+
+    const scrollerClassName = props.scrollerClassName
+      ? `cake-scroller ${props.scrollerClassName}`
+      : "cake-scroller";
+
+    const scrollerBaselineStyle = {
+      height: "100%",
+      width: "100%",
+      overflowY: "auto",
+      overflowX: "hidden",
+    } satisfies React.CSSProperties;
+
+    const scrollerStyle = props.scrollerStyle
+      ? { ...scrollerBaselineStyle, ...props.scrollerStyle }
+      : scrollerBaselineStyle;
 
     return (
-      <>
+      <div ref={rootRef} className={rootClassName} style={rootStyle}>
         <div
           ref={containerRef}
-          className={containerClassName}
-          style={containerStyle}
+          className={scrollerClassName}
           data-placeholder={props.placeholder}
+          style={scrollerStyle}
           onBlur={(event) => {
             props.onBlur?.(event.nativeEvent);
           }}
@@ -318,7 +394,7 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
               engineRef.current.getOverlayRoot(),
             )
           : null}
-      </>
+      </div>
     );
   },
 );
