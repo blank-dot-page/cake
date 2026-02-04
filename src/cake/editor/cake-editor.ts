@@ -575,7 +575,12 @@ export class CakeEditor {
     let currentOffset = 0;
 
     for (const block of this.state.doc.blocks) {
-      const result = this.getMarksInBlock(block, cursorOffset, currentOffset, affinity);
+      const result = this.getMarksInBlock(
+        block,
+        cursorOffset,
+        currentOffset,
+        affinity,
+      );
       if (result.found) {
         return result.marks;
       }
@@ -589,12 +594,17 @@ export class CakeEditor {
     block: Block,
     targetOffset: number,
     startOffset: number,
-    affinity: "forward" | "backward"
+    affinity: "forward" | "backward",
   ): { found: boolean; marks: string[]; nextOffset: number } {
     if (block.type === "block-wrapper") {
       let offset = startOffset;
       for (const childBlock of block.blocks) {
-        const result = this.getMarksInBlock(childBlock, targetOffset, offset, affinity);
+        const result = this.getMarksInBlock(
+          childBlock,
+          targetOffset,
+          offset,
+          affinity,
+        );
         if (result.found) {
           return result;
         }
@@ -611,7 +621,12 @@ export class CakeEditor {
 
     if (block.type === "paragraph") {
       // Process paragraph content to find marks
-      const result = this.getMarksInParagraph(block.content, targetOffset, startOffset, affinity);
+      const result = this.getMarksInParagraph(
+        block.content,
+        targetOffset,
+        startOffset,
+        affinity,
+      );
       return result;
     }
 
@@ -622,16 +637,20 @@ export class CakeEditor {
     content: Inline[],
     targetOffset: number,
     startOffset: number,
-    affinity: "forward" | "backward"
+    affinity: "forward" | "backward",
   ): { found: boolean; marks: string[]; nextOffset: number } {
     let offset = startOffset;
     const markStack: string[] = [];
 
-    const processInline = (inline: Inline): { found: boolean; marks: string[] } | null => {
+    const processInline = (
+      inline: Inline,
+    ): { found: boolean; marks: string[] } | null => {
       if (inline.type === "text") {
         // Count grapheme clusters (cursor positions)
         const graphemes = Array.from(
-          new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(inline.text)
+          new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
+            inline.text,
+          ),
         );
         const endOffset = offset + graphemes.length;
 
@@ -1325,7 +1344,9 @@ export class CakeEditor {
     if (!only || only.type !== "paragraph") {
       return false;
     }
-    const hasVisibleInlineContent = (inline: (typeof only.content)[number]): boolean => {
+    const hasVisibleInlineContent = (
+      inline: (typeof only.content)[number],
+    ): boolean => {
       if (inline.type === "text") {
         // Zero-width spaces (\u200B) are used as placeholders for empty marks
         // and should not be considered visible content
@@ -3807,15 +3828,38 @@ export class CakeEditor {
       return;
     }
 
-    // Hide custom caret/selection when editor doesn't have focus
+    const isRecentTouch = Date.now() - this.lastTouchTime < 2000;
+
+    // When unfocused: never render a caret, but keep selection rects if the
+    // selection is a range (desktop only).
     if (!this.hasFocus()) {
       this.updateCaret(null);
-      this.syncSelectionRects([]);
+
+      // On touch devices, always use native selection handles.
+      if (this.isTouchDevice() || isRecentTouch) {
+        this.syncSelectionRects([]);
+        return;
+      }
+
+      const selection = this.state.selection;
+      if (selection.start === selection.end) {
+        this.syncSelectionRects([]);
+        return;
+      }
+
+      const lines = getDocLines(this.state.doc);
+      const geometry = getSelectionGeometry({
+        root: this.contentRoot,
+        container: this.container,
+        docLines: lines,
+        selection,
+      });
+      this.lastFocusRect = geometry.focusRect;
+      this.syncSelectionRects(geometry.selectionRects);
       return;
     }
 
     // On touch devices, always use native caret and selection handles
-    const isRecentTouch = Date.now() - this.lastTouchTime < 2000;
     if (this.isTouchDevice() || isRecentTouch) {
       this.contentRoot.classList.add("cake-touch-mode");
       this.updateCaret(null);

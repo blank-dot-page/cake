@@ -349,6 +349,9 @@ export function createTestHarness(
     if (!caret) {
       return null;
     }
+    if (caret.style.display === "none") {
+      return null;
+    }
     return {
       top: parseFloat(caret.style.top),
       left: parseFloat(caret.style.left),
