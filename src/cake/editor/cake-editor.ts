@@ -204,6 +204,10 @@ export class CakeEditor {
   private extensionsRoot: HTMLElement | null = null;
   private placeholderRoot: HTMLDivElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private contentResizeObserver: ResizeObserver | null = null;
+  private layoutMutationObserver: MutationObserver | null = null;
+  private fontFaceSet: FontFaceSet | null = null;
+  private isDestroyed = false;
   private lastFocusRect: SelectionRect | null = null;
   private verticalNavGoalX: number | null = null;
   private lastRenderPerf: RenderPerf | null = null;
@@ -263,6 +267,7 @@ export class CakeEditor {
   private handleDragOverBound = this.handleDragOver.bind(this);
   private handleDropBound = this.handleDrop.bind(this);
   private handleDragEndBound = this.handleDragEnd.bind(this);
+  private handleFontsChangedBound = this.handleFontsChanged.bind(this);
 
   // Drag state for line moving
   private dragState: {
@@ -515,6 +520,7 @@ export class CakeEditor {
   }
 
   destroy() {
+    this.isDestroyed = true;
     this.detachListeners();
     this.extensionDisposers
       .splice(0)
@@ -1146,6 +1152,7 @@ export class CakeEditor {
       this.scheduleOverlayUpdate();
     });
     this.resizeObserver.observe(this.container);
+    this.attachExternalLayoutObservers();
     this.container.addEventListener("click", this.handleClickBound);
     this.container.addEventListener("keydown", this.handleKeyDownBound);
     this.container.addEventListener("paste", this.handlePasteBound);
@@ -1203,6 +1210,21 @@ export class CakeEditor {
     window.removeEventListener("resize", this.handleResizeBound);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.contentResizeObserver?.disconnect();
+    this.contentResizeObserver = null;
+    this.layoutMutationObserver?.disconnect();
+    this.layoutMutationObserver = null;
+    if (this.fontFaceSet) {
+      this.fontFaceSet.removeEventListener(
+        "loadingdone",
+        this.handleFontsChangedBound,
+      );
+      this.fontFaceSet.removeEventListener(
+        "loadingerror",
+        this.handleFontsChangedBound,
+      );
+      this.fontFaceSet = null;
+    }
     this.container.removeEventListener("click", this.handleClickBound);
     this.container.removeEventListener("keydown", this.handleKeyDownBound);
     this.container.removeEventListener("paste", this.handlePasteBound);
@@ -1218,6 +1240,100 @@ export class CakeEditor {
     );
     this.container.removeEventListener("pointerup", this.handlePointerUpBound);
     this.detachDragListeners();
+  }
+
+  private shouldScheduleOverlayForExternalLayoutChange(): boolean {
+    if (this.isDestroyed) {
+      return false;
+    }
+    if (this.isComposing) {
+      return false;
+    }
+    if (!this.overlayRoot || !this.contentRoot) {
+      return false;
+    }
+
+    const isRecentTouch = Date.now() - this.lastTouchTime < 2000;
+    const isTouchMode =
+      (this.contentRoot.classList.contains("cake-touch-mode") ?? false) ||
+      this.isTouchDevice() ||
+      isRecentTouch;
+    if (isTouchMode) {
+      return false;
+    }
+
+    const selection = this.state.selection;
+    if (selection.start !== selection.end) {
+      return true;
+    }
+    return this.hasFocus();
+  }
+
+  private handleExternalLayoutChange() {
+    // Placeholder positioning is independent of overlay visibility; the helper
+    // is already a no-op when no placeholder root exists.
+    this.syncPlaceholderPosition();
+
+    // Avoid scheduling expensive selection geometry work when there's nothing
+    // visible that would change (e.g. blurred + collapsed selection).
+    if (!this.shouldScheduleOverlayForExternalLayoutChange()) {
+      return;
+    }
+    this.scheduleOverlayUpdate();
+  }
+
+  private attachExternalLayoutObservers() {
+    if (!this.contentRoot) {
+      return;
+    }
+
+    // Fonts and ancestor class toggles can change selection/caret geometry
+    // without triggering selectionchange, container resize, or window resize.
+    this.contentResizeObserver = new ResizeObserver(() => {
+      if (this.isDestroyed) {
+        return;
+      }
+      this.handleExternalLayoutChange();
+    });
+    this.contentResizeObserver.observe(this.contentRoot);
+
+    this.layoutMutationObserver = new MutationObserver(() => {
+      if (this.isDestroyed) {
+        return;
+      }
+      this.handleExternalLayoutChange();
+    });
+
+    // Observe class/style changes on the container's ancestor chain so toggling
+    // font-related classes (e.g. a wrapper "font-mono" class) forces a reflow.
+    //
+    // We intentionally avoid a document-wide observer to keep overhead low.
+    let node: HTMLElement | null = this.container as HTMLElement;
+    while (node) {
+      this.layoutMutationObserver.observe(node, {
+        attributes: true,
+        attributeFilter: ["class", "style"],
+      });
+      node = node.parentElement;
+    }
+
+    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+    if (fonts && typeof fonts.addEventListener === "function") {
+      this.fontFaceSet = fonts;
+      fonts.addEventListener("loadingdone", this.handleFontsChangedBound);
+      fonts.addEventListener("loadingerror", this.handleFontsChangedBound);
+      void fonts.ready.then(() => this.handleFontsChanged()).catch(() => {
+        // Ignore font readiness failures; selection overlay should still work
+        // with fallback fonts and layout observers.
+      });
+    }
+  }
+
+  private handleFontsChanged() {
+    if (this.isDestroyed) {
+      return;
+    }
+    this.handleExternalLayoutChange();
   }
 
   private handleFocusIn() {

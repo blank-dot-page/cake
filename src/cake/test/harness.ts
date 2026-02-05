@@ -82,6 +82,7 @@ export interface TestHarnessOptions {
   css?: string;
   extensions?: CakeExtension[];
   renderOverlays?: boolean;
+  mount?: HTMLElement;
 }
 
 export function createTestHarness(
@@ -100,7 +101,7 @@ export function createTestHarness(
   container.style.position = "absolute";
   container.style.top = "0";
   container.style.left = "0";
-  document.body.appendChild(container);
+  (options.mount ?? document.body).appendChild(container);
 
   let styleElement: HTMLStyleElement | null = null;
   const caretStyles = `
