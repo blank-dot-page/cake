@@ -77,6 +77,105 @@ describe("CakeEditor (browser)", () => {
     h.destroy();
   });
 
+  it("Cmd+B after plain text enables bold mode and new input is bold", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+
+    await h.typeText("hello ");
+    await h.pressKey("b", { meta: true, ctrl: true });
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("world");
+    expect(h.engine.getValue()).toBe("hello **world**");
+
+    h.destroy();
+  });
+
+  it("Cmd+B on a new line enables bold mode and new input is bold", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+
+    await h.typeText("hello");
+    await h.pressEnter();
+    await h.pressKey("b", { meta: true, ctrl: true });
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("world");
+    expect(h.engine.getValue()).toBe("hello\n**world**");
+
+    h.destroy();
+  });
+
+  it("Cmd+I on a new line enables italic mode and new input is italic", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+
+    await h.typeText("hello");
+    await h.pressEnter();
+    await h.pressKey("i", { meta: true, ctrl: true });
+    expect(h.engine.getActiveMarks()).toEqual(["italic"]);
+
+    await h.typeText("world");
+    expect(h.engine.getValue()).toBe("hello\n*world*");
+
+    h.destroy();
+  });
+
+  it("Cmd+B then Cmd+I on a new line enables combined emphasis for new input", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+
+    await h.typeText("hello");
+    await h.pressEnter();
+    await h.pressKey("b", { meta: true, ctrl: true });
+    await h.pressKey("i", { meta: true, ctrl: true });
+    expect(h.engine.getActiveMarks()).toEqual(["bold", "italic"]);
+
+    await h.typeText("world");
+    expect(h.engine.getValue()).toBe("hello\n***world***");
+
+    h.destroy();
+  });
+
+  it("selection toggle bold wraps selected text and keeps active mark", async () => {
+    const h = createTestHarness("hello\nworld");
+    h.engine.setSelection({ start: 6, end: 11, affinity: "forward" });
+    expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+    expect(h.engine.getValue()).toBe("hello\n**world**");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+    h.destroy();
+  });
+
+  it("selection toggle italic wraps selected text and keeps active mark", async () => {
+    const h = createTestHarness("hello\nworld");
+    h.engine.setSelection({ start: 6, end: 11, affinity: "forward" });
+    expect(h.engine.executeCommand({ type: "toggle-italic" })).toBe(true);
+    expect(h.engine.getValue()).toBe("hello\n*world*");
+    expect(h.engine.getActiveMarks()).toEqual(["italic"]);
+    h.destroy();
+  });
+
+  it("selection toggle bold then italic wraps selected text with both marks", async () => {
+    const h = createTestHarness("hello\nworld");
+    h.engine.setSelection({ start: 6, end: 11, affinity: "forward" });
+    expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+    expect(h.engine.executeCommand({ type: "toggle-italic" })).toBe(true);
+    expect(h.engine.getValue()).toBe("hello\n***world***");
+    expect(h.engine.getActiveMarks()).toEqual(["bold", "italic"]);
+    h.destroy();
+  });
+
+  it("link mark is active for caret and full selection inside link text", () => {
+    const h = createTestHarness("hello\n[world](https://example.com)");
+    h.engine.setSelection({ start: 8, end: 8, affinity: "forward" });
+    expect(h.engine.getActiveMarks()).toContain("link");
+
+    h.engine.setSelection({ start: 6, end: 11, affinity: "forward" });
+    expect(h.engine.getActiveMarks()).toContain("link");
+
+    h.destroy();
+  });
+
   it("Cmd+Enter inserts a line break", async () => {
     const originalPlatform = navigator.platform;
     Object.defineProperty(navigator, "platform", {

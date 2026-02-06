@@ -605,7 +605,11 @@ export class CakeEditor {
     // Traverse the document to find marks at cursor position.
     let currentOffset = 0;
 
-    for (const block of this.state.doc.blocks) {
+    for (let i = 0; i < this.state.doc.blocks.length; i += 1) {
+      const block = this.state.doc.blocks[i];
+      if (!block) {
+        continue;
+      }
       const result = this.getMarksInBlock(
         block,
         cursorOffset,
@@ -616,6 +620,10 @@ export class CakeEditor {
         return result.marks;
       }
       currentOffset = result.nextOffset;
+      // Cursor offsets include a line break between top-level blocks.
+      if (i < this.state.doc.blocks.length - 1) {
+        currentOffset += 1;
+      }
     }
 
     return [];
@@ -629,7 +637,11 @@ export class CakeEditor {
   ): { found: boolean; marks: string[]; nextOffset: number } {
     if (block.type === "block-wrapper") {
       let offset = startOffset;
-      for (const childBlock of block.blocks) {
+      for (let i = 0; i < block.blocks.length; i += 1) {
+        const childBlock = block.blocks[i];
+        if (!childBlock) {
+          continue;
+        }
         const result = this.getMarksInBlock(
           childBlock,
           targetOffset,
@@ -640,6 +652,10 @@ export class CakeEditor {
           return result;
         }
         offset = result.nextOffset;
+        // Cursor offsets include a line break between sibling blocks.
+        if (i < block.blocks.length - 1) {
+          offset += 1;
+        }
       }
       return { found: false, marks: [], nextOffset: offset };
     }
