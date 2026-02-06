@@ -1570,7 +1570,11 @@ describe("CakeEditor (browser)", () => {
     engine.setSelection({ start: 1, end: 4 }); // Select "old" inside "**bold**"
     expect(engine.getActiveMarks()).toEqual(["bold"]);
 
-    // Test 6: Selection spanning multiple marks
+    // Test 6: Selection fully covering a marked span
+    engine.setSelection({ start: 0, end: 4 }); // Select entire "bold"
+    expect(engine.getActiveMarks()).toEqual(["bold"]);
+
+    // Test 7: Selection spanning multiple marks
     engine.setSelection({ start: 3, end: 8 }); // From "bold" to "italic"
     expect(engine.getActiveMarks()).toEqual([]);
 
