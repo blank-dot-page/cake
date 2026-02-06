@@ -573,7 +573,24 @@ export class CakeEditor {
 
     if (start === end) {
       const affinity = this.state.selection.affinity ?? "forward";
-      return this.getMarksAtCursorOffset(start, affinity);
+      const marks = this.getMarksAtCursorOffset(start, affinity);
+      if (marks.length > 0) {
+        return marks;
+      }
+
+      // Pending mark placeholders (`\u200B`) can sit at ambiguous boundaries
+      // (notably start-of-line after a newline), where DOM selection affinity
+      // may flip to backward. If we're around a placeholder, check the opposite
+      // affinity as well so active marks remain stable before the user types.
+      if (this.hasPendingPlaceholderAroundCursor(start)) {
+        const oppositeAffinity = affinity === "forward" ? "backward" : "forward";
+        const oppositeMarks = this.getMarksAtCursorOffset(start, oppositeAffinity);
+        if (oppositeMarks.length > 0) {
+          return oppositeMarks;
+        }
+      }
+
+      return marks;
     }
 
     const selectionStart = Math.min(start, end);
@@ -596,6 +613,31 @@ export class CakeEditor {
     }
 
     return intersection ?? [];
+  }
+
+  private hasPendingPlaceholderAroundCursor(cursorOffset: number): boolean {
+    const placeholder = "\u200B";
+    const source = this.state.source;
+    const forwardSourceOffset = this.state.map.cursorToSource(
+      cursorOffset,
+      "forward",
+    );
+    const backwardSourceOffset = this.state.map.cursorToSource(
+      cursorOffset,
+      "backward",
+    );
+    const sourceOffsets = new Set([forwardSourceOffset, backwardSourceOffset]);
+
+    for (const sourceOffset of sourceOffsets) {
+      if (source[sourceOffset] === placeholder) {
+        return true;
+      }
+      if (sourceOffset > 0 && source[sourceOffset - 1] === placeholder) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private getMarksAtCursorOffset(

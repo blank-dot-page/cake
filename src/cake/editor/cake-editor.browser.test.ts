@@ -54,6 +54,8 @@ function createSelection(start: number, end: number): EngineSelection {
   return { start, end, affinity: "forward" };
 }
 
+const cmdModifier = isMac ? { meta: true } : { ctrl: true };
+
 describe("CakeEditor (browser)", () => {
   afterEach(() => {
     const selection = window.getSelection();
@@ -91,6 +93,20 @@ describe("CakeEditor (browser)", () => {
     h.destroy();
   });
 
+  it("meta-only Cmd+B after plain text enables bold mode and new input is bold", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+
+    await h.typeText("hello ");
+    await h.pressKey("b", cmdModifier);
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("world");
+    expect(h.engine.getValue()).toBe("hello **world**");
+
+    h.destroy();
+  });
+
   it("Cmd+B on a new line enables bold mode and new input is bold", async () => {
     const h = createTestHarness("");
     await h.focus();
@@ -102,6 +118,20 @@ describe("CakeEditor (browser)", () => {
 
     await h.typeText("world");
     expect(h.engine.getValue()).toBe("hello\n**world**");
+
+    h.destroy();
+  });
+
+  it("Cmd+B on a new line keeps bold active after selectionchange settles", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+
+    await h.typeText("hello");
+    await h.pressEnter();
+    await h.pressKey("b", cmdModifier);
+    await new Promise((r) => setTimeout(r, 80));
+
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
 
     h.destroy();
   });
@@ -1681,6 +1711,17 @@ describe("CakeEditor (browser)", () => {
     // The main functionality works for positions clearly inside marks
 
     engine.destroy();
+  });
+
+  it("getActiveMarks keeps pending mark at placeholder on new line regardless of affinity", async () => {
+    const h = createTestHarness("hello\n**\u200B**");
+    h.engine.setSelection({ start: 6, end: 6, affinity: "forward" });
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+    h.engine.setSelection({ start: 6, end: 6, affinity: "backward" });
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+    h.engine.setSelection({ start: 6, end: 6 });
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+    h.destroy();
   });
 });
 

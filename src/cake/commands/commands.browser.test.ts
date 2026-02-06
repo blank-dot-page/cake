@@ -57,6 +57,47 @@ describe("semantic commands", () => {
       const value = h.engine.getValue();
       expect(value).toContain("**");
     });
+
+    test("typing after command toggle-bold keeps new text bold", async () => {
+      h = createTestHarness("hello ");
+      await h.focus();
+      h.engine.setSelection({ start: 6, end: 6, affinity: "forward" });
+
+      expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+      expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+      await h.typeText("world");
+
+      expect(h.engine.getValue()).toBe("hello **world**");
+      expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+    });
+
+    test("typing after command toggle-bold on a new line keeps new text bold", async () => {
+      h = createTestHarness("hello\n");
+      await h.focus();
+      h.engine.setSelection({ start: 6, end: 6, affinity: "forward" });
+
+      expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+      expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+      await h.typeText("world");
+
+      expect(h.engine.getValue()).toBe("hello\n**world**");
+      expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+    });
+
+    test("active marks remain bold after dropping selection affinity at pending bold cursor", async () => {
+      h = createTestHarness("hello\n");
+      await h.focus();
+      h.engine.setSelection({ start: 6, end: 6, affinity: "forward" });
+
+      expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+      const currentSelection = h.engine.getSelection();
+      h.engine.setSelection({
+        start: currentSelection.start,
+        end: currentSelection.end,
+      });
+
+      expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+    });
   });
 
   describe("toggle-italic", () => {
@@ -80,6 +121,35 @@ describe("semantic commands", () => {
 
       expect(result).toBe(true);
       expect(h.engine.getValue()).toBe("hello world");
+    });
+
+    test("typing after command toggle-italic on a new line keeps new text italic", async () => {
+      h = createTestHarness("hello\n");
+      await h.focus();
+      h.engine.setSelection({ start: 6, end: 6, affinity: "forward" });
+
+      expect(h.engine.executeCommand({ type: "toggle-italic" })).toBe(true);
+      expect(h.engine.getActiveMarks()).toEqual(["italic"]);
+      await h.typeText("world");
+
+      expect(h.engine.getValue()).toBe("hello\n*world*");
+      expect(h.engine.getActiveMarks()).toEqual(["italic"]);
+    });
+  });
+
+  describe("combined marks", () => {
+    test("typing after command toggle-bold then toggle-italic keeps new text bold+italic", async () => {
+      h = createTestHarness("hello\n");
+      await h.focus();
+      h.engine.setSelection({ start: 6, end: 6, affinity: "forward" });
+
+      expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+      expect(h.engine.executeCommand({ type: "toggle-italic" })).toBe(true);
+      expect(h.engine.getActiveMarks()).toEqual(["bold", "italic"]);
+      await h.typeText("world");
+
+      expect(h.engine.getValue()).toBe("hello\n***world***");
+      expect(h.engine.getActiveMarks()).toEqual(["bold", "italic"]);
     });
   });
 

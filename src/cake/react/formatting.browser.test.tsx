@@ -1,9 +1,20 @@
-import { createRef } from "react";
+import { createRef, useEffect, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "vitest-browser-react";
+import { userEvent } from "vitest/browser";
 import { CakeEditor, type CakeEditorRef } from "./index";
 import { createRuntimeForTests } from "../core/runtime";
 import { bundledExtensions } from "../extensions";
+import { blockquoteExtension } from "../extensions/blockquote/blockquote";
+import { headingExtension } from "../extensions/heading/heading";
+import { plainTextListExtension } from "../extensions/list/list";
+import { combinedEmphasisExtension } from "../extensions/combined-emphasis/combined-emphasis";
+import { boldExtension } from "../extensions/bold/bold";
+import { italicExtension } from "../extensions/italic/italic";
+import { strikethroughExtension } from "../extensions/strikethrough/strikethrough";
+import { underlineExtension } from "../extensions/underline/underline";
+import { scrollbarExtension } from "../extensions/scrollbar";
+import { linkExtension } from "../extensions/link/link";
 
 afterEach(async () => {
   await cleanup();
@@ -141,5 +152,230 @@ describe("cake formatting interactions", () => {
     expect(getFirstLine().textContent ?? "").not.toContain("*");
     expect(ref.current?.getValue?.()).toBe("x");
     await assertBundledRoundtrip(ref.current?.getValue?.() ?? "");
+  });
+
+  it("Cmd+B on a new line keeps active marks in controlled React usage", async () => {
+    const isMac =
+      typeof navigator !== "undefined" &&
+      typeof navigator.platform === "string" &&
+      navigator.platform.toLowerCase().includes("mac");
+    const ref = createRef<CakeEditorRef>();
+
+    function ControlledEditor() {
+      const [value, setValue] = useState("");
+      return (
+        <CakeEditor
+          ref={ref}
+          value={value}
+          onChange={setValue}
+          placeholder=""
+          extensions={bundledExtensions}
+          style={{ height: 160, overflow: "auto" }}
+        />
+      );
+    }
+
+    await render(<ControlledEditor />);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    ref.current?.focus();
+    await userEvent.keyboard("hello");
+    await userEvent.keyboard("{Enter}");
+    if (isMac) {
+      await userEvent.keyboard("{Meta>}b{/Meta}");
+    } else {
+      await userEvent.keyboard("{Control>}b{/Control}");
+    }
+    await new Promise((r) => setTimeout(r, 120));
+
+    expect(ref.current?.getActiveMarks()).toEqual(["bold"]);
+  });
+
+  it("Cmd+B on a new line keeps callback-driven active marks in sync", async () => {
+    const isMac =
+      typeof navigator !== "undefined" &&
+      typeof navigator.platform === "string" &&
+      navigator.platform.toLowerCase().includes("mac");
+    const ref = createRef<CakeEditorRef>();
+    let latestActiveMarks: string[] = [];
+
+    function ControlledEditor() {
+      const [value, setValue] = useState("");
+      const [activeMarks, setActiveMarks] = useState<string[]>([]);
+      const syncActiveMarks = () =>
+        setActiveMarks(ref.current?.getActiveMarks?.() ?? []);
+
+      useEffect(() => {
+        latestActiveMarks = activeMarks;
+      }, [activeMarks]);
+
+      return (
+        <CakeEditor
+          ref={ref}
+          value={value}
+          onChange={(nextValue) => {
+            setValue(nextValue);
+            syncActiveMarks();
+          }}
+          onSelectionChange={() => {
+            syncActiveMarks();
+          }}
+          placeholder=""
+          extensions={bundledExtensions}
+          style={{ height: 160, overflow: "auto" }}
+        />
+      );
+    }
+
+    await render(<ControlledEditor />);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    ref.current?.focus();
+    await userEvent.keyboard("hello");
+    await userEvent.keyboard("{Enter}");
+    if (isMac) {
+      await userEvent.keyboard("{Meta>}b{/Meta}");
+    } else {
+      await userEvent.keyboard("{Control>}b{/Control}");
+    }
+    await new Promise((r) => setTimeout(r, 120));
+
+    expect(latestActiveMarks).toEqual(["bold"]);
+  });
+
+  it("Cmd+B on a new line keeps active marks in selection-controlled usage", async () => {
+    const isMac =
+      typeof navigator !== "undefined" &&
+      typeof navigator.platform === "string" &&
+      navigator.platform.toLowerCase().includes("mac");
+    const ref = createRef<CakeEditorRef>();
+    let latestActiveMarks: string[] = [];
+
+    function ControlledEditor() {
+      const [value, setValue] = useState("");
+      const [selection, setSelection] = useState<
+        | {
+            start: number;
+            end: number;
+            affinity?: "backward" | "forward";
+          }
+        | null
+      >(null);
+      const [activeMarks, setActiveMarks] = useState<string[]>([]);
+      const syncActiveMarks = () =>
+        setActiveMarks(ref.current?.getActiveMarks?.() ?? []);
+
+      useEffect(() => {
+        latestActiveMarks = activeMarks;
+      }, [activeMarks]);
+
+      return (
+        <CakeEditor
+          ref={ref}
+          value={value}
+          selection={selection ?? undefined}
+          onChange={(nextValue) => {
+            setValue(nextValue);
+            syncActiveMarks();
+          }}
+          onSelectionChange={(start, end, affinity) => {
+            setSelection(affinity ? { start, end, affinity } : { start, end });
+            syncActiveMarks();
+          }}
+          placeholder=""
+          extensions={bundledExtensions}
+          style={{ height: 160, overflow: "auto" }}
+        />
+      );
+    }
+
+    await render(<ControlledEditor />);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    ref.current?.focus();
+    await userEvent.keyboard("hello");
+    await userEvent.keyboard("{Enter}");
+    if (isMac) {
+      await userEvent.keyboard("{Meta>}b{/Meta}");
+    } else {
+      await userEvent.keyboard("{Control>}b{/Control}");
+    }
+    await new Promise((r) => setTimeout(r, 120));
+
+    expect(latestActiveMarks).toEqual(["bold"]);
+  });
+
+  it("Cmd+B on new line keeps active marks with editor extension ordering", async () => {
+    const isMac =
+      typeof navigator !== "undefined" &&
+      typeof navigator.platform === "string" &&
+      navigator.platform.toLowerCase().includes("mac");
+    const ref = createRef<CakeEditorRef>();
+    let latestActiveMarks: string[] = [];
+    const editorLikeExtensions = [
+      blockquoteExtension,
+      headingExtension,
+      plainTextListExtension,
+      combinedEmphasisExtension,
+      boldExtension,
+      italicExtension,
+      strikethroughExtension,
+      underlineExtension,
+      scrollbarExtension,
+      linkExtension({ onRequestLinkInput: async () => null }),
+    ];
+
+    function ControlledEditor() {
+      const [value, setValue] = useState("");
+      const [selection, setSelection] = useState<
+        | {
+            start: number;
+            end: number;
+            affinity?: "backward" | "forward";
+          }
+        | null
+      >(null);
+      const [activeMarks, setActiveMarks] = useState<string[]>([]);
+      const syncActiveMarks = () =>
+        setActiveMarks(ref.current?.getActiveMarks?.() ?? []);
+
+      useEffect(() => {
+        latestActiveMarks = activeMarks;
+      }, [activeMarks]);
+
+      return (
+        <CakeEditor
+          ref={ref}
+          value={value}
+          selection={selection ?? undefined}
+          onChange={(nextValue) => {
+            setValue(nextValue);
+            syncActiveMarks();
+          }}
+          onSelectionChange={(start, end, affinity) => {
+            setSelection(affinity ? { start, end, affinity } : { start, end });
+            syncActiveMarks();
+          }}
+          placeholder=""
+          extensions={editorLikeExtensions}
+          style={{ height: 160, overflow: "auto" }}
+        />
+      );
+    }
+
+    await render(<ControlledEditor />);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    ref.current?.focus();
+    await userEvent.keyboard("hello");
+    await userEvent.keyboard("{Enter}");
+    if (isMac) {
+      await userEvent.keyboard("{Meta>}b{/Meta}");
+    } else {
+      await userEvent.keyboard("{Control>}b{/Control}");
+    }
+    await new Promise((r) => setTimeout(r, 120));
+
+    expect(latestActiveMarks).toEqual(["bold"]);
   });
 });
