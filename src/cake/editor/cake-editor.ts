@@ -569,15 +569,40 @@ export class CakeEditor {
   }
 
   getActiveMarks(): string[] {
-    // Only get marks if selection is collapsed (cursor position)
-    if (this.state.selection.start !== this.state.selection.end) {
-      return [];
+    const { start, end } = this.state.selection;
+
+    if (start === end) {
+      const affinity = this.state.selection.affinity ?? "forward";
+      return this.getMarksAtCursorOffset(start, affinity);
     }
 
-    const cursorOffset = this.state.selection.start;
-    const affinity = this.state.selection.affinity ?? "forward";
+    const selectionStart = Math.min(start, end);
+    const selectionEnd = Math.max(start, end);
+    let intersection: string[] | null = null;
 
-    // Traverse the document to find marks at cursor position
+    // For ranged selections, a mark is active only if it applies to every
+    // selected cursor unit.
+    for (let cursor = selectionStart + 1; cursor <= selectionEnd; cursor++) {
+      const marks = this.getMarksAtCursorOffset(cursor, "backward");
+      if (intersection === null) {
+        intersection = marks;
+      } else {
+        intersection = intersection.filter((mark) => marks.includes(mark));
+      }
+
+      if (intersection.length === 0) {
+        return [];
+      }
+    }
+
+    return intersection ?? [];
+  }
+
+  private getMarksAtCursorOffset(
+    cursorOffset: number,
+    affinity: "forward" | "backward",
+  ): string[] {
+    // Traverse the document to find marks at cursor position.
     let currentOffset = 0;
 
     for (const block of this.state.doc.blocks) {
