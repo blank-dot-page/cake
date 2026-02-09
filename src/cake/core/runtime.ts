@@ -1966,10 +1966,10 @@ export function createRuntimeFromRegistry(registry: {
     } = markerSpec;
     const openLen = openMarker.length;
     const closeLen = closeMarker.length;
+    const placeholder = "\u200B";
 
     if (selection.start === selection.end) {
       const caret = selection.start;
-      const placeholder = "\u200B";
 
       // When the caret is at the end boundary of an inline wrapper, toggling the
       // wrapper should "exit" it (so the next character types outside). This is
@@ -2162,30 +2162,8 @@ export function createRuntimeFromRegistry(registry: {
     const cursorStart = Math.min(selection.start, selection.end);
     const cursorEnd = Math.max(selection.start, selection.end);
     const linesForSelection = flattenDocToLines(state.doc);
-    const commonMarks = commonMarksAcrossSelection(
-      linesForSelection,
-      cursorStart,
-      cursorEnd,
-      state.doc,
-    );
-    const canUnwrap = commonMarks.some((mark) => mark.kind === markerKind);
     const startLoc = resolveCursorToLine(linesForSelection, cursorStart);
     const endLoc = resolveCursorToLine(linesForSelection, cursorEnd);
-    const markerMark: Mark = {
-      kind: markerKind,
-      data: undefined,
-      key: markKey(markerKind, undefined),
-    };
-
-    const removeMark = (marks: Mark[]): Mark[] => {
-      for (let i = marks.length - 1; i >= 0; i -= 1) {
-        if (marks[i]?.kind === markerKind) {
-          return [...marks.slice(0, i), ...marks.slice(i + 1)];
-        }
-      }
-      return marks;
-    };
-
     const splitRunsOnNewlines = (runs: Run[]): Run[] => {
       const split: Run[] = [];
       for (const run of runs) {
@@ -2209,6 +2187,66 @@ export function createRuntimeFromRegistry(registry: {
         }
       }
       return split;
+    };
+    const selectedRunsForDecision: Run[] = [];
+
+    for (
+      let lineIndex = startLoc.lineIndex;
+      lineIndex <= endLoc.lineIndex;
+      lineIndex += 1
+    ) {
+      const line = linesForSelection[lineIndex];
+      if (!line) {
+        continue;
+      }
+
+      const startInLine =
+        lineIndex === startLoc.lineIndex ? startLoc.offsetInLine : 0;
+      const endInLine =
+        lineIndex === endLoc.lineIndex
+          ? endLoc.offsetInLine
+          : line.cursorLength;
+      if (startInLine === endInLine) {
+        continue;
+      }
+
+      const block = getBlockAtPath(state.doc.blocks, line.path);
+      if (!block || block.type !== "paragraph") {
+        continue;
+      }
+
+      const runs = paragraphToRuns(block);
+      const selected = sliceRuns(runs, startInLine, endInLine).selected;
+      selectedRunsForDecision.push(...splitRunsOnNewlines(selected));
+    }
+
+    const visibleRunsForDecision = selectedRunsForDecision.filter((run) => {
+      if (run.type !== "text" || run.text === "\n") {
+        return false;
+      }
+      return run.text.replaceAll(placeholder, "").length > 0;
+    });
+    const hasTargetMark = visibleRunsForDecision.some((run) =>
+      run.marks.some((mark) => mark.kind === markerKind),
+    );
+    const canUnwrap =
+      hasTargetMark &&
+      visibleRunsForDecision.every((run) =>
+        run.marks.some((mark) => mark.kind === markerKind),
+      );
+    const markerMark: Mark = {
+      kind: markerKind,
+      data: undefined,
+      key: markKey(markerKind, undefined),
+    };
+
+    const removeMark = (marks: Mark[]): Mark[] => {
+      for (let i = marks.length - 1; i >= 0; i -= 1) {
+        if (marks[i]?.kind === markerKind) {
+          return [...marks.slice(0, i), ...marks.slice(i + 1)];
+        }
+      }
+      return marks;
     };
 
     let nextDoc = state.doc;
@@ -2258,6 +2296,16 @@ export function createRuntimeFromRegistry(registry: {
             : [...run.marks, markerMark];
         if (!marksEqual(run.marks, nextMarks)) {
           didChange = true;
+        }
+        if (run.type === "text") {
+          const nextText =
+            canUnwrap && run.text.includes(placeholder)
+              ? run.text.replaceAll(placeholder, "")
+              : run.text;
+          if (nextText !== run.text) {
+            didChange = true;
+          }
+          return { ...run, text: nextText, marks: nextMarks };
         }
         return { ...run, marks: nextMarks };
       });

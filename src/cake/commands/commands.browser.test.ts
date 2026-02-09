@@ -45,6 +45,46 @@ describe("semantic commands", () => {
       expect(h.engine.getValue()).toBe("hello world");
     });
 
+    test("toggling bold at a caret inside bold text still allows full-word unbold", async () => {
+      h = createTestHarness("**involved**");
+      await h.focus();
+
+      // Place caret in the middle of the bold word and toggle bold.
+      h.engine.setSelection({ start: 4, end: 4, affinity: "forward" });
+      expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+
+      // User then selects the full word and expects Cmd/Ctrl+B to remove bold.
+      h.engine.selectAll();
+      expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+
+      expect(h.engine.getValue()).toBe("involved");
+    });
+
+    test("caret toggle inside bold does not split word selection and next toggle removes bold", async () => {
+      h = createTestHarness("hello **bold**");
+      await h.focus();
+
+      // Place caret between "bo" and "ld" in visible text, then toggle bold.
+      h.engine.setSelection({ start: 8, end: 8, affinity: "forward" });
+      expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+
+      // Double-clicking the word should still select the full "bold" token.
+      await h.doubleClick(6, 0);
+      const selectedWord = h.engine.getTextSelection();
+      expect(selectedWord.start).toBe(6);
+      expect(selectedWord.end).toBeGreaterThan(8);
+      expect(
+        h.engine
+          .getText()
+          .slice(selectedWord.start, selectedWord.end)
+          .replace(/\u200B/g, ""),
+      ).toBe("bold");
+
+      // Toggling bold on the selected word should remove bold completely.
+      expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+      expect(h.engine.getValue()).toBe("hello bold");
+    });
+
     test("inserts bold placeholder at cursor with no selection", async () => {
       h = createTestHarness("hello");
       await h.focus();

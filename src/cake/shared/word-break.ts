@@ -1,5 +1,7 @@
 import { wordSegments } from "./segmenter";
 
+const ZERO_WIDTH_PLACEHOLDER = "\u200B";
+
 type WordSegment = {
   segment: string;
   index: number;
@@ -88,6 +90,62 @@ export function getWordBoundaries(
   }
 
   const clampedOffset = Math.max(0, Math.min(offset, maxLength));
+
+  // Zero-width placeholders are internal formatting artifacts used for
+  // pending mark state and should not split a "word" for double-click.
+  if (text.includes(ZERO_WIDTH_PLACEHOLDER)) {
+    const nonPlaceholderPrefixCounts = new Array<number>(text.length + 1).fill(
+      0,
+    );
+    let compactText = "";
+    let compactCount = 0;
+
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i] ?? "";
+      if (char !== ZERO_WIDTH_PLACEHOLDER) {
+        compactText += char;
+        compactCount += 1;
+      }
+      nonPlaceholderPrefixCounts[i + 1] = compactCount;
+    }
+
+    if (compactText.length === 0) {
+      return { start: 0, end: 0 };
+    }
+
+    const compactOffset = nonPlaceholderPrefixCounts[clampedOffset] ?? 0;
+
+    let adjustedCompactOffset = compactOffset;
+    if (adjustedCompactOffset >= compactText.length) {
+      adjustedCompactOffset = compactText.length - 1;
+    }
+    const compactChar = compactText[adjustedCompactOffset] ?? "";
+    if (compactChar === "\n" && adjustedCompactOffset > 0) {
+      adjustedCompactOffset = adjustedCompactOffset - 1;
+    }
+
+    const compactBounds = getWordBoundariesAt(compactText, adjustedCompactOffset);
+    const compactStart = compactBounds.start;
+    const compactEnd = compactBounds.end;
+
+    let rawStart = 0;
+    for (let i = 0; i < nonPlaceholderPrefixCounts.length; i += 1) {
+      if ((nonPlaceholderPrefixCounts[i] ?? 0) >= compactStart) {
+        rawStart = i;
+        break;
+      }
+    }
+
+    let rawEnd = text.length;
+    for (let i = rawStart; i < nonPlaceholderPrefixCounts.length; i += 1) {
+      if ((nonPlaceholderPrefixCounts[i] ?? 0) >= compactEnd) {
+        rawEnd = i;
+        break;
+      }
+    }
+
+    return { start: rawStart, end: rawEnd };
+  }
 
   let adjustedOffset = clampedOffset;
   if (adjustedOffset >= maxLength) {
