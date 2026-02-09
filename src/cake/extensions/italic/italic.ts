@@ -9,6 +9,35 @@ import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 
 const ITALIC_KIND = "italic";
 
+function findItalicClose(
+  source: string,
+  start: number,
+  end: number,
+  marker: "*" | "_",
+): number {
+  if (marker === "_") {
+    return source.indexOf("_", start + 1);
+  }
+
+  let fallback = -1;
+  for (let i = start + 1; i < end; i += 1) {
+    if (source[i] !== "*") {
+      continue;
+    }
+
+    const prevIsStar = source[i - 1] === "*";
+    const nextIsStar = source[i + 1] === "*";
+    if (!prevIsStar && !nextIsStar) {
+      return i;
+    }
+    if (fallback === -1) {
+      fallback = i;
+    }
+  }
+
+  return fallback;
+}
+
 /** Semantic command to toggle italic formatting */
 type ToggleItalicCommand = { type: "toggle-italic" };
 
@@ -58,7 +87,12 @@ export const italicExtension: CakeExtension = (editor) => {
           return null;
         }
 
-        const close = source.indexOf(char, start + 1);
+        const close = findItalicClose(
+          source,
+          start,
+          end,
+          char as "*" | "_",
+        );
         if (close === -1 || close >= end) {
           return null;
         }

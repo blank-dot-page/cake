@@ -222,6 +222,10 @@ export function CakeLinkPopover({
   useEffect(() => {
     function handleUpdate() {
       if (stateRef.current.status !== "closed") {
+        const anchor = anchorRef.current;
+        if (!anchor || !anchor.isConnected) {
+          close();
+        }
         return;
       }
       const selection = editor.getSelection();
@@ -308,6 +312,11 @@ export function CakeLinkPopover({
     if (state.status !== "open") {
       return;
     }
+    const selection = getSelection();
+    if (!selection) {
+      close();
+      return;
+    }
     const draftValue = inputRef.current?.value ?? state.draftUrl;
     const trimmed = draftValue.trim();
     if (!trimmed) {
@@ -315,8 +324,14 @@ export function CakeLinkPopover({
       return;
     }
     const nextUrl = ensureHttpsProtocol(trimmed);
-    const anchor = anchorRef.current;
-    anchor?.setAttribute("href", nextUrl);
+
+    executeCommand({
+      type: "set-link-url",
+      start: selection.start,
+      end: selection.end,
+      url: nextUrl,
+      selectLabel: state.url.trim() === "",
+    });
     setState({
       status: "open",
       url: nextUrl,

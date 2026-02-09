@@ -217,4 +217,51 @@ describe("cake link popover", () => {
     expect(cancelButton.element().classList.contains("cake-link-cancel")).toBe(true);
     expect(cancelButton.element().classList.contains("my-cancel")).toBe(true);
   });
+
+  it("restores text selection after creating a link via popover save", async () => {
+    const { ref } = renderEditor("hello world");
+    ref.current?.setTextSelection({ start: 6, end: 11 });
+    expect(
+      ref.current?.executeCommand({ type: "wrap-link", openPopover: true }),
+    ).toBe(true);
+
+    const input = page.getByRole("textbox");
+    await expect.element(input).toBeVisible();
+    await userEvent.fill(input, "https://example.com");
+
+    const saveButton = page.getByRole("button", { name: "Save" });
+    await userEvent.click(saveButton);
+
+    await expect.poll(() => ref.current?.getValue()).toBe(
+      "hello [world](https://example.com)",
+    );
+    await expect.poll(() => ref.current?.getTextSelection()).toEqual({
+      start: 6,
+      end: 11,
+    });
+  });
+
+  it("closes popover when link is removed by an external unlink command", async () => {
+    const { ref } = renderEditor("hello [world](https://example.com)");
+
+    const link = page.getByRole("link", { name: "world" });
+    await expect.element(link).toBeVisible();
+    await userEvent.click(link);
+    await expect
+      .element(page.getByRole("button", { name: "Edit link" }))
+      .toBeVisible();
+
+    ref.current?.setTextSelection({ start: 6, end: 11 });
+    expect(
+      ref.current?.executeCommand({
+        type: "wrap-link",
+        url: "https://example.com",
+      }),
+    ).toBe(true);
+
+    await expect.poll(() => ref.current?.getValue()).toBe("hello world");
+    await expect
+      .element(page.getByRole("button", { name: "Edit link" }))
+      .not.toBeInTheDocument();
+  });
 });

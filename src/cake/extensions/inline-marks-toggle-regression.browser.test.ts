@@ -395,4 +395,210 @@ describe("Fuzz-like testing for mark toggling", () => {
       expect(afterItalicToggle).toBe(initialVisible);
     }
   });
+
+  it("re-toggling link after bold+italic+strikethrough+link removes link cleanly", async () => {
+    h = createTestHarness("hello world");
+    await h.focus();
+
+    // Select "world"
+    h.engine.setSelection({ start: 6, end: 11, affinity: "forward" });
+    expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+    expect(h.engine.executeCommand({ type: "toggle-italic" })).toBe(true);
+    expect(h.engine.executeCommand({ type: "toggle-strikethrough" })).toBe(
+      true,
+    );
+    expect(
+      h.engine.executeCommand({
+        type: "wrap-link",
+        url: "https://example.com",
+      }),
+    ).toBe(true);
+
+    // Re-toggling link should remove link while keeping other formatting.
+    h.engine.setSelection({ start: 6, end: 11, affinity: "forward" });
+    expect(
+      h.engine.executeCommand({
+        type: "wrap-link",
+        url: "https://example.com",
+      }),
+    ).toBe(true);
+
+    const visibleText = h.getLine(0).textContent ?? "";
+    expect(visibleText.replace(/\u200B/g, "")).toBe("hello world");
+    expect(visibleText).not.toContain("[");
+    expect(visibleText).not.toContain("](");
+    expect(visibleText).not.toContain(")");
+
+    const source = h.engine.getValue();
+    expect(source).not.toContain("](");
+    expect(source).toContain("world");
+  });
+});
+
+describe("Formatting matrix: apply/unapply order invariants", () => {
+  let h: TestHarness;
+
+  const TARGET_TEXT = "hello world";
+  const TARGET_WORD = "world";
+  const TARGET_START = 6;
+  const TARGET_END = 11;
+  const LINK_URL = "https://example.com";
+
+  type FormatKind = "bold" | "italic" | "strikethrough" | "link";
+
+  const FORMAT_KINDS: FormatKind[] = [
+    "bold",
+    "italic",
+    "strikethrough",
+    "link",
+  ];
+
+  afterEach(() => {
+    h?.destroy();
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    document.body.innerHTML = "";
+  });
+
+  function permutations<T>(items: T[]): T[][] {
+    if (items.length <= 1) {
+      return [items.slice()];
+    }
+    const result: T[][] = [];
+    for (let i = 0; i < items.length; i += 1) {
+      const picked = items[i];
+      const rest = [...items.slice(0, i), ...items.slice(i + 1)];
+      for (const tail of permutations(rest)) {
+        result.push([picked, ...tail]);
+      }
+    }
+    return result;
+  }
+
+  function selectWord() {
+    h.engine.setSelection({
+      start: TARGET_START,
+      end: TARGET_END,
+      affinity: "forward",
+    });
+  }
+
+  function toggleFormat(kind: FormatKind) {
+    selectWord();
+
+    if (kind === "bold") {
+      expect(h.engine.executeCommand({ type: "toggle-bold" })).toBe(true);
+      return;
+    }
+    if (kind === "italic") {
+      expect(h.engine.executeCommand({ type: "toggle-italic" })).toBe(true);
+      return;
+    }
+    if (kind === "strikethrough") {
+      expect(h.engine.executeCommand({ type: "toggle-strikethrough" })).toBe(
+        true,
+      );
+      return;
+    }
+    expect(
+      h.engine.executeCommand({
+        type: "wrap-link",
+        url: LINK_URL,
+      }),
+    ).toBe(true);
+  }
+
+  function normalizeSource(source: string): string {
+    return source
+      .replace(/\u200B/g, "")
+      .replace(/\[([^\]]*)\]\(https:\/\/example\.com\)/g, "$1")
+      .replace(/\*\*/g, "")
+      .replace(/\*/g, "")
+      .replace(/~~/g, "");
+  }
+
+  function assertState(active: Set<FormatKind>, phase: string) {
+    const line = h.getLine(0);
+    const visible = line.textContent ?? "";
+    const visibleNoPlaceholder = visible.replace(/\u200B/g, "");
+    if (visibleNoPlaceholder !== TARGET_TEXT) {
+      throw new Error(
+        `Visible text mismatch at ${phase}: visible=${JSON.stringify(
+          visible,
+        )} source=${JSON.stringify(h.engine.getValue())}`,
+      );
+    }
+    expect(visibleNoPlaceholder).toBe(TARGET_TEXT);
+    expect(visible).not.toContain("[");
+    expect(visible).not.toContain("](");
+
+    const source = h.engine.getValue();
+    expect(normalizeSource(source)).toBe(TARGET_TEXT);
+
+    const sourceLinks =
+      source.match(/\[[^\]]*\]\(https:\/\/example\.com\)/g) ?? [];
+    if (active.has("link")) {
+      expect(sourceLinks).toHaveLength(1);
+      const link = line.querySelector("a.cake-link");
+      expect(link).not.toBeNull();
+      expect((link?.textContent ?? "").replace(/\u200B/g, "")).toContain(
+        TARGET_WORD,
+      );
+    } else {
+      expect(sourceLinks).toHaveLength(0);
+      expect(source).not.toContain("](");
+      expect(line.querySelector("a.cake-link")).toBeNull();
+    }
+
+    if (active.has("bold")) {
+      expect(line.querySelector("strong")).not.toBeNull();
+    } else {
+      expect(line.querySelector("strong")).toBeNull();
+    }
+
+    if (active.has("italic")) {
+      expect(line.querySelector("em")).not.toBeNull();
+    } else {
+      expect(line.querySelector("em")).toBeNull();
+    }
+
+    if (active.has("strikethrough")) {
+      expect(line.querySelector("s")).not.toBeNull();
+    } else {
+      expect(line.querySelector("s")).toBeNull();
+    }
+  }
+
+  const applyOrders = permutations(FORMAT_KINDS);
+  for (const applyOrder of applyOrders) {
+    const applyLabel = applyOrder.join(" -> ");
+    const unapplyOrders: Array<{ label: string; order: FormatKind[] }> = [
+      { label: "same-order", order: [...applyOrder] },
+      { label: "reverse-order", order: [...applyOrder].reverse() },
+    ];
+
+    for (const unapply of unapplyOrders) {
+      it(`apply [${applyLabel}] then unapply [${unapply.label}] keeps source and DOM coherent`, async () => {
+        h = createTestHarness(TARGET_TEXT);
+        await h.focus();
+
+        const active = new Set<FormatKind>();
+        assertState(active, "initial");
+
+        for (const kind of applyOrder) {
+          toggleFormat(kind);
+          active.add(kind);
+          assertState(active, `after apply ${kind}`);
+        }
+
+        for (const kind of unapply.order) {
+          toggleFormat(kind);
+          active.delete(kind);
+          assertState(active, `after unapply ${kind}`);
+        }
+
+        expect(h.engine.getValue()).toBe(TARGET_TEXT);
+      });
+    }
+  }
 });
