@@ -113,6 +113,11 @@ type HistoryState = {
   lastKind: string | null;
 };
 
+type ActiveMarksResolver = (
+  state: RuntimeState,
+  currentMarks: readonly string[],
+) => string[] | null | undefined;
+
 export class CakeEditor {
   private container: HTMLElement;
   private runtime: Runtime;
@@ -155,6 +160,7 @@ export class CakeEditor {
   private onPasteTextHandlers: Array<
     (text: string, state: RuntimeState) => EditCommand | null
   > = [];
+  private activeMarksResolvers: ActiveMarksResolver[] = [];
   private domInlineRenderers: DomInlineRenderer[] = [];
   private domBlockRenderers: DomBlockRenderer[] = [];
   private uiComponents: CakeUIComponent[] = [];
@@ -473,6 +479,11 @@ export class CakeEditor {
     return () => removeFromArray(this.onPasteTextHandlers, fn);
   }
 
+  registerActiveMarksResolver(fn: ActiveMarksResolver) {
+    this.activeMarksResolvers.push(fn);
+    return () => removeFromArray(this.activeMarksResolvers, fn);
+  }
+
   registerKeybindings(bindings: KeyBinding[]) {
     this.keybindings.push(...bindings);
     return () => {
@@ -575,7 +586,7 @@ export class CakeEditor {
       const affinity = this.state.selection.affinity ?? "forward";
       const marks = this.getMarksAtCursorOffset(start, affinity);
       if (marks.length > 0) {
-        return marks;
+        return this.resolveActiveMarks(marks);
       }
 
       // Pending mark placeholders (`\u200B`) can sit at ambiguous boundaries
@@ -586,11 +597,11 @@ export class CakeEditor {
         const oppositeAffinity = affinity === "forward" ? "backward" : "forward";
         const oppositeMarks = this.getMarksAtCursorOffset(start, oppositeAffinity);
         if (oppositeMarks.length > 0) {
-          return oppositeMarks;
+          return this.resolveActiveMarks(oppositeMarks);
         }
       }
 
-      return marks;
+      return this.resolveActiveMarks(marks);
     }
 
     const selectionStart = Math.min(start, end);
@@ -608,11 +619,34 @@ export class CakeEditor {
       }
 
       if (intersection.length === 0) {
-        return [];
+        return this.resolveActiveMarks([]);
       }
     }
 
-    return intersection ?? [];
+    return this.resolveActiveMarks(intersection ?? []);
+  }
+
+  private resolveActiveMarks(baseMarks: string[]): string[] {
+    if (this.activeMarksResolvers.length === 0) {
+      return baseMarks;
+    }
+
+    const merged = [...baseMarks];
+    const seen = new Set(merged);
+    for (const resolver of this.activeMarksResolvers) {
+      const marks = resolver(this.state, merged);
+      if (!marks || marks.length === 0) {
+        continue;
+      }
+      for (const mark of marks) {
+        if (mark === "" || seen.has(mark)) {
+          continue;
+        }
+        seen.add(mark);
+        merged.push(mark);
+      }
+    }
+    return merged;
   }
 
   private hasPendingPlaceholderAroundCursor(cursorOffset: number): boolean {

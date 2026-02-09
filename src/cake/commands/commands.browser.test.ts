@@ -366,6 +366,36 @@ describe("semantic commands", () => {
       expect(result).toBe(true);
       expect(h.engine.getValue()).toBe("# hello world");
     });
+
+    test("converts bullet list item to heading without keeping list marker", async () => {
+      h = createTestHarness("- hello world");
+      await h.focus();
+      await h.clickAt(2, 0);
+
+      const result = h.engine.executeCommand({
+        type: "toggle-heading",
+        level: 1,
+      });
+
+      expect(result).toBe(true);
+      expect(h.engine.getValue()).toBe("# hello world");
+      expect(h.getLine(0).classList.contains("is-heading-1")).toBe(true);
+    });
+
+    test("converts numbered list item to h2 without keeping list marker", async () => {
+      h = createTestHarness("1. hello world");
+      await h.focus();
+      await h.clickAt(3, 0);
+
+      const result = h.engine.executeCommand({
+        type: "toggle-heading",
+        level: 2,
+      });
+
+      expect(result).toBe(true);
+      expect(h.engine.getValue()).toBe("## hello world");
+      expect(h.getLine(0).classList.contains("is-heading-2")).toBe(true);
+    });
   });
 });
 

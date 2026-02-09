@@ -8,6 +8,7 @@ import {
 import type { Block } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 import { mergeInlineForRender } from "../../dom/render";
+import { getLineBlockContent } from "../shared/line-content";
 
 const HEADING_KIND = "heading";
 const HEADING_PATTERN = /^(#{1,3}) /;
@@ -23,6 +24,81 @@ function findLineStartInSource(source: string, sourceOffset: number): number {
     lineStart--;
   }
   return lineStart;
+}
+
+function findLineEndInSource(source: string, lineStart: number): number {
+  const lineEnd = source.indexOf("\n", lineStart);
+  return lineEnd === -1 ? source.length : lineEnd;
+}
+
+function getSelectionSourceRange(state: RuntimeState): {
+  from: number;
+  to: number;
+} {
+  const { selection, map } = state;
+  const start = Math.min(selection.start, selection.end);
+  const end = Math.max(selection.start, selection.end);
+
+  if (start === end) {
+    const affinity = selection.affinity ?? "forward";
+    const sourcePos = map.cursorToSource(start, affinity);
+    return { from: sourcePos, to: sourcePos };
+  }
+
+  return {
+    from: map.cursorToSource(start, "forward"),
+    to: map.cursorToSource(end, "backward"),
+  };
+}
+
+function getSelectedLineStarts(source: string, from: number, to: number): number[] {
+  if (source.length === 0) {
+    return [0];
+  }
+
+  const starts: number[] = [];
+  let lineStart = findLineStartInSource(source, Math.min(from, source.length));
+  starts.push(lineStart);
+
+  while (lineStart < to) {
+    const lineEnd = findLineEndInSource(source, lineStart);
+    if (lineEnd >= source.length || lineEnd >= to) {
+      break;
+    }
+    lineStart = lineEnd + 1;
+    starts.push(lineStart);
+  }
+
+  return starts;
+}
+
+function getHeadingActiveMarks(state: RuntimeState): string[] {
+  const { source } = state;
+  const { from, to } = getSelectionSourceRange(state);
+  const lineStarts = getSelectedLineStarts(source, from, to);
+
+  let level: number | null = null;
+  for (const lineStart of lineStarts) {
+    const lineContent = source.slice(lineStart, findLineEndInSource(source, lineStart));
+    const match = lineContent.match(HEADING_PATTERN);
+    if (!match) {
+      return [];
+    }
+    const lineLevel = match[1].length;
+    if (level === null) {
+      level = lineLevel;
+      continue;
+    }
+    if (level !== lineLevel) {
+      return [];
+    }
+  }
+
+  if (level === null) {
+    return [];
+  }
+
+  return ["heading", `heading-${level}`];
 }
 
 function handleDeleteBackward(state: RuntimeState): EditResult | null {
@@ -228,14 +304,27 @@ function handleToggleHeading(
   } else {
     // Line is not a heading - add the heading marker
     const newMarker = "#".repeat(targetLevel) + " ";
+    const lineContentWithoutBlockMarkers = getLineBlockContent(
+      lineContent,
+      runtime,
+    );
     newSource =
       source.slice(0, lineStart) +
       newMarker +
-      lineContent +
+      lineContentWithoutBlockMarkers +
       source.slice(lineEnd);
 
-    // Cursor moves forward by marker length
-    newCursorOffset = sourcePos + newMarker.length;
+    const removedPrefixLength = lineContent.endsWith(
+      lineContentWithoutBlockMarkers,
+    )
+      ? lineContent.length - lineContentWithoutBlockMarkers.length
+      : 0;
+    const cursorLineOffset = sourcePos - lineStart;
+    const adjustedLineOffset = Math.max(
+      0,
+      cursorLineOffset - Math.min(cursorLineOffset, removedPrefixLength),
+    );
+    newCursorOffset = lineStart + newMarker.length + adjustedLineOffset;
   }
 
   // Create new state and map cursor through it
@@ -254,6 +343,10 @@ function handleToggleHeading(
 
 export const headingExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
+
+  disposers.push(
+    editor.registerActiveMarksResolver((state) => getHeadingActiveMarks(state)),
+  );
 
   disposers.push(
     editor.registerOnEdit((command, state) => {

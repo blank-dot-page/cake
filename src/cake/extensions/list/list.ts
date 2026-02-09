@@ -17,6 +17,7 @@ import {
   parseListItem,
   countNumberedItemsBefore,
 } from "./list-ast";
+import { getLineBlockContent } from "../shared/line-content";
 
 // Match list lines - capture exactly one space after marker, rest goes to content
 const LIST_LINE_REGEX = /^(\s*)([-*+]|\d+\.)( )(.*)$/;
@@ -165,6 +166,32 @@ function getSelectionLineRange(
   const startInfo = getLineInfo(source, startSource);
   const endInfo = getLineInfo(source, endSource);
   return { startLine: startInfo.lineIndex, endLine: endInfo.lineIndex };
+}
+
+function getListActiveMarks(state: RuntimeState): string[] {
+  const { source, selection, map } = state;
+  const { startLine, endLine } = getSelectionLineRange(source, selection, map);
+  const lines = getSourceLines(source);
+
+  let listType: "bullet-list" | "numbered-list" | null = null;
+  for (let lineIndex = startLine; lineIndex <= endLine; lineIndex += 1) {
+    const line = lines[lineIndex] ?? "";
+    const match = matchListLine(line);
+    if (!match) {
+      return [];
+    }
+    const currentType =
+      match.number === null ? "bullet-list" : "numbered-list";
+    if (listType === null) {
+      listType = currentType;
+      continue;
+    }
+    if (listType !== currentType) {
+      return [];
+    }
+  }
+
+  return listType ? [listType] : [];
 }
 
 function handleInsertLineBreak(state: RuntimeState): EditResult | null {
@@ -838,9 +865,14 @@ function handleToggleList(
       let content: string;
 
       if (listItem) {
-        content = listItem.content;
+        content = getLineBlockContent(line, runtime);
       } else {
-        content = line.slice(baseIndent.length);
+        const lineContent = getLineBlockContent(line, runtime);
+        if (baseIndent.length > 0 && lineContent.startsWith(baseIndent)) {
+          content = lineContent.slice(baseIndent.length);
+        } else {
+          content = lineContent;
+        }
       }
 
       let newPrefix: string;
@@ -1119,6 +1151,10 @@ export type ListCommand = ToggleBulletListCommand | ToggleNumberedListCommand;
 
 export const plainTextListExtension: CakeExtension = (editor) => {
   const disposers: Array<() => void> = [];
+
+  disposers.push(
+    editor.registerActiveMarksResolver((state) => getListActiveMarks(state)),
+  );
 
   disposers.push(
     editor.registerKeybindings([

@@ -174,6 +174,32 @@ describe("heading extension DOM rendering", () => {
     expect(lines[1]?.getAttribute("data-line-index")).toBe("1");
     expect(lines[2]?.getAttribute("data-line-index")).toBe("2");
   });
+
+  test("reports heading active marks at the caret and removes them when toggled off", () => {
+    engine = new CakeEditor({
+      container,
+      value: "# Title",
+      extensions: bundledExtensions,
+    });
+
+    engine.setSelection({ start: 2, end: 2, affinity: "forward" });
+    expect(engine.getActiveMarks()).toContain("heading");
+
+    engine.executeCommand({ type: "toggle-heading", level: 1 });
+    expect(engine.getValue()).toBe("Title");
+    expect(engine.getActiveMarks()).not.toContain("heading");
+  });
+
+  test("reports level-specific active marks for h2 headings", () => {
+    engine = new CakeEditor({
+      container,
+      value: "## Subtitle",
+      extensions: bundledExtensions,
+    });
+
+    engine.setSelection({ start: 3, end: 3, affinity: "forward" });
+    expect(engine.getActiveMarks()).toContain("heading-2");
+  });
 });
 
 describe("heading extension typing behavior (harness)", () => {

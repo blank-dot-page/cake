@@ -195,6 +195,32 @@ describe("list extension DOM rendering", () => {
     // Verify marker is in text content
     expect(line?.textContent).toBe("+ item");
   });
+
+  test("reports bullet list active mark at the caret and removes it when toggled off", () => {
+    engine = new CakeEditor({
+      container,
+      value: "- item",
+      extensions: bundledExtensions,
+    });
+
+    engine.setSelection({ start: 2, end: 2, affinity: "forward" });
+    expect(engine.getActiveMarks()).toContain("bullet-list");
+
+    engine.executeCommand({ type: "toggle-bullet-list" });
+    expect(engine.getValue()).toBe("item");
+    expect(engine.getActiveMarks()).not.toContain("bullet-list");
+  });
+
+  test("reports numbered list active mark at the caret", () => {
+    engine = new CakeEditor({
+      container,
+      value: "1. first",
+      extensions: bundledExtensions,
+    });
+
+    engine.setSelection({ start: 3, end: 3, affinity: "forward" });
+    expect(engine.getActiveMarks()).toContain("numbered-list");
+  });
 });
 
 describe("list extension Enter key behavior", () => {
@@ -877,6 +903,28 @@ describe("list toggle commands", () => {
     harness.engine.executeCommand({ type: "toggle-numbered-list" });
 
     expect(harness.engine.getValue()).toBe("hello world");
+  });
+
+  test("toggle-bullet-list on heading converts heading content without keeping '#'", async () => {
+    harness = createTestHarness("# hello world");
+
+    await harness.focus();
+    harness.engine.setSelection({ start: 0, end: 11, affinity: "forward" });
+
+    harness.engine.executeCommand({ type: "toggle-bullet-list" });
+
+    expect(harness.engine.getValue()).toBe("- hello world");
+  });
+
+  test("toggle-numbered-list on heading converts heading content without keeping '#'", async () => {
+    harness = createTestHarness("## hello world");
+
+    await harness.focus();
+    harness.engine.setSelection({ start: 0, end: 11, affinity: "forward" });
+
+    harness.engine.executeCommand({ type: "toggle-numbered-list" });
+
+    expect(harness.engine.getValue()).toBe("1. hello world");
   });
 
   test("toggle-bullet-list on empty line creates bullet list marker", async () => {
