@@ -2594,7 +2594,12 @@ export class CakeEditor {
 
     if (this.compositionCommit && event.inputType === "insertText") {
       this.clearCompositionCommit();
-      return;
+      const domText = this.readDomText();
+      const lines = getDocLines(this.state.doc);
+      const modelText = getVisibleText(lines);
+      if (domText === modelText) {
+        return;
+      }
     }
 
     if (

@@ -1009,6 +1009,89 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("reconciles insertText input that lands after compositionend (dead-key flow)", () => {
+    const container = createContainer();
+    let lastValue = "";
+    let lastSelection: EngineSelection | null = null;
+    const engine = new CakeEditor({
+      container,
+      value: "",
+      onChange: (value, selection) => {
+        lastValue = value;
+        lastSelection = selection;
+      },
+    });
+
+    container.dispatchEvent(
+      new CompositionEvent("compositionstart", { bubbles: true }),
+    );
+    container.dispatchEvent(
+      new CompositionEvent("compositionend", { bubbles: true }),
+    );
+
+    const textNode = getFirstTextNode(container);
+    textNode.data = "`";
+    setDomSelection(textNode, 1, 1);
+
+    const inputEvent = new InputEvent("input", {
+      bubbles: true,
+      inputType: "insertText",
+      data: "`",
+    });
+    container.dispatchEvent(inputEvent);
+
+    expect(lastValue).toBe("`");
+    expect(lastSelection).toEqual(
+      expect.objectContaining({ start: 1, end: 1 }),
+    );
+    expect(engine.getValue()).toBe("`");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 1, end: 1 }),
+    );
+
+    engine.destroy();
+  });
+
+  it("advances caret across consecutive backtick composition commits", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "",
+    });
+
+    const applyCompositionText = (text: string) => {
+      container.dispatchEvent(
+        new CompositionEvent("compositionstart", { bubbles: true }),
+      );
+      const textNode = getFirstTextNode(container);
+      textNode.data = text;
+      setDomSelection(textNode, text.length, text.length);
+      container.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true }),
+      );
+    };
+
+    applyCompositionText("`");
+    expect(engine.getValue()).toBe("`");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 1, end: 1 }),
+    );
+
+    applyCompositionText("``");
+    expect(engine.getValue()).toBe("``");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 2, end: 2 }),
+    );
+
+    applyCompositionText("```");
+    expect(engine.getValue()).toBe("```");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 3, end: 3 }),
+    );
+
+    engine.destroy();
+  });
+
   it("handles consecutive insertText events correctly", () => {
     const container = createContainer();
     let lastValue = "";
