@@ -44,6 +44,7 @@ import {
 } from "./selection/selection-layout-dom";
 import { moveSelectionVertically as moveSelectionVerticallyInLayout } from "./selection/selection-navigation";
 import { isMacPlatform } from "../shared/platform";
+import { graphemeSegments } from "../shared/segmenter";
 import {
   getWordBoundaries,
   nextWordBreak,
@@ -770,11 +771,7 @@ export class CakeEditor {
     ): { found: boolean; marks: string[] } | null => {
       if (inline.type === "text") {
         // Count grapheme clusters (cursor positions)
-        const graphemes = Array.from(
-          new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
-            inline.text,
-          ),
-        );
+        const graphemes = graphemeSegments(inline.text);
         const endOffset = offset + graphemes.length;
 
         if (offset < targetOffset && targetOffset < endOffset) {

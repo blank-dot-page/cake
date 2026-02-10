@@ -378,4 +378,59 @@ describe("cake formatting interactions", () => {
 
     expect(latestActiveMarks).toEqual(["bold"]);
   });
+
+  it("reuses existing segmenter for repeated active-mark reads on combined marks", async () => {
+    const ref = await renderEditor({ value: "word" });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    ref.current?.focus();
+    ref.current?.selectAll();
+    expect(ref.current?.executeCommand({ type: "toggle-bold" })).toBe(true);
+    expect(ref.current?.executeCommand({ type: "toggle-strikethrough" })).toBe(
+      true,
+    );
+    expect(ref.current?.executeCommand({ type: "toggle-underline" })).toBe(
+      true,
+    );
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    ref.current?.focus({ start: 2, end: 2, affinity: "forward" });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    const originalSegmenter = Intl.Segmenter;
+    let segmenterConstructCount = 0;
+    const WrappedSegmenter = function (
+      this: unknown,
+      ...args: ConstructorParameters<typeof Intl.Segmenter>
+    ) {
+      segmenterConstructCount += 1;
+      return Reflect.construct(originalSegmenter, args, new.target);
+    } as unknown as typeof Intl.Segmenter;
+    Object.defineProperty(WrappedSegmenter, "prototype", {
+      value: originalSegmenter.prototype,
+    });
+    Object.defineProperty(Intl, "Segmenter", {
+      configurable: true,
+      writable: true,
+      value: WrappedSegmenter,
+    });
+
+    let marks: string[] = [];
+    try {
+      for (let i = 0; i < 200; i += 1) {
+        marks = ref.current?.getActiveMarks() ?? [];
+      }
+    } finally {
+      Object.defineProperty(Intl, "Segmenter", {
+        configurable: true,
+        writable: true,
+        value: originalSegmenter,
+      });
+    }
+
+    expect(marks).toEqual(
+      expect.arrayContaining(["bold", "strikethrough", "underline"]),
+    );
+    expect(segmenterConstructCount).toBe(0);
+  });
 });
