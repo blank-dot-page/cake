@@ -211,11 +211,13 @@ function handleMultilineInsertInHeading(
   };
 }
 
-function shouldExitHeadingOnLineBreak(state: RuntimeState): boolean {
-  const { source, selection, map } = state;
+function handleLineBreakInHeading(
+  state: RuntimeState,
+): EditResult | { type: "exit-block-wrapper" } | null {
+  const { source, selection, map, runtime } = state;
 
   if (selection.start !== selection.end) {
-    return false;
+    return null;
   }
 
   const cursorPos = selection.start;
@@ -230,12 +232,33 @@ function shouldExitHeadingOnLineBreak(state: RuntimeState): boolean {
   const lineContent = source.slice(lineStart, lineEnd);
   const match = lineContent.match(HEADING_PATTERN);
   if (!match) {
-    return false;
+    return null;
   }
 
   const marker = match[0];
   const contentStart = lineStart + marker.length;
-  return sourcePos >= contentStart && sourcePos <= lineEnd;
+  if (sourcePos < contentStart || sourcePos > lineEnd) {
+    return null;
+  }
+
+  // Enter at the visual start of a heading should create a paragraph above
+  // the heading, not leave an empty heading wrapper behind.
+  const beforeCursor = source.slice(contentStart, sourcePos);
+  if (beforeCursor.trim().length === 0) {
+    const nextSource = source.slice(0, lineStart) + "\n" + source.slice(lineStart);
+    const next = runtime.createState(nextSource);
+    const caretCursor = next.map.sourceToCursor(lineStart, "forward");
+    return {
+      source: nextSource,
+      selection: {
+        start: caretCursor.cursorOffset,
+        end: caretCursor.cursorOffset,
+        affinity: caretCursor.affinity,
+      },
+    };
+  }
+
+  return { type: "exit-block-wrapper" };
 }
 
 function handleToggleHeading(
@@ -361,10 +384,7 @@ export const headingExtension: CakeExtension = (editor) => {
       }
 
       if (command.type === "insert-line-break") {
-        if (shouldExitHeadingOnLineBreak(state)) {
-          return { type: "exit-block-wrapper" };
-        }
-        return null;
+        return handleLineBreakInHeading(state);
       }
 
       if (command.type === "insert") {

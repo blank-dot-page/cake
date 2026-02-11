@@ -226,6 +226,22 @@ describe("heading extension typing behavior (harness)", () => {
     h.destroy();
   });
 
+  test("pressing Enter near heading start inserts a paragraph above instead of leaving an empty heading", async () => {
+    const h = createTestHarness("# Title");
+    await h.focus();
+
+    await h.clickLeftOf(0, 0);
+    await h.typeText(" ");
+    await h.pressEnter();
+
+    expect(h.getLineCount()).toBe(2);
+    expect(h.getLine(0).classList.contains("is-heading")).toBe(false);
+    expect(h.getLine(1).classList.contains("is-heading")).toBe(true);
+    expect((h.getLine(1).textContent ?? "").trim()).toBe("Title");
+
+    h.destroy();
+  });
+
   test("Cmd+Backspace clears heading text; then Backspace removes the heading entirely", async () => {
     const h = createTestHarness("");
     await h.focus();
