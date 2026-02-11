@@ -247,7 +247,10 @@ function handleLineBreakInHeading(
   if (beforeCursor.trim().length === 0) {
     const nextSource = source.slice(0, lineStart) + "\n" + source.slice(lineStart);
     const next = runtime.createState(nextSource);
-    const caretCursor = next.map.sourceToCursor(lineStart, "forward");
+    // Match native textarea behavior when pressing Enter at line start:
+    // insert a newline above and keep the caret with the moved line.
+    const caretSourcePos = lineStart + 1;
+    const caretCursor = next.map.sourceToCursor(caretSourcePos, "forward");
     return {
       source: nextSource,
       selection: {

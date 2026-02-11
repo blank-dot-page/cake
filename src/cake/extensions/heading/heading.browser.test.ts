@@ -258,6 +258,29 @@ describe("heading extension typing behavior (harness)", () => {
     h.destroy();
   });
 
+  test("pressing Enter at visual heading start keeps caret with moved heading line", async () => {
+    const h = createTestHarness("# Title");
+    await h.focus();
+
+    await h.clickLeftOf(0, 0);
+    await h.pressEnter();
+
+    expect(h.engine.getValue()).toBe("\n# Title");
+    expect(h.getLineCount()).toBe(2);
+    expect(h.getLine(1).classList.contains("is-heading")).toBe(true);
+    expect((h.getLine(1).textContent ?? "").trim()).toBe("Title");
+    expect(h.selection).toEqual(
+      expect.objectContaining({ start: 1, end: 1 }),
+    );
+
+    const caret = h.getCaretRect();
+    const headingLineRect = h.getLineRect(1);
+    expect(caret).not.toBeNull();
+    expect(Math.abs(caret!.top - headingLineRect.top)).toBeLessThanOrEqual(3);
+
+    h.destroy();
+  });
+
   test("backward affinity at heading start then space+Enter keeps heading text", async () => {
     const h = createTestHarness("# Title");
     await h.focus();
