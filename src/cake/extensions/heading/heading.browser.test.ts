@@ -242,6 +242,53 @@ describe("heading extension typing behavior (harness)", () => {
     h.destroy();
   });
 
+  test("line-start shortcut then Enter keeps heading text in heading line", async () => {
+    const h = createTestHarness("# Title");
+    await h.focus();
+
+    await h.clickRightOf(4, 0);
+    await h.pressKey("ArrowLeft", mod);
+    await h.typeText(" ");
+    await h.pressEnter();
+
+    expect(h.getLineCount()).toBe(2);
+    expect(h.getLine(1).classList.contains("is-heading")).toBe(true);
+    expect((h.getLine(1).textContent ?? "").trim()).toBe("Title");
+
+    h.destroy();
+  });
+
+  test("backward affinity at heading start then space+Enter keeps heading text", async () => {
+    const h = createTestHarness("# Title");
+    await h.focus();
+
+    h.engine.setSelection({ start: 0, end: 0, affinity: "backward" });
+    await h.typeText(" ");
+    await h.pressEnter();
+
+    expect(h.getLineCount()).toBe(2);
+    expect(h.getLine(1).classList.contains("is-heading")).toBe(true);
+    expect((h.getLine(1).textContent ?? "").trim()).toBe("Title");
+
+    h.destroy();
+  });
+
+  test("leading empty line + heading keeps heading text when space+Enter at start", async () => {
+    const h = createTestHarness("\n# Title");
+    await h.focus();
+
+    await h.clickRightOf(4, 1);
+    await h.pressKey("ArrowLeft", mod);
+    await h.typeText(" ");
+    await h.pressEnter();
+
+    expect(h.getLineCount()).toBe(3);
+    expect(h.getLine(2).classList.contains("is-heading")).toBe(true);
+    expect((h.getLine(2).textContent ?? "").trim()).toBe("Title");
+
+    h.destroy();
+  });
+
   test("Cmd+Backspace clears heading text; then Backspace removes the heading entirely", async () => {
     const h = createTestHarness("");
     await h.focus();
