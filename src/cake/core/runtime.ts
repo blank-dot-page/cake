@@ -2244,12 +2244,10 @@ export function createRuntimeFromRegistry(registry: {
     };
 
     const removeMark = (marks: Mark[]): Mark[] => {
-      for (let i = marks.length - 1; i >= 0; i -= 1) {
-        if (marks[i]?.kind === markerKind) {
-          return [...marks.slice(0, i), ...marks.slice(i + 1)];
-        }
+      if (!marks.some((mark) => mark.kind === markerKind)) {
+        return marks;
       }
-      return marks;
+      return marks.filter((mark) => mark.kind !== markerKind);
     };
 
     let nextDoc = state.doc;
@@ -2292,11 +2290,16 @@ export function createRuntimeFromRegistry(registry: {
 
       const updatedSelected = splitRunsOnNewlines(selected).map((run) => {
         const isNewline = run.type === "text" && run.text === "\n";
+        const hasMarkerKind = run.marks.some(
+          (mark) => mark.kind === markerKind,
+        );
         const nextMarks = canUnwrap
           ? removeMark(run.marks)
           : isNewline
             ? run.marks
-            : [...run.marks, markerMark];
+            : hasMarkerKind
+              ? run.marks
+              : [...run.marks, markerMark];
         if (!marksEqual(run.marks, nextMarks)) {
           didChange = true;
         }

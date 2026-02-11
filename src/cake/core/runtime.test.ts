@@ -305,6 +305,21 @@ describe("inline toggle selection edge cases", () => {
     expect(restored.source).toBe("<u>hello</u>");
   });
 
+  it("toggles mixed bold selection to all-bold, then removes bold from all", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState("**bold** plain", {
+      start: 0,
+      end: 10,
+      affinity: "forward",
+    });
+
+    const bolded = runtime.applyEdit({ type: "toggle-bold" }, state);
+    expect(bolded.source).toBe("**bold plain**");
+
+    const unbolded = runtime.applyEdit({ type: "toggle-bold" }, bolded);
+    expect(unbolded.source).toBe("bold plain");
+  });
+
   it("splits an existing bold run when toggling off within a subset", async () => {
     const runtime = await createBundledRuntime();
     const state = runtime.createState("**hello** world", {
