@@ -1806,6 +1806,68 @@ describe("CakeEditor (browser)", () => {
     expect(h.engine.getActiveMarks()).toEqual(["bold"]);
     h.destroy();
   });
+
+  it("getActiveMarks on large ranged selection does not rescan per cursor unit", async () => {
+    const paragraphs: string[] = [];
+    let word = 0;
+    for (let paragraphIndex = 0; paragraphIndex < 10; paragraphIndex += 1) {
+      const words: string[] = [];
+      for (let i = 0; i < 50; i += 1) {
+        words.push(`w${word++}`);
+      }
+      if (paragraphIndex === 9) {
+        words.unshift("targetstart");
+      }
+      paragraphs.push(words.join(" "));
+    }
+    const value = paragraphs.join("\n\n");
+
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value,
+      selection: createSelection(0, 0),
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    const targetStart = value.indexOf("targetstart");
+    const targetEnd = value.length;
+    engine.setSelection({
+      start: targetStart,
+      end: targetEnd,
+      affinity: "forward",
+    });
+
+    const originalSegment = Intl.Segmenter.prototype.segment;
+    let segmentCalls = 0;
+    Object.defineProperty(Intl.Segmenter.prototype, "segment", {
+      configurable: true,
+      writable: true,
+      value: function (...args: Parameters<typeof originalSegment>) {
+        segmentCalls += 1;
+        return originalSegment.apply(this, args);
+      },
+    });
+
+    let marks: string[] = [];
+    try {
+      marks = engine.getActiveMarks();
+    } finally {
+      Object.defineProperty(Intl.Segmenter.prototype, "segment", {
+        configurable: true,
+        writable: true,
+        value: originalSegment,
+      });
+    }
+
+    expect(marks).toEqual([]);
+    // One-pass traversal should only segment each text run once or a handful
+    // of times, rather than once per selected cursor unit.
+    expect(segmentCalls).toBeLessThan(50);
+
+    engine.destroy();
+  });
 });
 
 describe("CakeEditor Cmd+Backspace then backspace", () => {

@@ -44,7 +44,7 @@ import {
 } from "./selection/selection-layout-dom";
 import { moveSelectionVertically as moveSelectionVerticallyInLayout } from "./selection/selection-navigation";
 import { isMacPlatform } from "../shared/platform";
-import { graphemeSegments } from "../shared/segmenter";
+import { graphemeCount, graphemeSegments } from "../shared/segmenter";
 import {
   getWordBoundaries,
   nextWordBreak,
@@ -607,24 +607,80 @@ export class CakeEditor {
 
     const selectionStart = Math.min(start, end);
     const selectionEnd = Math.max(start, end);
-    let intersection: string[] | null = null;
+    const intersection = this.getMarksIntersectionInRange(
+      selectionStart + 1,
+      selectionEnd,
+    );
+    return this.resolveActiveMarks(intersection);
+  }
 
-    // For ranged selections, a mark is active only if it applies to every
-    // selected cursor unit.
-    for (let cursor = selectionStart + 1; cursor <= selectionEnd; cursor++) {
-      const marks = this.getMarksAtCursorOffset(cursor, "backward");
-      if (intersection === null) {
-        intersection = marks;
-      } else {
-        intersection = intersection.filter((mark) => marks.includes(mark));
+  private intersectMarks(
+    currentIntersection: string[] | null,
+    marks: string[],
+  ): string[] {
+    if (currentIntersection === null) {
+      return [...marks];
+    }
+    return currentIntersection.filter((mark) => marks.includes(mark));
+  }
+
+  private getMarksIntersectionInRange(
+    rangeStartCursor: number,
+    rangeEndCursor: number,
+  ): string[] {
+    if (rangeStartCursor > rangeEndCursor) {
+      return [];
+    }
+
+    let intersection: string[] | null = null;
+    let sawUnitInRange = false;
+    let currentOffset = 0;
+
+    const consumeMarks = (marks: string[]) => {
+      intersection = this.intersectMarks(intersection, marks);
+      sawUnitInRange = true;
+    };
+
+    for (let i = 0; i < this.state.doc.blocks.length; i += 1) {
+      const block = this.state.doc.blocks[i];
+      if (!block) {
+        continue;
       }
 
-      if (intersection.length === 0) {
-        return this.resolveActiveMarks([]);
+      const result = this.getMarksIntersectionInBlock(
+        block,
+        rangeStartCursor,
+        rangeEndCursor,
+        currentOffset,
+        consumeMarks,
+      );
+      currentOffset = result.nextOffset;
+
+      if (sawUnitInRange && (intersection ?? []).length === 0) {
+        return [];
+      }
+
+      // Cursor offsets include a line break between top-level blocks.
+      if (i < this.state.doc.blocks.length - 1) {
+        const lineBreakCursor = currentOffset + 1;
+        if (
+          rangeStartCursor <= lineBreakCursor &&
+          lineBreakCursor <= rangeEndCursor
+        ) {
+          consumeMarks(result.lastMarks);
+          if (sawUnitInRange && (intersection ?? []).length === 0) {
+            return [];
+          }
+        }
+        currentOffset = lineBreakCursor;
+      }
+
+      if (sawUnitInRange && currentOffset >= rangeEndCursor) {
+        break;
       }
     }
 
-    return this.resolveActiveMarks(intersection ?? []);
+    return sawUnitInRange ? intersection ?? [] : [];
   }
 
   private resolveActiveMarks(baseMarks: string[]): string[] {
@@ -757,6 +813,141 @@ export class CakeEditor {
     return { found: false, marks: [], nextOffset: startOffset };
   }
 
+  private getMarksIntersectionInBlock(
+    block: Block,
+    rangeStartCursor: number,
+    rangeEndCursor: number,
+    startOffset: number,
+    consumeMarks: (marks: string[]) => void,
+  ): { nextOffset: number; lastMarks: string[] } {
+    if (block.type === "block-wrapper") {
+      let offset = startOffset;
+      let lastMarks: string[] = [];
+
+      for (let i = 0; i < block.blocks.length; i += 1) {
+        const childBlock = block.blocks[i];
+        if (!childBlock) {
+          continue;
+        }
+        const result = this.getMarksIntersectionInBlock(
+          childBlock,
+          rangeStartCursor,
+          rangeEndCursor,
+          offset,
+          consumeMarks,
+        );
+        offset = result.nextOffset;
+        lastMarks = result.lastMarks;
+
+        // Cursor offsets include a line break between sibling blocks.
+        if (i < block.blocks.length - 1) {
+          const lineBreakCursor = offset + 1;
+          if (
+            rangeStartCursor <= lineBreakCursor &&
+            lineBreakCursor <= rangeEndCursor
+          ) {
+            consumeMarks(lastMarks);
+          }
+          offset = lineBreakCursor;
+        }
+
+        if (offset >= rangeEndCursor) {
+          break;
+        }
+      }
+
+      return { nextOffset: offset, lastMarks };
+    }
+
+    if (block.type === "block-atom") {
+      const nextOffset = startOffset + 1;
+      if (
+        rangeStartCursor <= nextOffset &&
+        nextOffset <= rangeEndCursor
+      ) {
+        consumeMarks([]);
+      }
+      return { nextOffset, lastMarks: [] };
+    }
+
+    if (block.type === "paragraph") {
+      return this.getMarksIntersectionInParagraph(
+        block.content,
+        rangeStartCursor,
+        rangeEndCursor,
+        startOffset,
+        consumeMarks,
+      );
+    }
+
+    return { nextOffset: startOffset, lastMarks: [] };
+  }
+
+  private getMarksIntersectionInParagraph(
+    content: Inline[],
+    rangeStartCursor: number,
+    rangeEndCursor: number,
+    startOffset: number,
+    consumeMarks: (marks: string[]) => void,
+  ): { nextOffset: number; lastMarks: string[] } {
+    let offset = startOffset;
+    const markStack: string[] = [];
+    let lastMarks: string[] = [];
+
+    const processInline = (inline: Inline): void => {
+      if (offset >= rangeEndCursor) {
+        return;
+      }
+
+      if (inline.type === "text") {
+        const graphemeLength = graphemeCount(inline.text);
+        const endOffset = offset + graphemeLength;
+
+        if (graphemeLength > 0) {
+          const coveredStart = Math.max(rangeStartCursor, offset + 1);
+          const coveredEnd = Math.min(rangeEndCursor, endOffset);
+          if (coveredStart <= coveredEnd) {
+            consumeMarks(markStack);
+          }
+          lastMarks = [...markStack];
+        }
+
+        offset = endOffset;
+        return;
+      }
+
+      if (inline.type === "inline-atom") {
+        const endOffset = offset + 1;
+        if (rangeStartCursor <= endOffset && endOffset <= rangeEndCursor) {
+          consumeMarks(markStack);
+        }
+        lastMarks = [...markStack];
+        offset = endOffset;
+        return;
+      }
+
+      if (inline.type === "inline-wrapper") {
+        markStack.push(inline.kind);
+        for (const child of inline.children) {
+          processInline(child);
+          if (offset >= rangeEndCursor) {
+            break;
+          }
+        }
+        markStack.pop();
+      }
+    };
+
+    for (const inline of content) {
+      processInline(inline);
+      if (offset >= rangeEndCursor) {
+        break;
+      }
+    }
+
+    return { nextOffset: offset, lastMarks };
+  }
+
   private getMarksInParagraph(
     content: Inline[],
     targetOffset: number,
@@ -771,8 +962,7 @@ export class CakeEditor {
     ): { found: boolean; marks: string[] } | null => {
       if (inline.type === "text") {
         // Count grapheme clusters (cursor positions)
-        const graphemes = graphemeSegments(inline.text);
-        const endOffset = offset + graphemes.length;
+        const endOffset = offset + graphemeCount(inline.text);
 
         if (offset < targetOffset && targetOffset < endOffset) {
           // Found the position inside the text

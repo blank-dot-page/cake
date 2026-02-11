@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  graphemeCount,
   graphemeClusterLengthAfter,
   graphemeClusterLengthBefore,
   graphemeSegments,
@@ -29,6 +30,16 @@ function expectSegmentsCoverText(
 }
 
 describe("segmenter grapheme clusters", () => {
+  it("counts ASCII graphemes without segmentation overhead", () => {
+    const text = "hello world";
+    expect(graphemeCount(text)).toBe(text.length);
+  });
+
+  it("counts non-ASCII graphemes correctly", () => {
+    expect(graphemeCount("e\u0301")).toBe(1);
+    expect(graphemeCount("👩🏽‍💻")).toBe(1);
+  });
+
   it("treats combining marks as a single grapheme", () => {
     const text = "e\u0301";
     const segments = graphemeSegments(text);

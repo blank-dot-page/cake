@@ -12,8 +12,40 @@ const graphemeSegmenter = new Intl.Segmenter(undefined, {
   granularity: "grapheme",
 });
 
+function isAsciiText(text: string): boolean {
+  for (let i = 0; i < text.length; i += 1) {
+    if (text.charCodeAt(i) > 0x7f) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function graphemeSegments(text: string): GraphemeSegment[] {
+  if (isAsciiText(text)) {
+    const segments: GraphemeSegment[] = [];
+    for (let i = 0; i < text.length; i += 1) {
+      segments.push({
+        segment: text[i] ?? "",
+        index: i,
+        input: text,
+      });
+    }
+    return segments;
+  }
   return Array.from(graphemeSegmenter.segment(text));
+}
+
+export function graphemeCount(text: string): number {
+  if (isAsciiText(text)) {
+    return text.length;
+  }
+
+  let count = 0;
+  for (const _segment of graphemeSegmenter.segment(text)) {
+    count += 1;
+  }
+  return count;
 }
 
 export function wordSegments(text: string, locale = "en"): WordSegment[] {
