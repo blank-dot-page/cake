@@ -1052,6 +1052,43 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("syncs caret on post-composition insertText when text is already reconciled", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "`",
+      selection: createSelection(0, 0),
+    });
+
+    const textNode = getFirstTextNode(container);
+    setDomSelection(textNode, 1, 1);
+
+    container.dispatchEvent(
+      new CompositionEvent("compositionstart", { bubbles: true }),
+    );
+    container.dispatchEvent(
+      new CompositionEvent("compositionend", { bubbles: true }),
+    );
+
+    // Simulate a stale model selection while DOM caret is already at the end.
+    engine.setSelection(createSelection(0, 0));
+    setDomSelection(textNode, 1, 1);
+
+    const inputEvent = new InputEvent("input", {
+      bubbles: true,
+      inputType: "insertText",
+      data: "`",
+    });
+    container.dispatchEvent(inputEvent);
+
+    expect(engine.getValue()).toBe("`");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 1, end: 1 }),
+    );
+
+    engine.destroy();
+  });
+
   it("advances caret across consecutive backtick composition commits", () => {
     const container = createContainer();
     const engine = new CakeEditor({

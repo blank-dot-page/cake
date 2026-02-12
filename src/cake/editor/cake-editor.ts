@@ -2788,6 +2788,15 @@ export class CakeEditor {
       const lines = getDocLines(this.state.doc);
       const modelText = getVisibleText(lines);
       if (domText === modelText) {
+        if (this.domMap) {
+          const domSelection = readDomSelection(this.domMap);
+          if (
+            domSelection &&
+            !selectionsEqual(domSelection, this.state.selection)
+          ) {
+            this.setSelection(domSelection);
+          }
+        }
         return;
       }
     }
