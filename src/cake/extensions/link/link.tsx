@@ -535,29 +535,15 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
   disposers.push(
     editor.registerParseInline(
       (source, start, end, context): ParseInlineResult => {
-        if (source[start] !== "[") {
+        const range = findSimpleLinkRangeFromStart(source, start);
+        if (!range || range.urlClose >= end) {
           return null;
         }
 
-        // Don't match image syntax ![...](...)
-        if (start > 0 && source[start - 1] === "!") {
-          return null;
-        }
-
-        const labelClose = source.indexOf("](", start + 1);
-        if (labelClose === -1 || labelClose >= end) {
-          return null;
-        }
-
-        const urlClose = source.indexOf(")", labelClose + 2);
-        if (urlClose === -1 || urlClose >= end) {
-          return null;
-        }
-
-        const labelStart = start + 1;
-        const labelEnd = labelClose;
-        const urlStart = labelClose + 2;
-        const urlEnd = urlClose;
+        const labelStart = range.labelStart;
+        const labelEnd = range.labelEnd;
+        const urlStart = range.labelEnd + 2;
+        const urlEnd = range.urlClose;
 
         const children = context.parseInline(source, labelStart, labelEnd);
         const url = source.slice(urlStart, urlEnd);
@@ -569,7 +555,7 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
             children,
             data: { url },
           },
-          nextPos: urlClose + 1,
+          nextPos: range.urlClose + 1,
         };
       },
     ),

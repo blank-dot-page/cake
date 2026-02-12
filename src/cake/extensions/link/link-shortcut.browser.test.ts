@@ -196,4 +196,102 @@ describe("link shortcut (Cmd+Shift+U)", () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(document.querySelector(".cake-link-popover")).toBeNull();
   });
+
+  it("wraps only the selected word when bracket text and another link are nearby", async () => {
+    harness = createTestHarness({
+      value: "before [00:24] text [foo](u)",
+      renderOverlays: true,
+    });
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+
+    await harness.focus();
+    const root = harness.container.querySelector(".cake-content");
+    expect(root).not.toBeNull();
+
+    const walker = document.createTreeWalker(root!, NodeFilter.SHOW_TEXT);
+    let selected = false;
+    while (true) {
+      const node = walker.nextNode();
+      if (!(node instanceof Text)) {
+        break;
+      }
+      const index = node.data.indexOf("text");
+      if (index === -1) {
+        continue;
+      }
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + 4);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      selected = true;
+      break;
+    }
+    expect(selected).toBe(true);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+
+    await harness.pressKey("u", linkShortcut);
+
+    expect(harness.engine.getValue()).toBe("before [00:24] [text]() [foo](u)");
+  });
+
+  it("wraps only the selected word near bracket text after typing content", async () => {
+    harness = createTestHarness({
+      value: "",
+      renderOverlays: true,
+    });
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+
+    await harness.focus();
+    await harness.typeText("before [00:24] text [foo](u)");
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+
+    const root = harness.container.querySelector(".cake-content");
+    expect(root).not.toBeNull();
+
+    const walker = document.createTreeWalker(root!, NodeFilter.SHOW_TEXT);
+    let selected = false;
+    while (true) {
+      const node = walker.nextNode();
+      if (!(node instanceof Text)) {
+        break;
+      }
+      const index = node.data.indexOf("text");
+      if (index === -1) {
+        continue;
+      }
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + 4);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      selected = true;
+      break;
+    }
+    expect(selected).toBe(true);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+
+    await harness.pressKey("u", linkShortcut);
+
+    expect(harness.engine.getValue()).toBe("before [00:24] [text]() [foo](u)");
+  });
+
 });

@@ -108,4 +108,32 @@ describe("link extension", () => {
 
     expect(next.source).toBe("before [00:24] [text]() [foo](u)");
   });
+
+  it("parses bracket text and nearby link as separate inline content", () => {
+    const runtime = createRuntimeForTests([linkExtension]);
+    const state = runtime.createState("before [00:24] text [foo](u)");
+    const block = state.doc.blocks[0];
+
+    expect(block?.type).toBe("paragraph");
+    if (!block || block.type !== "paragraph") {
+      return;
+    }
+
+    const toVisibleText = (inline: (typeof block.content)[number]): string => {
+      if (inline.type === "text") {
+        return inline.text;
+      }
+      return inline.children.map((child) => toVisibleText(child)).join("");
+    };
+
+    const visible = block.content.map((inline) => toVisibleText(inline)).join("");
+    expect(visible).toBe("before [00:24] text foo");
+
+    const links = block.content.filter(
+      (inline) => inline.type === "inline-wrapper" && inline.kind === "link",
+    );
+    expect(links).toHaveLength(1);
+    const linkLabel = links[0]!.children.map((child) => toVisibleText(child)).join("");
+    expect(linkLabel).toBe("foo");
+  });
 });
