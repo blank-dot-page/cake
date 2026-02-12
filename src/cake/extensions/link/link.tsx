@@ -56,6 +56,55 @@ function countBoundaryWrappers(fragment: string): number {
   return count;
 }
 
+function findSimpleLinkRangeFromStart(
+  source: string,
+  linkStart: number,
+): ParsedLinkRange | null {
+  if (source[linkStart] !== "[") {
+    return null;
+  }
+
+  // Don't match image syntax ![...](...)
+  if (linkStart > 0 && source[linkStart - 1] === "!") {
+    return null;
+  }
+
+  let labelClose = -1;
+  for (let i = linkStart + 1; i < source.length; i += 1) {
+    const char = source[i];
+    if (char === "\\") {
+      i += 1;
+      continue;
+    }
+    // Nested labels are not supported by this parser.
+    if (char === "[") {
+      return null;
+    }
+    if (char === "]") {
+      labelClose = i;
+      break;
+    }
+  }
+  if (labelClose === -1) {
+    return null;
+  }
+  if (source[labelClose + 1] !== "(") {
+    return null;
+  }
+
+  const urlClose = source.indexOf(")", labelClose + 2);
+  if (urlClose === -1) {
+    return null;
+  }
+
+  return {
+    linkStart,
+    labelStart: linkStart + 1,
+    labelEnd: labelClose,
+    urlClose,
+  };
+}
+
 function findEnclosingLinkRange(
   source: string,
   from: number,
@@ -71,33 +120,45 @@ function findEnclosingLinkRange(
     return null;
   }
 
-  let linkStart = source.lastIndexOf("[", start);
-  while (linkStart !== -1) {
-    // Skip image syntax ![...](...)
-    if (linkStart > 0 && source[linkStart - 1] === "!") {
-      linkStart = source.lastIndexOf("[", linkStart - 1);
+  let cursor = 0;
+  while (cursor < source.length) {
+    const linkStart = source.indexOf("[", cursor);
+    if (linkStart === -1) {
+      break;
+    }
+    const range = findSimpleLinkRangeFromStart(source, linkStart);
+    if (!range) {
+      cursor = linkStart + 1;
       continue;
     }
-
-    const labelClose = source.indexOf("](", linkStart + 1);
-    if (labelClose === -1) {
-      linkStart = source.lastIndexOf("[", linkStart - 1);
-      continue;
+    if (range.labelStart <= start && end <= range.labelEnd) {
+      return range;
     }
+    cursor = range.urlClose + 1;
+  }
 
-    const urlClose = source.indexOf(")", labelClose + 2);
-    if (urlClose === -1) {
-      linkStart = source.lastIndexOf("[", linkStart - 1);
-      continue;
+  return null;
+}
+
+function findLinkRangeByScanningBackward(
+  source: string,
+  startPos: number,
+): ParsedLinkRange | null {
+  if (source.length === 0) {
+    return null;
+  }
+
+  let searchFrom = Math.min(Math.max(0, startPos), source.length - 1);
+  while (searchFrom >= 0) {
+    const linkStart = source.lastIndexOf("[", searchFrom);
+    if (linkStart === -1) {
+      return null;
     }
-
-    const labelStart = linkStart + 1;
-    const labelEnd = labelClose;
-    if (labelStart <= start && end <= labelEnd) {
-      return { linkStart, labelStart, labelEnd, urlClose };
+    const range = findSimpleLinkRangeFromStart(source, linkStart);
+    if (range) {
+      return range;
     }
-
-    linkStart = source.lastIndexOf("[", linkStart - 1);
+    searchFrom = linkStart - 1;
   }
 
   return null;
@@ -255,42 +316,33 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
   disposers.push(
     editor.registerOnEdit((command, state) => {
       if (command.type === "unlink") {
-        // Find the link at the given cursor position and remove the link markup
-        const cursorPos = command.start;
-        const sourcePos = state.map.cursorToSource(cursorPos, "forward");
+        // Find the link around the given selection and remove link markup.
+        const cursorStart = Math.min(command.start, command.end);
+        const cursorEnd = Math.max(command.start, command.end);
+        const sourceStart = state.map.cursorToSource(cursorStart, "forward");
+        const sourceEnd = state.map.cursorToSource(cursorEnd, "backward");
+        const from = Math.min(sourceStart, sourceEnd);
+        const to = Math.max(from + 1, sourceEnd);
         const source = state.source;
-
-        // Search backwards for the opening bracket
-        let linkStart = sourcePos;
-        while (linkStart > 0 && source[linkStart] !== "[") {
-          linkStart--;
-        }
-        if (source[linkStart] !== "[") {
-          return null;
-        }
-
-        // Find the ]( separator
-        const labelClose = source.indexOf("](", linkStart + 1);
-        if (labelClose === -1) {
-          return null;
-        }
-
-        // Find the closing )
-        const urlClose = source.indexOf(")", labelClose + 2);
-        if (urlClose === -1) {
+        const existingLink =
+          findEnclosingLinkRange(source, from, to) ??
+          findLinkRangeByScanningBackward(source, from);
+        if (!existingLink) {
           return null;
         }
 
         // Extract the label (text between [ and ](  )
-        const label = source.slice(linkStart + 1, labelClose);
+        const label = source.slice(existingLink.labelStart, existingLink.labelEnd);
 
         // Replace [label](url) with just label
         const nextSource =
-          source.slice(0, linkStart) + label + source.slice(urlClose + 1);
+          source.slice(0, existingLink.linkStart) +
+          label +
+          source.slice(existingLink.urlClose + 1);
 
         // Calculate new cursor position - place it at the end of the label
         const newState = state.runtime.createState(nextSource);
-        const labelEndSource = linkStart + label.length;
+        const labelEndSource = existingLink.linkStart + label.length;
         const newCursor = newState.map.sourceToCursor(
           labelEndSource,
           "forward",
@@ -307,40 +359,29 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
       }
 
       if (command.type === "set-link-url") {
-        const cursorPos = Math.min(command.start, command.end);
-        const sourcePos = state.map.cursorToSource(cursorPos, "forward");
+        const cursorStart = Math.min(command.start, command.end);
+        const cursorEnd = Math.max(command.start, command.end);
+        const sourceStart = state.map.cursorToSource(cursorStart, "forward");
+        const sourceEnd = state.map.cursorToSource(cursorEnd, "backward");
+        const from = Math.min(sourceStart, sourceEnd);
+        const to = Math.max(from + 1, sourceEnd);
         const source = state.source;
-
-        // Search backwards for the opening bracket
-        let linkStart = sourcePos;
-        while (linkStart > 0 && source[linkStart] !== "[") {
-          linkStart--;
-        }
-        if (source[linkStart] !== "[") {
-          return null;
-        }
-
-        // Find the ]( separator
-        const labelClose = source.indexOf("](", linkStart + 1);
-        if (labelClose === -1) {
-          return null;
-        }
-
-        // Find the closing )
-        const urlClose = source.indexOf(")", labelClose + 2);
-        if (urlClose === -1) {
+        const existingLink =
+          findEnclosingLinkRange(source, from, to) ??
+          findLinkRangeByScanningBackward(source, from);
+        if (!existingLink) {
           return null;
         }
 
         const nextSource =
-          source.slice(0, labelClose + 2) +
+          source.slice(0, existingLink.labelEnd + 2) +
           command.url +
-          source.slice(urlClose);
+          source.slice(existingLink.urlClose);
         const nextState = state.runtime.createState(nextSource);
 
         if (command.selectLabel) {
-          const labelStartSource = linkStart + 1;
-          const labelEndSource = labelClose;
+          const labelStartSource = existingLink.labelStart;
+          const labelEndSource = existingLink.labelEnd;
           const startCursor = nextState.map.sourceToCursor(
             labelStartSource,
             "forward",
@@ -359,7 +400,10 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
           };
         }
 
-        const endCursor = nextState.map.sourceToCursor(labelClose, "backward");
+        const endCursor = nextState.map.sourceToCursor(
+          existingLink.labelEnd,
+          "backward",
+        );
         return {
           source: nextSource,
           selection: {

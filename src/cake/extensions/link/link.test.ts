@@ -89,4 +89,23 @@ describe("link extension", () => {
     // x is inserted between 'l' and 'd': [worlxd]
     expect(afterInsert.source).toBe("hello [worlxd](http://test/)");
   });
+
+  it("does not treat nearby non-link brackets as an enclosing link when wrapping", () => {
+    const runtime = createRuntimeForTests([linkExtension]);
+    const state = runtime.createState("before [00:24] text [foo](u)");
+    const sourceStart = state.source.indexOf("text");
+    const sourceEnd = sourceStart + "text".length;
+    const start = state.map.sourceToCursor(sourceStart, "forward").cursorOffset;
+    const end = state.map.sourceToCursor(sourceEnd, "backward").cursorOffset;
+
+    const next = runtime.applyEdit(
+      { type: "wrap-link" },
+      {
+        ...state,
+        selection: { start, end, affinity: "forward" },
+      },
+    );
+
+    expect(next.source).toBe("before [00:24] [text]() [foo](u)");
+  });
 });
