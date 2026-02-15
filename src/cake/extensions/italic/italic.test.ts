@@ -30,6 +30,32 @@ describe("italic extension", () => {
     expect(serialized.source).toBe("This is *realy* important");
   });
 
+  it("does not parse underscore markers when the opener is inside a word", () => {
+    const runtime = createRuntimeForTests([italicExtension]);
+    const source = "hello_world_";
+    const state = runtime.createState(source);
+
+    expect(state.source).toBe(source);
+    expect(state.map.cursorLength).toBe(source.length);
+  });
+
+  it("supports cmd+i typing at a word boundary by using asterisk markers", () => {
+    const runtime = createRuntimeForTests([italicExtension]);
+    let state = runtime.createState("hello", {
+      start: 5,
+      end: 5,
+      affinity: "forward",
+    });
+
+    state = runtime.applyEdit({ type: "toggle-italic" }, state);
+    state = runtime.applyEdit({ type: "insert", text: "world" }, state);
+
+    expect(state.source).toBe("hello*world*");
+
+    const rehydrated = runtime.createState(state.source);
+    expect(rehydrated.source).toBe("hello*world*");
+  });
+
   it("collapses empty italic wrappers", () => {
     const runtime = createRuntimeForTests([italicExtension]);
     const state = runtime.createState("__");

@@ -6,6 +6,7 @@ import {
 } from "../../core/runtime";
 import type { Inline } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
+import { hasInlineMarkerBoundaryBefore } from "../shared/inline-marker-boundary";
 
 const ITALIC_KIND = "italic";
 
@@ -74,6 +75,9 @@ export const italicExtension: CakeExtension = (editor) => {
         // Support both * and _ for italic (like v1)
         // Note: ** is handled by bold extension which should be registered first
         if (char !== "_" && char !== "*") {
+          return null;
+        }
+        if (char === "_" && !hasInlineMarkerBoundaryBefore(source, start)) {
           return null;
         }
         // Don't match ** (that's bold)
