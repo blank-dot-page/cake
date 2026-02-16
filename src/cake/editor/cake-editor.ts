@@ -595,8 +595,12 @@ export class CakeEditor {
       // may flip to backward. If we're around a placeholder, check the opposite
       // affinity as well so active marks remain stable before the user types.
       if (this.hasPendingPlaceholderAroundCursor(start)) {
-        const oppositeAffinity = affinity === "forward" ? "backward" : "forward";
-        const oppositeMarks = this.getMarksAtCursorOffset(start, oppositeAffinity);
+        const oppositeAffinity =
+          affinity === "forward" ? "backward" : "forward";
+        const oppositeMarks = this.getMarksAtCursorOffset(
+          start,
+          oppositeAffinity,
+        );
         if (oppositeMarks.length > 0) {
           return this.resolveActiveMarks(oppositeMarks);
         }
@@ -680,7 +684,7 @@ export class CakeEditor {
       }
     }
 
-    return sawUnitInRange ? intersection ?? [] : [];
+    return sawUnitInRange ? (intersection ?? []) : [];
   }
 
   private resolveActiveMarks(baseMarks: string[]): string[] {
@@ -861,10 +865,7 @@ export class CakeEditor {
 
     if (block.type === "block-atom") {
       const nextOffset = startOffset + 1;
-      if (
-        rangeStartCursor <= nextOffset &&
-        nextOffset <= rangeEndCursor
-      ) {
+      if (rangeStartCursor <= nextOffset && nextOffset <= rangeEndCursor) {
         consumeMarks([]);
       }
       return { nextOffset, lastMarks: [] };
@@ -1309,14 +1310,16 @@ export class CakeEditor {
     this.scheduleScrollCaretIntoView();
   }
 
-  setSelection(selection: Selection) {
+  setSelection(selection: Selection, options?: { scrollIntoView?: boolean }) {
     this.state = this.runtime.updateSelection(this.state, selection, {
       kind: "programmatic",
     });
     if (!this.isComposing) {
       this.applySelection(this.state.selection);
     }
-    this.scheduleScrollCaretIntoView();
+    if (options?.scrollIntoView ?? true) {
+      this.scheduleScrollCaretIntoView();
+    }
   }
 
   setValue({ value, selection }: { value: string; selection?: Selection }) {
@@ -1363,7 +1366,10 @@ export class CakeEditor {
 
   selectAll() {
     const length = this.state.map.cursorLength;
-    this.setSelection({ start: 0, end: length, affinity: "forward" });
+    this.setSelection(
+      { start: 0, end: length, affinity: "forward" },
+      { scrollIntoView: false },
+    );
   }
 
   undo() {
@@ -1626,10 +1632,12 @@ export class CakeEditor {
       this.fontFaceSet = fonts;
       fonts.addEventListener("loadingdone", this.handleFontsChangedBound);
       fonts.addEventListener("loadingerror", this.handleFontsChangedBound);
-      void fonts.ready.then(() => this.handleFontsChanged()).catch(() => {
-        // Ignore font readiness failures; selection overlay should still work
-        // with fallback fonts and layout observers.
-      });
+      void fonts.ready
+        .then(() => this.handleFontsChanged())
+        .catch(() => {
+          // Ignore font readiness failures; selection overlay should still work
+          // with fallback fonts and layout observers.
+        });
     }
   }
 
@@ -1837,8 +1845,19 @@ export class CakeEditor {
     if (!this.domMap) {
       return;
     }
+    const shouldPreserveViewport =
+      selection.start !== selection.end &&
+      Math.min(selection.start, selection.end) === 0 &&
+      Math.max(selection.start, selection.end) === this.state.map.cursorLength;
+    const preservedViewport = shouldPreserveViewport
+      ? this.captureViewportScrollPosition()
+      : null;
+
     this.isApplyingSelection = true;
     applyDomSelection(selection, this.domMap);
+    if (preservedViewport) {
+      this.restoreViewportScrollPosition(preservedViewport);
+    }
     // Read back what the DOM selection actually became (browser may normalize it)
     this.lastAppliedSelection = readDomSelection(this.domMap) ?? selection;
     queueMicrotask(() => {
@@ -2344,6 +2363,7 @@ export class CakeEditor {
       this.applySelectionUpdate(
         { start: 0, end, affinity: "forward" },
         "keyboard",
+        { scrollIntoView: false },
       );
       return;
     }
@@ -3215,6 +3235,7 @@ export class CakeEditor {
   private applySelectionUpdate(
     selection: Selection,
     kind: "dom" | "keyboard" | "programmatic" = "programmatic",
+    options?: { scrollIntoView?: boolean },
   ) {
     if (kind !== "keyboard") {
       this.verticalNavGoalX = null;
@@ -3228,7 +3249,9 @@ export class CakeEditor {
     if (this.state.selection.start === this.state.selection.end) {
       this.flushOverlayUpdate();
     }
-    this.scheduleScrollCaretIntoView();
+    if (options?.scrollIntoView ?? true) {
+      this.scheduleScrollCaretIntoView();
+    }
   }
 
   private getLayoutForNavigation() {
@@ -4404,6 +4427,35 @@ export class CakeEditor {
     }
   }
 
+  private captureViewportScrollPosition(): { top: number; left: number } {
+    return {
+      top: this.container.scrollTop,
+      left: this.container.scrollLeft,
+    };
+  }
+
+  private restoreViewportScrollPosition(position: {
+    top: number;
+    left: number;
+  }) {
+    const apply = () => {
+      if (Math.abs(this.container.scrollTop - position.top) > 0.5) {
+        this.container.scrollTop = position.top;
+      }
+      if (Math.abs(this.container.scrollLeft - position.left) > 0.5) {
+        this.container.scrollLeft = position.left;
+      }
+    };
+
+    apply();
+    window.requestAnimationFrame(() => {
+      apply();
+      window.requestAnimationFrame(() => {
+        apply();
+      });
+    });
+  }
+
   private scheduleScrollCaretIntoView() {
     if (this.isComposing) {
       return;
@@ -4431,6 +4483,15 @@ export class CakeEditor {
       container.scrollHeight - container.clientHeight,
     );
     const selection = this.state.selection;
+    const selectionStart = Math.min(selection.start, selection.end);
+    const selectionEnd = Math.max(selection.start, selection.end);
+    const isFullDocumentSelection =
+      selectionStart === 0 && selectionEnd === this.state.map.cursorLength;
+
+    if (isFullDocumentSelection) {
+      return;
+    }
+
     const isEndOfDoc =
       selection.start === selection.end &&
       selection.end === this.state.map.cursorLength;
