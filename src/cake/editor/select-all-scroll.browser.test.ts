@@ -97,22 +97,25 @@ describe("select-all viewport behavior", () => {
       observedDuringRangeSelection.push(harness!.container.scrollTop);
     };
     harness.container.addEventListener("scroll", trackRangeSelectionScroll);
-    harness.engine.setSelection({
-      start: 0,
-      end: visibleMidpoint,
-      affinity: "backward",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 140));
-    harness.container.removeEventListener("scroll", trackRangeSelectionScroll);
+    try {
+      harness.engine.setSelection({
+        start: 0,
+        end: visibleMidpoint,
+        affinity: "backward",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 140));
+      const scrollAfterSelection = harness.container.scrollTop;
+      observedDuringRangeSelection.push(scrollAfterSelection);
+    } finally {
+      harness.container.removeEventListener("scroll", trackRangeSelectionScroll);
+      engineWithScrollSpy.scrollCaretIntoView = originalScrollCaretIntoView;
+    }
 
-    const scrollAfterSelection = harness.container.scrollTop;
-    observedDuringRangeSelection.push(scrollAfterSelection);
     const maxDriftDuringRangeSelection = observedDuringRangeSelection.reduce(
       (maxDrift, value) =>
         Math.max(maxDrift, Math.abs(value - scrollBeforeSelection)),
       0,
     );
-    engineWithScrollSpy.scrollCaretIntoView = originalScrollCaretIntoView;
 
     expect(scrollCaretIntoViewCalls).toBe(0);
     expect(maxDriftDuringRangeSelection).toBeLessThanOrEqual(1);
