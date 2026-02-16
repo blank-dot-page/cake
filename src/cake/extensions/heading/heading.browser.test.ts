@@ -258,6 +258,38 @@ describe("heading extension typing behavior (harness)", () => {
     h.destroy();
   });
 
+  test("changing heading level preserves non-collapsed selection", async () => {
+    const h = createTestHarness("# Heading title");
+    await h.focus();
+
+    const selectedTextLength = "Heading title".length;
+    h.engine.setSelection({
+      start: 0,
+      end: selectedTextLength,
+      affinity: "forward",
+    });
+
+    expect(h.selection).toEqual(
+      expect.objectContaining({
+        start: 0,
+        end: selectedTextLength,
+      }),
+    );
+
+    h.engine.executeCommand({ type: "toggle-heading", level: 2 });
+
+    expect(h.engine.getValue()).toBe("## Heading title");
+    expect(h.selection).toEqual(
+      expect.objectContaining({
+        start: 0,
+        end: selectedTextLength,
+      }),
+    );
+    expect(h.selection.start).not.toBe(h.selection.end);
+
+    h.destroy();
+  });
+
   test("pressing Enter at visual heading start keeps caret with moved heading line", async () => {
     const h = createTestHarness("# Title");
     await h.focus();
@@ -269,9 +301,7 @@ describe("heading extension typing behavior (harness)", () => {
     expect(h.getLineCount()).toBe(2);
     expect(h.getLine(1).classList.contains("is-heading")).toBe(true);
     expect((h.getLine(1).textContent ?? "").trim()).toBe("Title");
-    expect(h.selection).toEqual(
-      expect.objectContaining({ start: 1, end: 1 }),
-    );
+    expect(h.selection).toEqual(expect.objectContaining({ start: 1, end: 1 }));
 
     const caret = h.getCaretRect();
     const headingLineRect = h.getLineRect(1);

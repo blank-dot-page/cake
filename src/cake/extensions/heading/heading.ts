@@ -51,7 +51,11 @@ function getSelectionSourceRange(state: RuntimeState): {
   };
 }
 
-function getSelectedLineStarts(source: string, from: number, to: number): number[] {
+function getSelectedLineStarts(
+  source: string,
+  from: number,
+  to: number,
+): number[] {
   if (source.length === 0) {
     return [0];
   }
@@ -79,7 +83,10 @@ function getHeadingActiveMarks(state: RuntimeState): string[] {
 
   let level: number | null = null;
   for (const lineStart of lineStarts) {
-    const lineContent = source.slice(lineStart, findLineEndInSource(source, lineStart));
+    const lineContent = source.slice(
+      lineStart,
+      findLineEndInSource(source, lineStart),
+    );
     const match = lineContent.match(HEADING_PATTERN);
     if (!match) {
       return [];
@@ -245,7 +252,8 @@ function handleLineBreakInHeading(
   // the heading, not leave an empty heading wrapper behind.
   const beforeCursor = source.slice(contentStart, sourcePos);
   if (beforeCursor.trim().length === 0) {
-    const nextSource = source.slice(0, lineStart) + "\n" + source.slice(lineStart);
+    const nextSource =
+      source.slice(0, lineStart) + "\n" + source.slice(lineStart);
     const next = runtime.createState(nextSource);
     // Match native textarea behavior when pressing Enter at line start:
     // insert a newline above and keep the caret with the moved line.
@@ -270,15 +278,18 @@ function handleToggleHeading(
 ): EditResult | null {
   const { source, selection, map, runtime } = state;
 
-  // Get the cursor's source position
-  const cursorPos = Math.min(selection.start, selection.end);
-  const sourcePos = map.cursorToSource(
-    cursorPos,
+  const selectionStart = Math.min(selection.start, selection.end);
+  const selectionEnd = Math.max(selection.start, selection.end);
+  const isCollapsed = selectionStart === selectionEnd;
+
+  // Keep collapsed cursor behavior affinity-aware.
+  const primarySourcePos = map.cursorToSource(
+    selectionStart,
     selection.affinity ?? "forward",
   );
 
   // Find line boundaries in source
-  const lineStart = findLineStartInSource(source, sourcePos);
+  const lineStart = findLineStartInSource(source, primarySourcePos);
   let lineEnd = source.indexOf("\n", lineStart);
   if (lineEnd === -1) {
     lineEnd = source.length;
@@ -288,7 +299,7 @@ function handleToggleHeading(
   const headingMatch = lineContent.match(HEADING_PATTERN);
 
   let newSource: string;
-  let newCursorOffset: number;
+  let remapSourceOffset: (offset: number) => number;
 
   if (headingMatch) {
     // Line is already a heading
@@ -302,13 +313,15 @@ function handleToggleHeading(
         lineContent.slice(existingMarker.length) +
         source.slice(lineEnd);
 
-      // Adjust cursor position - move back by marker length
-      const cursorLineOffset = sourcePos - lineStart;
-      if (cursorLineOffset >= existingMarker.length) {
-        newCursorOffset = sourcePos - existingMarker.length;
-      } else {
-        newCursorOffset = lineStart;
-      }
+      remapSourceOffset = (offset) => {
+        if (offset <= lineStart) {
+          return offset;
+        }
+        if (offset >= lineEnd) {
+          return offset - existingMarker.length;
+        }
+        return Math.max(lineStart, offset - existingMarker.length);
+      };
     } else {
       // Different level - change the heading level
       const newMarker = "#".repeat(targetLevel) + " ";
@@ -318,14 +331,20 @@ function handleToggleHeading(
         lineContent.slice(existingMarker.length) +
         source.slice(lineEnd);
 
-      // Adjust cursor position for marker length difference
       const markerDiff = newMarker.length - existingMarker.length;
-      const cursorLineOffset = sourcePos - lineStart;
-      if (cursorLineOffset >= existingMarker.length) {
-        newCursorOffset = sourcePos + markerDiff;
-      } else {
-        newCursorOffset = lineStart + newMarker.length;
-      }
+      remapSourceOffset = (offset) => {
+        if (offset <= lineStart) {
+          return offset;
+        }
+        if (offset >= lineEnd) {
+          return offset + markerDiff;
+        }
+        const offsetInLine = offset - lineStart;
+        if (offsetInLine >= existingMarker.length) {
+          return offset + markerDiff;
+        }
+        return lineStart + newMarker.length;
+      };
     }
   } else {
     // Line is not a heading - add the heading marker
@@ -345,24 +364,66 @@ function handleToggleHeading(
     )
       ? lineContent.length - lineContentWithoutBlockMarkers.length
       : 0;
-    const cursorLineOffset = sourcePos - lineStart;
-    const adjustedLineOffset = Math.max(
-      0,
-      cursorLineOffset - Math.min(cursorLineOffset, removedPrefixLength),
-    );
-    newCursorOffset = lineStart + newMarker.length + adjustedLineOffset;
+    const markerDiff = newMarker.length - removedPrefixLength;
+    remapSourceOffset = (offset) => {
+      if (offset <= lineStart) {
+        return offset;
+      }
+      if (offset >= lineEnd) {
+        return offset + markerDiff;
+      }
+      const offsetInLine = offset - lineStart;
+      const adjustedLineOffset = Math.max(
+        0,
+        offsetInLine - Math.min(offsetInLine, removedPrefixLength),
+      );
+      return lineStart + newMarker.length + adjustedLineOffset;
+    };
   }
 
-  // Create new state and map cursor through it
+  const nextSelectionSource = isCollapsed
+    ? {
+        start: primarySourcePos,
+        end: primarySourcePos,
+      }
+    : {
+        start: map.cursorToSource(selectionStart, "forward"),
+        end: map.cursorToSource(selectionEnd, "backward"),
+      };
+
+  const mappedSelectionSource = {
+    start: remapSourceOffset(nextSelectionSource.start),
+    end: remapSourceOffset(nextSelectionSource.end),
+  };
+
+  // Create new state and map selection through it.
   const next = runtime.createState(newSource);
-  const caretCursor = next.map.sourceToCursor(newCursorOffset, "forward");
+  const nextStartCursor = next.map.sourceToCursor(
+    mappedSelectionSource.start,
+    "forward",
+  );
+  const nextEndCursor = next.map.sourceToCursor(
+    mappedSelectionSource.end,
+    "backward",
+  );
+  const nextSelectionStart = Math.min(
+    nextStartCursor.cursorOffset,
+    nextEndCursor.cursorOffset,
+  );
+  const nextSelectionEnd = Math.max(
+    nextStartCursor.cursorOffset,
+    nextEndCursor.cursorOffset,
+  );
+  const nextAffinity = isCollapsed
+    ? nextStartCursor.affinity
+    : (selection.affinity ?? "forward");
 
   return {
     source: newSource,
     selection: {
-      start: caretCursor.cursorOffset,
-      end: caretCursor.cursorOffset,
-      affinity: "forward",
+      start: nextSelectionStart,
+      end: nextSelectionEnd,
+      affinity: nextAffinity,
     },
   };
 }
