@@ -1845,10 +1845,7 @@ export class CakeEditor {
     if (!this.domMap) {
       return;
     }
-    const shouldPreserveViewport =
-      selection.start !== selection.end &&
-      Math.min(selection.start, selection.end) === 0 &&
-      Math.max(selection.start, selection.end) === this.state.map.cursorLength;
+    const shouldPreserveViewport = selection.start !== selection.end;
     const preservedViewport = shouldPreserveViewport
       ? this.captureViewportScrollPosition()
       : null;
@@ -4460,6 +4457,9 @@ export class CakeEditor {
     if (this.isComposing) {
       return;
     }
+    if (this.state.selection.start !== this.state.selection.end) {
+      return;
+    }
     if (this.scrollCaretIntoViewId !== null) {
       return;
     }
@@ -4483,6 +4483,9 @@ export class CakeEditor {
       container.scrollHeight - container.clientHeight,
     );
     const selection = this.state.selection;
+    if (selection.start !== selection.end) {
+      return;
+    }
     const selectionStart = Math.min(selection.start, selection.end);
     const selectionEnd = Math.max(selection.start, selection.end);
     const isFullDocumentSelection =
