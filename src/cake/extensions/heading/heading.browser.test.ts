@@ -263,11 +263,7 @@ describe("heading extension typing behavior (harness)", () => {
     await h.focus();
 
     const selectedTextLength = "Heading title".length;
-    h.engine.setSelection({
-      start: 0,
-      end: selectedTextLength,
-      affinity: "forward",
-    });
+    await h.pressKey("a", mod);
 
     expect(h.selection).toEqual(
       expect.objectContaining({
@@ -276,7 +272,10 @@ describe("heading extension typing behavior (harness)", () => {
       }),
     );
 
-    h.engine.executeCommand({ type: "toggle-heading", level: 2 });
+    h.engine.executeCommand(
+      { type: "toggle-heading", level: 2 },
+      { restoreFocus: true },
+    );
 
     expect(h.engine.getValue()).toBe("## Heading title");
     expect(h.selection).toEqual(
