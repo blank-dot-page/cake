@@ -196,6 +196,16 @@ export class CakeEditor {
   private caretElement: HTMLDivElement | null = null;
   private caretBlinkTimeoutId: number | null = null;
   private overlayUpdateId: number | null = null;
+  private layoutSyncRafId: number | null = null;
+  private layoutSyncStableFrames = 0;
+  private lastLayoutSyncSnapshot: {
+    containerWidth: number;
+    containerHeight: number;
+    contentOffsetLeft: number;
+    contentOffsetTop: number;
+    contentWidth: number;
+    contentHeight: number;
+  } | null = null;
   private scrollCaretIntoViewId: number | null = null;
   private selectionRectElements: HTMLDivElement[] = [];
   private lastSelectionRects: SelectionRect[] | null = null;
@@ -1460,6 +1470,7 @@ export class CakeEditor {
     this.resizeObserver = new ResizeObserver(() => {
       this.syncPlaceholderPosition();
       this.scheduleOverlayUpdate();
+      this.startLayoutSyncLoop();
     });
     this.resizeObserver.observe(this.container);
     this.attachExternalLayoutObservers();
@@ -1524,6 +1535,7 @@ export class CakeEditor {
     this.contentResizeObserver = null;
     this.layoutMutationObserver?.disconnect();
     this.layoutMutationObserver = null;
+    this.stopLayoutSyncLoop();
     if (this.fontFaceSet) {
       this.fontFaceSet.removeEventListener(
         "loadingdone",
@@ -1587,9 +1599,11 @@ export class CakeEditor {
     // Avoid scheduling expensive selection geometry work when there's nothing
     // visible that would change (e.g. blurred + collapsed selection).
     if (!this.shouldScheduleOverlayForExternalLayoutChange()) {
+      this.startLayoutSyncLoop();
       return;
     }
     this.scheduleOverlayUpdate();
+    this.startLayoutSyncLoop();
   }
 
   private attachExternalLayoutObservers() {
@@ -4171,6 +4185,102 @@ export class CakeEditor {
 
   private handleResize() {
     this.scheduleOverlayUpdate();
+    this.startLayoutSyncLoop();
+  }
+
+  private captureLayoutSyncSnapshot() {
+    const containerRect = this.container.getBoundingClientRect();
+    const contentRect = this.contentRoot?.getBoundingClientRect() ?? null;
+    return {
+      containerWidth: containerRect.width,
+      containerHeight: containerRect.height,
+      contentOffsetLeft: contentRect
+        ? contentRect.left - containerRect.left
+        : 0,
+      contentOffsetTop: contentRect ? contentRect.top - containerRect.top : 0,
+      contentWidth: contentRect?.width ?? 0,
+      contentHeight: contentRect?.height ?? 0,
+    };
+  }
+
+  private hasLayoutSyncSnapshotMoved(
+    previous: {
+      containerWidth: number;
+      containerHeight: number;
+      contentOffsetLeft: number;
+      contentOffsetTop: number;
+      contentWidth: number;
+      contentHeight: number;
+    },
+    next: {
+      containerWidth: number;
+      containerHeight: number;
+      contentOffsetLeft: number;
+      contentOffsetTop: number;
+      contentWidth: number;
+      contentHeight: number;
+    },
+  ): boolean {
+    const EPSILON = 0.25;
+    return (
+      Math.abs(previous.containerWidth - next.containerWidth) > EPSILON ||
+      Math.abs(previous.containerHeight - next.containerHeight) > EPSILON ||
+      Math.abs(previous.contentOffsetLeft - next.contentOffsetLeft) > EPSILON ||
+      Math.abs(previous.contentOffsetTop - next.contentOffsetTop) > EPSILON ||
+      Math.abs(previous.contentWidth - next.contentWidth) > EPSILON ||
+      Math.abs(previous.contentHeight - next.contentHeight) > EPSILON
+    );
+  }
+
+  private runLayoutSyncFrame = () => {
+    this.layoutSyncRafId = null;
+    if (this.isDestroyed) {
+      return;
+    }
+
+    this.syncPlaceholderPosition();
+    if (this.shouldScheduleOverlayForExternalLayoutChange()) {
+      this.flushOverlayUpdate();
+    }
+
+    const snapshot = this.captureLayoutSyncSnapshot();
+    const previousSnapshot = this.lastLayoutSyncSnapshot;
+    if (
+      previousSnapshot &&
+      !this.hasLayoutSyncSnapshotMoved(previousSnapshot, snapshot)
+    ) {
+      this.layoutSyncStableFrames += 1;
+    } else {
+      this.layoutSyncStableFrames = 0;
+    }
+    this.lastLayoutSyncSnapshot = snapshot;
+
+    if (this.layoutSyncStableFrames >= 2) {
+      return;
+    }
+    this.layoutSyncRafId = window.requestAnimationFrame(
+      this.runLayoutSyncFrame,
+    );
+  };
+
+  private startLayoutSyncLoop() {
+    if (this.isDestroyed || this.layoutSyncRafId !== null) {
+      return;
+    }
+    this.layoutSyncStableFrames = 0;
+    this.lastLayoutSyncSnapshot = this.captureLayoutSyncSnapshot();
+    this.layoutSyncRafId = window.requestAnimationFrame(
+      this.runLayoutSyncFrame,
+    );
+  }
+
+  private stopLayoutSyncLoop() {
+    if (this.layoutSyncRafId !== null) {
+      window.cancelAnimationFrame(this.layoutSyncRafId);
+      this.layoutSyncRafId = null;
+    }
+    this.layoutSyncStableFrames = 0;
+    this.lastLayoutSyncSnapshot = null;
   }
 
   private scheduleOverlayUpdate() {
