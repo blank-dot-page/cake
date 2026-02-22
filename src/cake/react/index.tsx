@@ -170,7 +170,7 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
       let resizeObserver: ResizeObserver | null = null;
       if (typeof ResizeObserver !== "undefined") {
         resizeObserver = new ResizeObserver(scheduleSync);
-        resizeObserver.observe(container);
+        resizeObserver.observe(container, { box: "border-box" });
       }
 
       const engine = new CakeEditorEngine({

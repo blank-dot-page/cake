@@ -1472,7 +1472,11 @@ export class CakeEditor {
       this.scheduleOverlayUpdate();
       this.startLayoutSyncLoop();
     });
-    this.resizeObserver.observe(this.container);
+    // Track border-box changes, not only content-box changes. The editor uses
+    // responsive horizontal paddings to center content; when the available
+    // width changes (e.g. sidebar toggle), the content box can stay constant
+    // while border-box width and content offset change.
+    this.resizeObserver.observe(this.container, { box: "border-box" });
     this.attachExternalLayoutObservers();
     this.container.addEventListener("click", this.handleClickBound);
     this.container.addEventListener("keydown", this.handleKeyDownBound);

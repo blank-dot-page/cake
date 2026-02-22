@@ -244,6 +244,79 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("repositions placeholder when only the container border-box changes", async () => {
+    const shell = document.createElement("div");
+    shell.style.width = "1280px";
+    shell.style.display = "flex";
+    shell.style.position = "absolute";
+    shell.style.top = "0";
+    shell.style.left = "0";
+
+    const sidebar = document.createElement("div");
+    sidebar.style.flex = "0 0 260px";
+
+    const main = document.createElement("div");
+    main.style.flex = "1 1 auto";
+    main.style.minWidth = "0";
+
+    const container = document.createElement("div");
+    container.contentEditable = "true";
+    container.dataset.placeholder = "Type here";
+    container.style.width = "100%";
+    container.style.height = "240px";
+    container.style.boxSizing = "border-box";
+    container.style.position = "relative";
+    // Keep content width stable while container width changes so only border-box
+    // resize notifications are guaranteed to fire.
+    container.style.paddingLeft = "calc((100% - 744px) / 2)";
+    container.style.paddingRight = "calc((100% - 744px) / 2)";
+
+    main.append(container);
+    shell.append(sidebar, main);
+    document.body.append(shell);
+
+    const engine = new CakeEditor({
+      container,
+      value: "",
+      selection: createSelection(0, 0),
+    });
+
+    engine.syncPlaceholder();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const contentRoot = engine.getContentRoot();
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const placeholder = container.querySelector(".cake-placeholder");
+    if (!(placeholder instanceof HTMLElement)) {
+      throw new Error("Missing placeholder");
+    }
+
+    const getExpectedLeft = () =>
+      contentRoot.getBoundingClientRect().left -
+      container.getBoundingClientRect().left;
+    const getPlaceholderLeft = () => parseFloat(placeholder.style.left);
+
+    const beforeExpectedLeft = getExpectedLeft();
+    const beforePlaceholderLeft = getPlaceholderLeft();
+    expect(Math.abs(beforePlaceholderLeft - beforeExpectedLeft)).toBeLessThan(1);
+
+    // Simulate sidebar layout change by resizing a sibling; no ancestor
+    // class/style mutation is involved for the editor container.
+    sidebar.style.flex = "0 0 390px";
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const afterExpectedLeft = getExpectedLeft();
+    const afterPlaceholderLeft = getPlaceholderLeft();
+
+    expect(Math.abs(afterExpectedLeft - beforeExpectedLeft)).toBeGreaterThan(20);
+    expect(Math.abs(afterPlaceholderLeft - afterExpectedLeft)).toBeLessThan(1);
+
+    engine.destroy();
+  });
+
   it("handles beforeinput insertText", () => {
     const container = createContainer();
     let lastValue = "";
