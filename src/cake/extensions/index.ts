@@ -11,6 +11,7 @@ import { scrollbarExtension } from "./scrollbar";
 import { strikethroughExtension } from "./strikethrough/strikethrough";
 import { underlineExtension } from "./underline/underline";
 import { mentionExtension } from "./mention/mention";
+import { structuralReparsePolicyExtension } from "./shared/structural-reparse-policy";
 
 export {
   boldExtension,
@@ -25,9 +26,11 @@ export {
   strikethroughExtension,
   underlineExtension,
   mentionExtension,
+  structuralReparsePolicyExtension,
 };
 
 export const bundledExtensionsWithoutImage = [
+  structuralReparsePolicyExtension,
   blockquoteExtension,
   headingExtension,
   plainTextListExtension,

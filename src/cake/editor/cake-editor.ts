@@ -10,6 +10,7 @@ import {
   type SerializeInlineResult,
   type Runtime,
   type RuntimeState,
+  type StructuralReparsePolicy,
   type ToggleInlineSpec,
   createRuntimeFromRegistry,
   type DomBlockRenderer,
@@ -156,6 +157,7 @@ export class CakeEditor {
       state: RuntimeState,
     ) => EditResult | EditCommand | null
   > = [];
+  private structuralReparsePolicies: StructuralReparsePolicy[] = [];
   private keybindings: KeyBinding[] = [];
   private keyDownInterceptors: Array<(event: KeyboardEvent) => boolean> = [];
   private onPasteTextHandlers: Array<
@@ -357,6 +359,7 @@ export class CakeEditor {
       normalizeBlockFns: this.normalizeBlockFns,
       normalizeInlineFns: this.normalizeInlineFns,
       onEditFns: this.onEditFns,
+      structuralReparsePolicies: this.structuralReparsePolicies,
       domInlineRenderers: this.domInlineRenderers,
       domBlockRenderers: this.domBlockRenderers,
     });
@@ -481,6 +484,11 @@ export class CakeEditor {
   ) {
     this.onEditFns.push(fn);
     return () => removeFromArray(this.onEditFns, fn);
+  }
+
+  registerStructuralReparsePolicy(fn: StructuralReparsePolicy) {
+    this.structuralReparsePolicies.push(fn);
+    return () => removeFromArray(this.structuralReparsePolicies, fn);
   }
 
   registerOnPasteText(

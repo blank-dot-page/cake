@@ -41,6 +41,10 @@ export type StructuralEditCommand =
   | ApplyEditCommand
   | { type: "exit-block-wrapper" };
 
+export type StructuralReparsePolicy = (
+  command: StructuralEditCommand,
+) => boolean;
+
 /** Core edit commands handled by the runtime */
 export type CoreEditCommand =
   | StructuralEditCommand
@@ -87,8 +91,6 @@ export function isApplyEditCommand(
     command.type === "delete-forward"
   );
 }
-
-const PLAIN_INSERT_TEXT_PATTERN = /^[\p{L}\p{N}\p{M}]+$/u;
 
 export type EditResult = {
   source: string;
@@ -205,6 +207,7 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
       state: RuntimeState,
     ) => EditResult | EditCommand | null
   > = [];
+  const structuralReparsePolicies: StructuralReparsePolicy[] = [];
   const domInlineRenderers: DomInlineRenderer[] = [];
   const domBlockRenderers: DomBlockRenderer[] = [];
 
@@ -303,6 +306,10 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
       onEditFns.push(fn);
       return () => removeFromArray(onEditFns, fn);
     },
+    registerStructuralReparsePolicy: (fn: StructuralReparsePolicy) => {
+      structuralReparsePolicies.push(fn);
+      return () => removeFromArray(structuralReparsePolicies, fn);
+    },
     registerOnPasteText: () => {
       return () => {};
     },
@@ -339,6 +346,7 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
     normalizeBlockFns,
     normalizeInlineFns,
     onEditFns,
+    structuralReparsePolicies,
     domInlineRenderers,
     domBlockRenderers,
   });
@@ -381,6 +389,7 @@ export function createRuntimeFromRegistry(registry: {
       state: RuntimeState,
     ) => EditResult | EditCommand | null
   >;
+  structuralReparsePolicies: StructuralReparsePolicy[];
   domInlineRenderers: DomInlineRenderer[];
   domBlockRenderers: DomBlockRenderer[];
 }): Runtime {
@@ -394,6 +403,7 @@ export function createRuntimeFromRegistry(registry: {
     normalizeBlockFns,
     normalizeInlineFns,
     onEditFns,
+    structuralReparsePolicies,
     domInlineRenderers,
     domBlockRenderers,
   } = registry;
@@ -667,14 +677,13 @@ export function createRuntimeFromRegistry(registry: {
     };
   }
 
-  function canReuseStructuralStateWithoutReparse(
+  function shouldReparseAfterStructuralEdit(
     command: StructuralEditCommand,
   ): boolean {
-    return (
-      command.type === "insert" &&
-      command.text.length > 0 &&
-      PLAIN_INSERT_TEXT_PATTERN.test(command.text)
-    );
+    if (structuralReparsePolicies.length === 0) {
+      return true;
+    }
+    return structuralReparsePolicies.some((policy) => policy(command));
   }
 
   function applyEdit(command: EditCommand, state: RuntimeState): RuntimeState {
@@ -834,7 +843,7 @@ export function createRuntimeFromRegistry(registry: {
         interimAffinity,
       );
 
-      if (canReuseStructuralStateWithoutReparse(command)) {
+      if (!shouldReparseAfterStructuralEdit(command)) {
         const caretCursor = interim.map.sourceToCursor(
           caretSource,
           interimAffinity,
