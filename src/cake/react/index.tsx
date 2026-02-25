@@ -25,6 +25,15 @@ function toEngineSelection(selection?: CakeEditorSelection): Selection {
   };
 }
 
+function selectionsEqual(a: Selection | null, b: Selection): boolean {
+  return (
+    a !== null &&
+    a.start === b.start &&
+    a.end === b.end &&
+    a.affinity === b.affinity
+  );
+}
+
 export type CakeEditorSelection = {
   start: number;
   end: number;
@@ -117,6 +126,18 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
       onSelectionChangeRef.current = props.onSelectionChange;
     }, [props.onChange, props.onSelectionChange]);
 
+    const emitSelectionChange = (selection: Selection) => {
+      if (selectionsEqual(lastEmittedSelectionRef.current, selection)) {
+        return;
+      }
+      lastEmittedSelectionRef.current = selection;
+      onSelectionChangeRef.current?.(
+        selection.start,
+        selection.end,
+        selection.affinity,
+      );
+    };
+
     useEffect(() => {
       engineRef.current?.syncPlaceholder();
     }, [props.placeholder]);
@@ -183,21 +204,11 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
         spellCheckEnabled: props.spellCheck ?? false,
         onChange: (value, selection) => {
           lastEmittedValueRef.current = value;
-          lastEmittedSelectionRef.current = selection;
           onChangeRef.current(value);
-          onSelectionChangeRef.current?.(
-            selection.start,
-            selection.end,
-            selection.affinity,
-          );
+          emitSelectionChange(selection);
         },
         onSelectionChange: (selection) => {
-          lastEmittedSelectionRef.current = selection;
-          onSelectionChangeRef.current?.(
-            selection.start,
-            selection.end,
-            selection.affinity,
-          );
+          emitSelectionChange(selection);
         },
       });
 

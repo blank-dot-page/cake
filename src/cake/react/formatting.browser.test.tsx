@@ -243,6 +243,87 @@ describe("cake formatting interactions", () => {
     expect(latestActiveMarks).toEqual(["bold"]);
   });
 
+  it("emits a single selection callback for one insertText update", async () => {
+    const ref = createRef<CakeEditorRef>();
+    let selectionEvents = 0;
+    let latestSelection:
+      | { start: number; end: number; affinity?: "backward" | "forward" }
+      | null = null;
+
+    function ControlledEditor() {
+      const [value, setValue] = useState("");
+      return (
+        <CakeEditor
+          ref={ref}
+          value={value}
+          onChange={setValue}
+          onSelectionChange={(start, end, affinity) => {
+            selectionEvents += 1;
+            latestSelection = affinity ? { start, end, affinity } : { start, end };
+          }}
+          placeholder=""
+          extensions={bundledExtensions}
+          style={{ height: 160, overflow: "auto" }}
+        />
+      );
+    }
+
+    await render(<ControlledEditor />);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    ref.current?.focus();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    selectionEvents = 0;
+    latestSelection = null;
+
+    ref.current?.insertText("a");
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(selectionEvents).toBe(1);
+    expect(latestSelection).toEqual(
+      expect.objectContaining({
+        start: 1,
+        end: 1,
+      }),
+    );
+  });
+
+  it("emits a single selection callback for one formatting toggle", async () => {
+    const ref = createRef<CakeEditorRef>();
+    let selectionEvents = 0;
+
+    function ControlledEditor() {
+      const [value, setValue] = useState("hello");
+      return (
+        <CakeEditor
+          ref={ref}
+          value={value}
+          onChange={setValue}
+          onSelectionChange={() => {
+            selectionEvents += 1;
+          }}
+          placeholder=""
+          extensions={bundledExtensions}
+          style={{ height: 160, overflow: "auto" }}
+        />
+      );
+    }
+
+    await render(<ControlledEditor />);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    ref.current?.focus({ start: 5, end: 5, affinity: "forward" });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    selectionEvents = 0;
+
+    expect(ref.current?.executeCommand({ type: "toggle-bold" })).toBe(true);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(selectionEvents).toBe(1);
+  });
+
   it("Cmd+B on a new line keeps active marks in selection-controlled usage", async () => {
     const isMac =
       typeof navigator !== "undefined" &&
