@@ -153,6 +153,48 @@ describe("createRuntimeForTests([])", () => {
     );
     expect(result.source).toBe("**hello**\n**world**");
   });
+
+  it("keeps untouched block objects stable for plain character insertions", async () => {
+    const runtime = await createBundledRuntime();
+    const source = Array.from({ length: 200 }, (_, index) => `line ${index}`)
+      .join("\n");
+    const initial = runtime.createState(source);
+    const firstBlockBefore = initial.doc.blocks[0];
+    const secondBlockBefore = initial.doc.blocks[1];
+    const cursor = initial.map.sourceToCursor(source.length, "forward");
+
+    const result = runtime.applyEdit(
+      { type: "insert", text: "a" },
+      {
+        ...initial,
+        selection: {
+          start: cursor.cursorOffset,
+          end: cursor.cursorOffset,
+          affinity: cursor.affinity,
+        },
+      },
+    );
+
+    expect(result.doc.blocks[0]).toBe(firstBlockBefore);
+    expect(result.doc.blocks[1]).toBe(secondBlockBefore);
+  });
+
+  it("still reparses when markdown marker characters are inserted", async () => {
+    const runtime = await createBundledRuntime();
+    let state = runtime.createState("", { start: 0, end: 0, affinity: "forward" });
+    state = runtime.applyEdit({ type: "insert", text: "*" }, state);
+    state = runtime.applyEdit({ type: "insert", text: "a" }, state);
+    state = runtime.applyEdit({ type: "insert", text: "*" }, state);
+
+    expect(state.source).toBe("*a*");
+    const paragraph = state.doc.blocks[0];
+    expect(paragraph?.type).toBe("paragraph");
+    if (!paragraph || paragraph.type !== "paragraph") {
+      return;
+    }
+    const firstInline = paragraph.content[0];
+    expect(firstInline?.type).toBe("inline-wrapper");
+  });
 });
 
 describe("inline toggle selection edge cases", () => {

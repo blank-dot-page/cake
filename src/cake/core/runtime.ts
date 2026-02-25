@@ -88,6 +88,8 @@ export function isApplyEditCommand(
   );
 }
 
+const PLAIN_INSERT_TEXT_PATTERN = /^[\p{L}\p{N}\p{M}]+$/u;
+
 export type EditResult = {
   source: string;
   selection: Selection;
@@ -519,11 +521,28 @@ export function createRuntimeFromRegistry(registry: {
   }
 
   function normalize(doc: Doc): Doc {
+    let changed = false;
+    const blocks: Block[] = [];
+
+    for (const block of doc.blocks) {
+      const normalized = normalizeBlock(block);
+      if (normalized === null) {
+        changed = true;
+        continue;
+      }
+      if (normalized !== block) {
+        changed = true;
+      }
+      blocks.push(normalized);
+    }
+
+    if (!changed) {
+      return doc;
+    }
+
     return {
       type: "doc",
-      blocks: doc.blocks
-        .map((block) => normalizeBlock(block))
-        .filter((block): block is Block => block !== null),
+      blocks,
     };
   }
 
@@ -538,20 +557,48 @@ export function createRuntimeFromRegistry(registry: {
     }
 
     if (next.type === "paragraph") {
+      let changed = next !== block;
+      const content: Inline[] = [];
+      for (const inline of next.content) {
+        const normalized = normalizeInline(inline);
+        if (normalized === null) {
+          changed = true;
+          continue;
+        }
+        if (normalized !== inline) {
+          changed = true;
+        }
+        content.push(normalized);
+      }
+      if (!changed) {
+        return next;
+      }
       return {
         ...next,
-        content: next.content
-          .map((inline) => normalizeInline(inline))
-          .filter((inline): inline is Inline => inline !== null),
+        content,
       };
     }
 
     if (next.type === "block-wrapper") {
+      let changed = next !== block;
+      const blocks: Block[] = [];
+      for (const child of next.blocks) {
+        const normalized = normalizeBlock(child);
+        if (normalized === null) {
+          changed = true;
+          continue;
+        }
+        if (normalized !== child) {
+          changed = true;
+        }
+        blocks.push(normalized);
+      }
+      if (!changed) {
+        return next;
+      }
       return {
         ...next,
-        blocks: next.blocks
-          .map((child) => normalizeBlock(child))
-          .filter((child): child is Block => child !== null),
+        blocks,
       };
     }
 
@@ -618,6 +665,16 @@ export function createRuntimeFromRegistry(registry: {
       doc: normalized,
       runtime: runtime,
     };
+  }
+
+  function canReuseStructuralStateWithoutReparse(
+    command: StructuralEditCommand,
+  ): boolean {
+    return (
+      command.type === "insert" &&
+      command.text.length > 0 &&
+      PLAIN_INSERT_TEXT_PATTERN.test(command.text)
+    );
   }
 
   function applyEdit(command: EditCommand, state: RuntimeState): RuntimeState {
@@ -776,6 +833,22 @@ export function createRuntimeFromRegistry(registry: {
         structural.nextCursor,
         interimAffinity,
       );
+
+      if (canReuseStructuralStateWithoutReparse(command)) {
+        const caretCursor = interim.map.sourceToCursor(
+          caretSource,
+          interimAffinity,
+        );
+        return {
+          ...interim,
+          selection: {
+            start: caretCursor.cursorOffset,
+            end: caretCursor.cursorOffset,
+            affinity: caretCursor.affinity,
+          },
+        };
+      }
+
       const next = createState(interim.source);
       const caretCursor = next.map.sourceToCursor(caretSource, interimAffinity);
 
