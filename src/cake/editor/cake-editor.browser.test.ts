@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { CakeEditor } from "./cake-editor";
 import { createTestHarness, type TestHarness } from "../test/harness";
@@ -76,6 +76,119 @@ describe("CakeEditor (browser)", () => {
     await h.typeText("b");
     expect(h.engine.getValue()).toBe("**a**b");
 
+    h.destroy();
+  });
+
+  it("single typing state change performs at most one EditorTextModel rebuild", () => {
+    const h = createTestHarness("");
+    const textModel = (
+      h.engine as unknown as { textModel: { rebuild: (doc: unknown) => void } }
+    ).textModel;
+    const stateSetterSpy = vi.spyOn(
+      Object.getPrototypeOf(h.engine) as { state: unknown },
+      "state",
+      "set",
+    );
+    const rebuildSpy = vi.spyOn(textModel, "rebuild");
+
+    h.engine.insertText("a");
+
+    expect(stateSetterSpy).toHaveBeenCalledTimes(1);
+    expect(rebuildSpy.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(rebuildSpy).toHaveBeenCalledTimes(1);
+    expect(h.engine.getValue()).toBe("a");
+
+    stateSetterSpy.mockRestore();
+    rebuildSpy.mockRestore();
+    h.destroy();
+  });
+
+  it("selection-only state change does not rebuild EditorTextModel", () => {
+    const h = createTestHarness("abc");
+    const textModel = (
+      h.engine as unknown as { textModel: { rebuild: (doc: unknown) => void } }
+    ).textModel;
+    const stateSetterSpy = vi.spyOn(
+      Object.getPrototypeOf(h.engine) as { state: unknown },
+      "state",
+      "set",
+    );
+    const rebuildSpy = vi.spyOn(textModel, "rebuild");
+
+    h.engine.setSelection({ start: 2, end: 2, affinity: "forward" });
+
+    expect(stateSetterSpy).toHaveBeenCalledTimes(1);
+    expect(rebuildSpy).toHaveBeenCalledTimes(0);
+    expect(h.engine.getValue()).toBe("abc");
+
+    stateSetterSpy.mockRestore();
+    rebuildSpy.mockRestore();
+    h.destroy();
+  });
+
+  it("simple typing operations rebuild EditorTextModel at most once per state change", () => {
+    const h = createTestHarness("abc");
+    const textModel = (
+      h.engine as unknown as { textModel: { rebuild: (doc: unknown) => void } }
+    ).textModel;
+    const stateSetterSpy = vi.spyOn(
+      Object.getPrototypeOf(h.engine) as { state: unknown },
+      "state",
+      "set",
+    );
+    const rebuildSpy = vi.spyOn(textModel, "rebuild");
+
+    const assertSingleTypingStateChange = (
+      action: () => void,
+      expectedValue: string,
+    ): void => {
+      stateSetterSpy.mockClear();
+      rebuildSpy.mockClear();
+
+      action();
+
+      expect(stateSetterSpy.mock.calls.length).toBeLessThanOrEqual(1);
+      expect(rebuildSpy.mock.calls.length).toBeLessThanOrEqual(1);
+      expect(stateSetterSpy).toHaveBeenCalledTimes(1);
+      expect(rebuildSpy).toHaveBeenCalledTimes(1);
+      expect(h.engine.getValue()).toBe(expectedValue);
+    };
+
+    const dispatchBeforeInput = (inputType: string) => {
+      h.contentRoot.focus();
+      const event = new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType,
+      });
+      h.contentRoot.dispatchEvent(event);
+    };
+
+    h.engine.setSelection({ start: 3, end: 3, affinity: "forward" });
+    stateSetterSpy.mockClear();
+    rebuildSpy.mockClear();
+    assertSingleTypingStateChange(() => h.engine.insertText("x"), "abcx");
+
+    assertSingleTypingStateChange(
+      () => dispatchBeforeInput("deleteContentBackward"),
+      "abc",
+    );
+
+    h.engine.setSelection({ start: 0, end: 0, affinity: "forward" });
+    stateSetterSpy.mockClear();
+    rebuildSpy.mockClear();
+    assertSingleTypingStateChange(
+      () => dispatchBeforeInput("deleteContentForward"),
+      "bc",
+    );
+
+    h.engine.setSelection({ start: 0, end: 1, affinity: "forward" });
+    stateSetterSpy.mockClear();
+    rebuildSpy.mockClear();
+    assertSingleTypingStateChange(() => h.engine.insertText("A"), "Ac");
+
+    stateSetterSpy.mockRestore();
+    rebuildSpy.mockRestore();
     h.destroy();
   });
 

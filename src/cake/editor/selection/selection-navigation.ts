@@ -1,6 +1,5 @@
 import type { Selection } from "../../core/types";
 import type { LayoutModel, LayoutRow, LineInfo } from "./selection-layout";
-import { resolveOffsetToLine } from "./selection-layout";
 
 type Affinity = "forward" | "backward";
 
@@ -145,6 +144,10 @@ export function moveSelectionVertically(params: {
   lines: LineInfo[];
   layout: LayoutModel;
   selection: Selection;
+  resolveOffsetToLine: (offset: number) => {
+    lineIndex: number;
+    offsetInLine: number;
+  };
   direction: "up" | "down";
   goalX: number | null;
   focusRowIndex?: number;
@@ -160,7 +163,7 @@ export function moveSelectionVertically(params: {
 
   const affinity = resolveSelectionAffinity(params.selection);
   const { anchor, focus } = resolveSelectionAnchorAndFocus(params.selection);
-  const focusResolved = resolveOffsetToLine(lines, focus);
+  const focusResolved = params.resolveOffsetToLine(focus);
   const focusLineLayout = layout.lines[focusResolved.lineIndex];
   if (!focusLineLayout) {
     return null;

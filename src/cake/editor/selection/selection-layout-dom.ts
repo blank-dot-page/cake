@@ -6,7 +6,7 @@ import type {
   LineInfo,
   LineLayout,
 } from "./selection-layout";
-import { buildLayoutModel, getLineOffsets } from "./selection-layout";
+import { buildLayoutModel } from "./selection-layout";
 
 export function toLayoutRect(params: {
   rect: DOMRect;
@@ -509,8 +509,6 @@ export function measureLayoutModelRangeFromDom(params: {
     clampedStart,
     Math.min(params.endLineIndex, params.lines.length - 1),
   );
-  const lineOffsets = getLineOffsets(params.lines);
-  let lineStartOffset = lineOffsets[clampedStart] ?? 0;
 
   const layouts: LineLayout[] = [];
   for (let lineIndex = clampedStart; lineIndex <= clampedEnd; lineIndex += 1) {
@@ -527,13 +525,12 @@ export function measureLayoutModelRangeFromDom(params: {
     });
     layouts.push({
       lineIndex: lineInfo.lineIndex,
-      lineStartOffset,
+      lineStartOffset: lineInfo.lineStartOffset,
       lineLength: lineInfo.cursorLength,
       lineHasNewline: lineInfo.hasNewline,
       lineBox: measurement.lineBox,
       rows: measurement.rows,
     });
-    lineStartOffset += lineInfo.cursorLength + (lineInfo.hasNewline ? 1 : 0);
   }
 
   return { container: measurer.container, lines: layouts };

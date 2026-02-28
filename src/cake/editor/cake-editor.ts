@@ -10,6 +10,7 @@ import {
   type SerializeInlineResult,
   type Runtime,
   type RuntimeState,
+  type StructuralReparsePolicy,
   type ToggleInlineSpec,
   createRuntimeFromRegistry,
   type DomBlockRenderer,
@@ -19,7 +20,11 @@ import {
   type EditResult,
 } from "../core/runtime";
 import type { CakeExtension, CakeUIComponent } from "./extension-types";
-import { renderDocContent } from "../dom/render";
+import {
+  renderDocContent,
+  type DirtyCursorRange,
+  type RenderSnapshot,
+} from "../dom/render";
 import { applyDomSelection, readDomSelection } from "../dom/dom-selection";
 import type { DomMap } from "../dom/dom-map";
 import { bundledExtensions } from "../extensions";
@@ -27,22 +32,16 @@ import {
   getCaretRect as getDomCaretRect,
   getSelectionGeometry,
 } from "./selection/selection-geometry-dom";
-import {
-  getDocLines,
-  getLineOffsets,
-  resolveOffsetToLine,
-} from "./selection/selection-layout";
-import {
-  cursorOffsetToVisibleOffset,
-  getVisibleText,
-  visibleOffsetToCursorOffset,
-} from "./selection/visible-text";
 import type { SelectionRect } from "./selection/selection-geometry";
 import {
   hitTestFromLayout,
   measureLayoutModelFromDom,
 } from "./selection/selection-layout-dom";
 import { moveSelectionVertically as moveSelectionVerticallyInLayout } from "./selection/selection-navigation";
+import {
+  EditorTextModel,
+  type LineInfo,
+} from "./internal/editor-text-model";
 import { isMacPlatform } from "../shared/platform";
 import { graphemeCount, graphemeSegments } from "../shared/segmenter";
 import {
@@ -93,6 +92,67 @@ const defaultSelection: Selection = { start: 0, end: 0, affinity: "forward" };
 const COMPOSITION_COMMIT_CLEAR_DELAY_MS = 50;
 const HISTORY_GROUPING_INTERVAL_MS = 500;
 const MAX_UNDO_STACK_SIZE = 100;
+
+type RenderStateSnapshot = {
+  source: string;
+  map: RuntimeState["map"];
+};
+
+function computeDirtyCursorRange(
+  previous: RenderStateSnapshot | null,
+  next: RuntimeState,
+): DirtyCursorRange | null {
+  if (!previous) {
+    return null;
+  }
+
+  const prevSource = previous.source;
+  const nextSource = next.source;
+
+  if (prevSource === nextSource) {
+    return null;
+  }
+
+  const prevLength = prevSource.length;
+  const nextLength = nextSource.length;
+  let prefix = 0;
+
+  while (
+    prefix < prevLength &&
+    prefix < nextLength &&
+    prevSource.charCodeAt(prefix) === nextSource.charCodeAt(prefix)
+  ) {
+    prefix += 1;
+  }
+
+  let prevSuffix = prevLength;
+  let nextSuffix = nextLength;
+  while (
+    prevSuffix > prefix &&
+    nextSuffix > prefix &&
+    prevSource.charCodeAt(prevSuffix - 1) ===
+      nextSource.charCodeAt(nextSuffix - 1)
+  ) {
+    prevSuffix -= 1;
+    nextSuffix -= 1;
+  }
+
+  const previousStart = previous.map.sourceToCursor(prefix, "forward").cursorOffset;
+  const previousEnd = previous.map.sourceToCursor(prevSuffix, "backward").cursorOffset;
+  const nextStart = next.map.sourceToCursor(prefix, "forward").cursorOffset;
+  const nextEnd = next.map.sourceToCursor(nextSuffix, "backward").cursorOffset;
+
+  return {
+    previous: {
+      start: previousStart,
+      end: previousEnd,
+    },
+    next: {
+      start: nextStart,
+      end: nextEnd,
+    },
+  };
+}
 
 function removeFromArray<T>(arr: T[], value: T) {
   const index = arr.indexOf(value);
@@ -156,6 +216,7 @@ export class CakeEditor {
       state: RuntimeState,
     ) => EditResult | EditCommand | null
   > = [];
+  private structuralReparsePolicies: StructuralReparsePolicy[] = [];
   private keybindings: KeyBinding[] = [];
   private keyDownInterceptors: Array<(event: KeyboardEvent) => boolean> = [];
   private onPasteTextHandlers: Array<
@@ -166,6 +227,7 @@ export class CakeEditor {
   private domBlockRenderers: DomBlockRenderer[] = [];
   private uiComponents: CakeUIComponent[] = [];
   private extensionDisposers: Array<() => void> = [];
+  private textModel = new EditorTextModel();
   private _state!: RuntimeState;
 
   private get state(): RuntimeState {
@@ -173,7 +235,11 @@ export class CakeEditor {
   }
 
   private set state(value: RuntimeState) {
+    const previousDoc = this._state?.doc;
     this._state = value;
+    if (previousDoc !== value.doc) {
+      this.textModel.rebuild(value.doc);
+    }
   }
   private contentRoot: HTMLElement | null = null;
   private domMap: DomMap | null = null;
@@ -228,6 +294,8 @@ export class CakeEditor {
   private lastFocusRect: SelectionRect | null = null;
   private verticalNavGoalX: number | null = null;
   private lastRenderPerf: RenderPerf | null = null;
+  private renderSnapshot: RenderSnapshot | null = null;
+  private lastRenderedState: RenderStateSnapshot | null = null;
   private history: HistoryState = {
     undoStack: [],
     redoStack: [],
@@ -357,6 +425,7 @@ export class CakeEditor {
       normalizeBlockFns: this.normalizeBlockFns,
       normalizeInlineFns: this.normalizeInlineFns,
       onEditFns: this.onEditFns,
+      structuralReparsePolicies: this.structuralReparsePolicies,
       domInlineRenderers: this.domInlineRenderers,
       domBlockRenderers: this.domBlockRenderers,
     });
@@ -483,6 +552,11 @@ export class CakeEditor {
     return () => removeFromArray(this.onEditFns, fn);
   }
 
+  registerStructuralReparsePolicy(fn: StructuralReparsePolicy) {
+    this.structuralReparsePolicies.push(fn);
+    return () => removeFromArray(this.structuralReparsePolicies, fn);
+  }
+
   registerOnPasteText(
     fn: (text: string, state: RuntimeState) => EditCommand | null,
   ) {
@@ -578,16 +652,32 @@ export class CakeEditor {
   }
 
   getText() {
-    const lines = getDocLines(this.state.doc);
-    return getVisibleText(lines);
+    return this.textModel.getVisibleText();
   }
 
   getTextSelection() {
-    const lines = getDocLines(this.state.doc);
     return {
-      start: cursorOffsetToVisibleOffset(lines, this.state.selection.start),
-      end: cursorOffsetToVisibleOffset(lines, this.state.selection.end),
+      start: this.textModel.cursorOffsetToVisibleOffset(
+        this.state.selection.start,
+      ),
+      end: this.textModel.cursorOffsetToVisibleOffset(this.state.selection.end),
     };
+  }
+
+  private rebuildTextModelFallback(): void {
+    // Single fallback branch for complex cases where cursor/visible mapping misses.
+    this.textModel.rebuild(this.state.doc);
+  }
+
+  private visibleOffsetToCursorOffset(
+    visibleOffset: number,
+  ): number | null {
+    const resolved = this.textModel.visibleOffsetToCursorOffset(visibleOffset);
+    if (resolved !== null) {
+      return resolved;
+    }
+    this.rebuildTextModelFallback();
+    return this.textModel.visibleOffsetToCursorOffset(visibleOffset);
   }
 
   getActiveMarks(): string[] {
@@ -1039,9 +1129,8 @@ export class CakeEditor {
   }
 
   setTextSelection(selection: { start: number; end: number }) {
-    const lines = getDocLines(this.state.doc);
-    const start = visibleOffsetToCursorOffset(lines, selection.start);
-    const end = visibleOffsetToCursorOffset(lines, selection.end);
+    const start = this.visibleOffsetToCursorOffset(selection.start);
+    const end = this.visibleOffsetToCursorOffset(selection.end);
     if (start === null || end === null) {
       return;
     }
@@ -1055,29 +1144,18 @@ export class CakeEditor {
   }
 
   getTextBeforeCursor(maxChars = Number.POSITIVE_INFINITY) {
-    const text = this.getText();
-    const { start } = this.getTextSelection();
-    const cursor = Math.max(0, Math.min(start, text.length));
-    const length = Math.max(0, maxChars);
-    return text.slice(Math.max(0, cursor - length), cursor);
+    return this.textModel.getTextBeforeCursor(this.state.selection, maxChars);
   }
 
   getTextAroundCursor(before: number, after: number) {
-    const text = this.getText();
-    const { start } = this.getTextSelection();
-    const cursor = Math.max(0, Math.min(start, text.length));
-    const beforeLength = Math.max(0, before);
-    const afterLength = Math.max(0, after);
-    const beforeText = text.slice(Math.max(0, cursor - beforeLength), cursor);
-    const afterText = text.slice(
-      cursor,
-      Math.min(text.length, cursor + afterLength),
-    );
-    return { before: beforeText, after: afterText };
+    return this.textModel.getTextAroundCursor(this.state.selection, before, after);
+  }
+
+  getTextForCursorRange(start: number, end: number): string {
+    return this.textModel.getTextForCursorRange(start, end);
   }
 
   replaceTextBeforeCursor(chars: number, replacement: string) {
-    const lines = getDocLines(this.state.doc);
     const selection = this.state.selection;
     const focus =
       selection.start === selection.end
@@ -1085,10 +1163,10 @@ export class CakeEditor {
         : selection.affinity === "backward"
           ? selection.start
           : selection.end;
-    const focusVisible = cursorOffsetToVisibleOffset(lines, focus);
+    const focusVisible = this.textModel.cursorOffsetToVisibleOffset(focus);
     const length = Math.max(0, chars);
     const startVisible = Math.max(0, focusVisible - length);
-    const startCursor = visibleOffsetToCursorOffset(lines, startVisible);
+    const startCursor = this.visibleOffsetToCursorOffset(startVisible);
     if (startCursor === null) {
       return;
     }
@@ -1118,7 +1196,7 @@ export class CakeEditor {
   }
 
   getCursorLength() {
-    return this.state.map.cursorLength;
+    return this.textModel.getCursorLength();
   }
 
   getFocusRect() {
@@ -1162,12 +1240,13 @@ export class CakeEditor {
     if (!this.contentRoot) {
       return null;
     }
-    const lines = getDocLines(this.state.doc);
+    const lines = this.textModel.getLines();
     const geometry = getSelectionGeometry({
       root: this.contentRoot,
       container: this.container,
       docLines: lines,
       selection: this.state.selection,
+      resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
     });
     const focus = geometry.caretRect ?? geometry.focusRect;
     if (!focus) {
@@ -1205,12 +1284,13 @@ export class CakeEditor {
     if (!this.contentRoot) {
       return [];
     }
-    const lines = getDocLines(this.state.doc);
+    const lines = this.textModel.getLines();
     const geometry = getSelectionGeometry({
       root: this.contentRoot,
       container: this.container,
       docLines: lines,
       selection: this.state.selection,
+      resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
     });
     if (geometry.selectionRects.length === 0) {
       return [];
@@ -1237,7 +1317,7 @@ export class CakeEditor {
   }
 
   getLines() {
-    return getDocLines(this.state.doc);
+    return this.textModel.getLines();
   }
 
   getOverlayRoot() {
@@ -1733,10 +1813,18 @@ export class CakeEditor {
     if (perfEnabled) {
       renderStart = performance.now();
     }
-    const { content, map } = renderDocContent(
+    const dirtyCursorRange = computeDirtyCursorRange(
+      this.lastRenderedState,
+      this.state,
+    );
+    const { content, map, snapshot } = renderDocContent(
       this.state.doc,
       this.runtime.dom,
       this.contentRoot,
+      {
+        previousSnapshot: this.renderSnapshot,
+        dirtyCursorRange,
+      },
     );
     const existingChildren = Array.from(this.contentRoot.childNodes);
     const isManagedChild = (node: Node): boolean =>
@@ -1756,6 +1844,11 @@ export class CakeEditor {
       this.contentRoot.replaceChildren(...content, ...preservedChildren);
     }
     this.domMap = map;
+    this.renderSnapshot = snapshot;
+    this.lastRenderedState = {
+      source: this.state.source,
+      map: this.state.map,
+    };
     if (perfEnabled) {
       renderAndMapMs = performance.now() - renderStart;
     }
@@ -2063,9 +2156,9 @@ export class CakeEditor {
       return selection;
     }
 
-    const lines = getDocLines(this.state.doc);
-    const lineOffsets = getLineOffsets(lines);
-    const { lineIndex } = resolveOffsetToLine(lines, selection.start);
+    const lines = this.textModel.getLines();
+    const lineOffsets = this.textModel.getLineOffsets();
+    const { lineIndex } = this.textModel.resolveOffsetToLine(selection.start);
     const lineInfo = lines[lineIndex];
 
     if (!lineInfo || !lineInfo.isAtomic) {
@@ -2122,14 +2215,14 @@ export class CakeEditor {
       return null;
     }
 
-    const lines = getDocLines(this.state.doc);
+    const lines = this.textModel.getLines();
     const lineInfo = lines[lineIndex];
     if (!lineInfo || !lineInfo.isAtomic) {
       return null;
     }
 
     // Calculate the selection range for the entire line including newline
-    const lineOffsets = getLineOffsets(lines);
+    const lineOffsets = this.textModel.getLineOffsets();
     const lineStart = lineOffsets[lineIndex] ?? 0;
     const lineEnd =
       lineStart + lineInfo.cursorLength + (lineInfo.hasNewline ? 1 : 0);
@@ -2278,11 +2371,11 @@ export class CakeEditor {
       return;
     }
 
-    const lines = getDocLines(this.state.doc);
+    const lines = this.textModel.getLines();
 
     if (event.detail === 2) {
-      const lineOffsets = getLineOffsets(lines);
-      const { lineIndex } = resolveOffsetToLine(lines, hit.cursorOffset);
+      const lineOffsets = this.textModel.getLineOffsets();
+      const { lineIndex } = this.textModel.resolveOffsetToLine(hit.cursorOffset);
       const lineInfo = lines[lineIndex];
       if (lineInfo && lineInfo.cursorLength === 0) {
         const lineStart = lineOffsets[lineIndex] ?? 0;
@@ -2301,14 +2394,13 @@ export class CakeEditor {
         return;
       }
 
-      const visibleText = getVisibleText(lines);
-      const visibleOffset = cursorOffsetToVisibleOffset(
-        lines,
+      const visibleText = this.textModel.getVisibleText();
+      const visibleOffset = this.textModel.cursorOffsetToVisibleOffset(
         hit.cursorOffset,
       );
       const wordBounds = getWordBoundaries(visibleText, visibleOffset);
-      const start = visibleOffsetToCursorOffset(lines, wordBounds.start);
-      const end = visibleOffsetToCursorOffset(lines, wordBounds.end);
+      const start = this.visibleOffsetToCursorOffset(wordBounds.start);
+      const end = this.visibleOffsetToCursorOffset(wordBounds.end);
       if (start === null || end === null) {
         this.suppressSelectionChange = false;
         return;
@@ -2329,8 +2421,8 @@ export class CakeEditor {
     }
 
     if (event.detail >= 3) {
-      const lineOffsets = getLineOffsets(lines);
-      const { lineIndex } = resolveOffsetToLine(lines, hit.cursorOffset);
+      const lineOffsets = this.textModel.getLineOffsets();
+      const { lineIndex } = this.textModel.resolveOffsetToLine(hit.cursorOffset);
       const lineInfo = lines[lineIndex];
       if (!lineInfo) {
         this.suppressSelectionChange = false;
@@ -2820,8 +2912,7 @@ export class CakeEditor {
     if (this.compositionCommit && event.inputType === "insertText") {
       this.clearCompositionCommit();
       const domText = this.readDomText();
-      const lines = getDocLines(this.state.doc);
-      const modelText = getVisibleText(lines);
+      const modelText = this.textModel.getVisibleText();
       if (domText === modelText) {
         if (this.domMap) {
           const domSelection = readDomSelection(this.domMap);
@@ -2856,8 +2947,7 @@ export class CakeEditor {
     // we must not drop the edit; reconcile if the DOM diverged from the model.
     if (this.beforeInputHandled) {
       const domText = this.readDomText();
-      const lines = getDocLines(this.state.doc);
-      const modelText = getVisibleText(lines);
+      const modelText = this.textModel.getVisibleText();
       if (domText === modelText) {
         return;
       }
@@ -3110,8 +3200,8 @@ export class CakeEditor {
     }
 
     const lineIndex = this.selectedAtomicLineIndex;
-    const lines = getDocLines(this.state.doc);
-    const lineOffsets = getLineOffsets(lines);
+    const lines = this.textModel.getLines();
+    const lineOffsets = this.textModel.getLineOffsets();
     const lineInfo = lines[lineIndex];
     if (!lineInfo || !lineInfo.isAtomic) {
       this.selectedAtomicLineIndex = null;
@@ -3163,8 +3253,8 @@ export class CakeEditor {
       return false;
     }
 
-    const lines = getDocLines(this.state.doc);
-    const lineOffsets = getLineOffsets(lines);
+    const lines = this.textModel.getLines();
+    const lineOffsets = this.textModel.getLineOffsets();
     const lineIndex = lineOffsets.findIndex(
       (offset) => offset === selection.start,
     );
@@ -3210,8 +3300,14 @@ export class CakeEditor {
     const newSource = sourceLines.join("\n");
 
     const nextState = this.runtime.createState(newSource);
-    const nextOffsets = getLineOffsets(getDocLines(nextState.doc));
-    const cursorPos = nextOffsets[swapA] ?? 0;
+    let lineStartSource = 0;
+    for (let index = 0; index < swapA; index += 1) {
+      lineStartSource += (sourceLines[index]?.length ?? 0) + 1;
+    }
+    const cursorPos = nextState.map.sourceToCursor(
+      lineStartSource,
+      "forward",
+    ).cursorOffset;
 
     this.recordHistory("delete-backward");
     this.state = {
@@ -3273,7 +3369,7 @@ export class CakeEditor {
     if (!this.contentRoot) {
       return null;
     }
-    const lines = getDocLines(this.state.doc);
+    const lines = this.textModel.getLines();
     const layout = measureLayoutModelFromDom({
       lines,
       root: this.contentRoot,
@@ -3311,6 +3407,7 @@ export class CakeEditor {
         layout,
         offset: currentPos,
         affinity: currentAffinity,
+        resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
       });
 
       // Arrow left at start of visual row (not at document start):
@@ -3327,6 +3424,7 @@ export class CakeEditor {
           layout,
           offset: currentPos,
           affinity: "backward",
+          resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
         });
         // If backward affinity puts us on a different row, just change affinity
         if (
@@ -3350,6 +3448,7 @@ export class CakeEditor {
           layout,
           offset: currentPos,
           affinity: "forward",
+          resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
         });
         // If forward affinity puts us on a different row, just change affinity
         if (
@@ -3373,8 +3472,8 @@ export class CakeEditor {
     direction: "forward" | "backward",
   ): number | null {
     const cursorLength = this.state.map.cursorLength;
-    const lines = getDocLines(this.state.doc);
-    const lineOffsets = getLineOffsets(lines);
+    const lines = this.textModel.getLines();
+    const lineOffsets = this.textModel.getLineOffsets();
 
     let nextPos: number;
     if (direction === "forward") {
@@ -3389,7 +3488,8 @@ export class CakeEditor {
       nextPos = offset - 1;
     }
 
-    const { lineIndex: nextLineIndex } = resolveOffsetToLine(lines, nextPos);
+    const { lineIndex: nextLineIndex } =
+      this.textModel.resolveOffsetToLine(nextPos);
     const nextLineInfo = lines[nextLineIndex];
 
     if (nextLineInfo && nextLineInfo.isAtomic) {
@@ -3424,7 +3524,7 @@ export class CakeEditor {
     }
 
     const { focus } = resolveSelectionAnchorAndFocus(this.state.selection);
-    const focusResolved = resolveOffsetToLine(lines, focus);
+    const focusResolved = this.textModel.resolveOffsetToLine(focus);
     const focusLineLayout = layout.lines[focusResolved.lineIndex];
     let focusRowIndex: number | undefined = undefined;
 
@@ -3456,6 +3556,7 @@ export class CakeEditor {
       lines,
       layout,
       selection: this.state.selection,
+      resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
       direction,
       goalX: this.verticalNavGoalX,
       focusRowIndex,
@@ -3468,7 +3569,7 @@ export class CakeEditor {
           return null;
         }
 
-        const resolved = resolveOffsetToLine(lines, hit.cursorOffset);
+        const resolved = this.textModel.resolveOffsetToLine(hit.cursorOffset);
         const lineInfo = lines[resolved.lineIndex];
         const lineElement = this.contentRoot.querySelector(
           `[data-line-index="${resolved.lineIndex}"]`,
@@ -3519,6 +3620,7 @@ export class CakeEditor {
       layout,
       offset: focus,
       affinity: "backward",
+      resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
     });
     let target = rowStart;
     if (focus === rowStart && focus > 0) {
@@ -3527,6 +3629,7 @@ export class CakeEditor {
         layout,
         offset: focus - 1,
         affinity: "backward",
+        resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
       });
       target = previous.rowStart;
     }
@@ -3550,6 +3653,7 @@ export class CakeEditor {
       layout,
       offset: focus,
       affinity: "forward",
+      resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
     });
     let target = rowEnd;
     if (focus === rowEnd && focus < this.state.map.cursorLength) {
@@ -3558,6 +3662,7 @@ export class CakeEditor {
         layout,
         offset: focus + 1,
         affinity: "forward",
+        resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
       });
       target = next.rowEnd;
     }
@@ -3578,6 +3683,7 @@ export class CakeEditor {
       layout,
       offset: focus,
       affinity,
+      resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
     });
     let target = rowStart;
     if (focus === rowStart && focus > 0) {
@@ -3586,6 +3692,7 @@ export class CakeEditor {
         layout,
         offset: focus - 1,
         affinity: "backward",
+        resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
       });
       target = previous.rowStart;
     }
@@ -3610,6 +3717,7 @@ export class CakeEditor {
       layout,
       offset: focus,
       affinity,
+      resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
     });
     let target = rowEnd;
     if (focus === rowEnd && focus < this.state.map.cursorLength) {
@@ -3618,6 +3726,7 @@ export class CakeEditor {
         layout,
         offset: focus + 1,
         affinity: "forward",
+        resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
       });
       target = next.rowEnd;
     }
@@ -3641,8 +3750,8 @@ export class CakeEditor {
     if (selection.start === selection.end) {
       return null;
     }
-    const lines = getDocLines(this.state.doc);
-    const lineOffsets = getLineOffsets(lines);
+    const lines = this.textModel.getLines();
+    const lineOffsets = this.textModel.getLineOffsets();
     const selStart = Math.min(selection.start, selection.end);
     const selEnd = Math.max(selection.start, selection.end);
     const fullLineInfo = this.detectFullLineSelection(
@@ -3708,24 +3817,22 @@ export class CakeEditor {
   }
 
   private moveOffsetByWord(offset: number, direction: Affinity): number {
-    const lines = getDocLines(this.state.doc);
-    const visibleText = getVisibleText(lines);
+    const visibleText = this.textModel.getVisibleText();
     if (!visibleText) {
       return 0;
     }
-    const visibleOffset = cursorOffsetToVisibleOffset(lines, offset);
+    const visibleOffset = this.textModel.cursorOffsetToVisibleOffset(offset);
     const nextVisibleOffset =
       direction === "backward"
         ? prevWordBreak(visibleText, visibleOffset)
         : nextWordBreak(visibleText, visibleOffset);
-    return visibleOffsetToCursorOffset(lines, nextVisibleOffset) ?? offset;
+    return this.visibleOffsetToCursorOffset(nextVisibleOffset) ?? offset;
   }
 
   private deleteToVisualRowStart() {
     const selection = this.state.selection;
-    const lines = getDocLines(this.state.doc);
-    const { lineIndex, offsetInLine } = resolveOffsetToLine(
-      lines,
+    const lines = this.textModel.getLines();
+    const { lineIndex, offsetInLine } = this.textModel.resolveOffsetToLine(
       selection.start,
     );
     const lineInfo = lines[lineIndex];
@@ -3733,7 +3840,7 @@ export class CakeEditor {
       return;
     }
 
-    const lineOffsets = getLineOffsets(lines);
+    const lineOffsets = this.textModel.getLineOffsets();
     const lineStart = lineOffsets[lineIndex] ?? 0;
     const isLineStart = offsetInLine === 0;
     const isCollapsed = selection.start === selection.end;
@@ -3761,6 +3868,7 @@ export class CakeEditor {
       layout,
       offset: selection.start,
       affinity: "backward",
+      resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
     });
 
     const isVisualRowStart = selection.start === rowStart;
@@ -3780,17 +3888,14 @@ export class CakeEditor {
 
   private handleIndent() {
     const selection = this.state.selection;
-    const lines = getDocLines(this.state.doc);
+    const lines = this.textModel.getLines();
     const TAB_SPACES = "  ";
 
     const isCollapsed = selection.start === selection.end;
 
-    const startLineIndex = resolveOffsetToLine(
-      lines,
-      selection.start,
-    ).lineIndex;
-    const endLineIndex = resolveOffsetToLine(
-      lines,
+    const startLineIndex =
+      this.textModel.resolveOffsetToLine(selection.start).lineIndex;
+    const endLineIndex = this.textModel.resolveOffsetToLine(
       Math.max(selection.start, selection.end - 1),
     ).lineIndex;
 
@@ -3817,7 +3922,7 @@ export class CakeEditor {
     // insert at caret position. Otherwise indent at line start.
     if (isCollapsed) {
       // Check if caret is in middle/end of line (not at start)
-      const lineOffsets = getLineOffsets(lines);
+      const lineOffsets = this.textModel.getLineOffsets();
       const lineStart = lineOffsets[startLineIndex] ?? 0;
       const offsetInLine = selection.start - lineStart;
       if (offsetInLine > 0) {
@@ -3877,15 +3982,12 @@ export class CakeEditor {
 
   private handleOutdent() {
     const selection = this.state.selection;
-    const lines = getDocLines(this.state.doc);
+    const lines = this.textModel.getLines();
     const TAB_SPACES = "  ";
 
-    const startLineIndex = resolveOffsetToLine(
-      lines,
-      selection.start,
-    ).lineIndex;
-    const endLineIndex = resolveOffsetToLine(
-      lines,
+    const startLineIndex =
+      this.textModel.resolveOffsetToLine(selection.start).lineIndex;
+    const endLineIndex = this.textModel.resolveOffsetToLine(
       Math.max(selection.start, selection.end - 1),
     ).lineIndex;
 
@@ -3997,8 +4099,7 @@ export class CakeEditor {
    */
   private reconcileDomChanges(selection: Selection): boolean {
     const domText = this.readDomText();
-    const lines = getDocLines(this.state.doc);
-    const modelText = getVisibleText(lines);
+    const modelText = this.textModel.getVisibleText();
 
     if (domText === modelText) {
       return false;
@@ -4031,9 +4132,8 @@ export class CakeEditor {
     );
 
     // Convert visible text offsets to cursor offsets
-    const cursorStart = visibleOffsetToCursorOffset(lines, prefixLen);
-    const cursorEnd = visibleOffsetToCursorOffset(
-      lines,
+    const cursorStart = this.visibleOffsetToCursorOffset(prefixLen);
+    const cursorEnd = this.visibleOffsetToCursorOffset(
       modelText.length - suffixLen,
     );
 
@@ -4415,12 +4515,13 @@ export class CakeEditor {
         return;
       }
 
-      const lines = getDocLines(this.state.doc);
+      const lines = this.textModel.getLines();
       const geometry = getSelectionGeometry({
         root: this.contentRoot,
         container: this.container,
         docLines: lines,
         selection,
+        resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
       });
       this.lastFocusRect = geometry.focusRect;
       this.syncSelectionRects(geometry.selectionRects);
@@ -4436,12 +4537,13 @@ export class CakeEditor {
     }
     this.contentRoot.classList.remove("cake-touch-mode");
 
-    const lines = getDocLines(this.state.doc);
+    const lines = this.textModel.getLines();
     const geometry = getSelectionGeometry({
       root: this.contentRoot,
       container: this.container,
       docLines: lines,
       selection: this.state.selection,
+      resolveOffsetToLine: (offset) => this.textModel.resolveOffsetToLine(offset),
     });
     this.lastFocusRect = geometry.focusRect;
     this.syncSelectionRects(geometry.selectionRects);
@@ -4658,7 +4760,7 @@ export class CakeEditor {
       return null;
     }
 
-    const lines = getDocLines(this.state.doc);
+    const lines = this.textModel.getLines();
     const hit = hitTestFromLayout({
       clientX,
       clientY,
@@ -4731,10 +4833,10 @@ export class CakeEditor {
         blockElement?.getAttribute("data-line-index") ?? null;
       if (lineIndexAttr !== null) {
         const lineIndex = Number.parseInt(lineIndexAttr, 10);
-        const lines = getDocLines(this.state.doc);
+        const lines = this.textModel.getLines();
         const lineInfo = lines[lineIndex];
         if (lineInfo?.isAtomic) {
-          const lineOffsets = getLineOffsets(lines);
+          const lineOffsets = this.textModel.getLineOffsets();
           const lineStart = lineOffsets[lineIndex] ?? 0;
           const lineEnd =
             lineStart + lineInfo.cursorLength + (lineInfo.hasNewline ? 1 : 0);
@@ -4851,8 +4953,8 @@ export class CakeEditor {
     }
 
     // Check if this is a full line selection (required for line drag)
-    const lines = getDocLines(this.state.doc);
-    const lineOffsets = getLineOffsets(lines);
+    const lines = this.textModel.getLines();
+    const lineOffsets = this.textModel.getLineOffsets();
 
     // Find which line the selection starts on
     // We need to handle the case where selStart might be at the newline position
@@ -5187,7 +5289,7 @@ export class CakeEditor {
   private detectFullLineSelection(
     selStart: number,
     selEnd: number,
-    lines: ReturnType<typeof getDocLines>,
+    lines: readonly LineInfo[],
     lineOffsets: readonly number[],
   ): { startLineIndex: number; endLineIndex: number } | null {
     // Find which line the selection starts on
@@ -5337,10 +5439,10 @@ export class CakeEditor {
     }
 
     // Get the plain text and source text for the selection
-    const lines = getDocLines(this.state.doc);
-    const visibleText = getVisibleText(lines);
-    const visibleStart = cursorOffsetToVisibleOffset(lines, start);
-    const visibleEnd = cursorOffsetToVisibleOffset(lines, end);
+    const lines = this.textModel.getLines();
+    const visibleText = this.textModel.getVisibleText();
+    const visibleStart = this.textModel.cursorOffsetToVisibleOffset(start);
+    const visibleEnd = this.textModel.cursorOffsetToVisibleOffset(end);
     const plainText = visibleText.slice(visibleStart, visibleEnd);
 
     // Get source text for the selection (use backward/forward to capture full markdown syntax)
@@ -5412,10 +5514,10 @@ export class CakeEditor {
       if (selection.start !== selection.end) {
         const start = Math.min(selection.start, selection.end);
         const end = Math.max(selection.start, selection.end);
-        const lines = getDocLines(this.state.doc);
-        const visibleText = getVisibleText(lines);
-        const visibleStart = cursorOffsetToVisibleOffset(lines, start);
-        const visibleEnd = cursorOffsetToVisibleOffset(lines, end);
+        const lines = this.textModel.getLines();
+        const visibleText = this.textModel.getVisibleText();
+        const visibleStart = this.textModel.cursorOffsetToVisibleOffset(start);
+        const visibleEnd = this.textModel.cursorOffsetToVisibleOffset(end);
         const plainText = visibleText.slice(visibleStart, visibleEnd);
         const cursorSourceMap = this.state.map;
         const sourceStart = cursorSourceMap.cursorToSource(start, "backward");
@@ -5440,8 +5542,8 @@ export class CakeEditor {
       }
 
       // Check if this is a full-line selection - if so, use line-level move
-      const lines = getDocLines(this.state.doc);
-      const lineOffsets = getLineOffsets(lines);
+      const lines = this.textModel.getLines();
+      const lineOffsets = this.textModel.getLineOffsets();
       const fullLineInfo = this.detectFullLineSelection(
         dragStart,
         dragEnd,
@@ -5642,16 +5744,17 @@ function findTextNodeAtOrAfter(
 }
 
 function getVisualRowBoundaries(params: {
-  lines: ReturnType<typeof getDocLines>;
+  lines: readonly LineInfo[];
   layout: ReturnType<typeof measureLayoutModelFromDom>;
   offset: number;
   affinity: Affinity;
+  resolveOffsetToLine: (offset: number) => { lineIndex: number; offsetInLine: number };
 }): { rowStart: number; rowEnd: number } {
   const { lines, layout, offset, affinity } = params;
   if (!layout || layout.lines.length === 0) {
     return { rowStart: 0, rowEnd: 0 };
   }
-  const resolved = resolveOffsetToLine(lines, offset);
+  const resolved = params.resolveOffsetToLine(offset);
   const line = layout.lines[resolved.lineIndex];
   if (!line) {
     return { rowStart: 0, rowEnd: 0 };

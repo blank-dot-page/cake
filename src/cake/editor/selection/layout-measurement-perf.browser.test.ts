@@ -14,6 +14,7 @@ function createLineInfo(text: string, lineIndex: number): LineInfo {
   const cursorToCodeUnit = buildCursorToCodeUnit(text);
   return {
     lineIndex,
+    lineStartOffset: 0,
     text,
     cursorLength: text.length,
     hasNewline: false,

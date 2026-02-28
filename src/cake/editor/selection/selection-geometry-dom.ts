@@ -1,5 +1,5 @@
 import type { Selection } from "../../core/types";
-import { resolveOffsetToLine, type LineInfo } from "./selection-layout";
+import type { LineInfo } from "./selection-layout";
 import {
   createOffsetToXMeasurer,
   cursorOffsetToDomOffset,
@@ -27,6 +27,10 @@ export function getSelectionGeometry(params: {
   container: HTMLElement;
   docLines: LineInfo[];
   selection: Selection;
+  resolveOffsetToLine: (offset: number) => {
+    lineIndex: number;
+    offsetInLine: number;
+  };
 }): SelectionGeometry {
   const { root, container, docLines, selection } = params;
   const normalized =
@@ -39,8 +43,8 @@ export function getSelectionGeometry(params: {
         };
   const layout = shouldMeasureLayout(normalized)
     ? (() => {
-        const startLine = resolveOffsetToLine(docLines, normalized.start);
-        const endLine = resolveOffsetToLine(docLines, normalized.end);
+        const startLine = params.resolveOffsetToLine(normalized.start);
+        const endLine = params.resolveOffsetToLine(normalized.end);
         return measureLayoutModelRangeFromDom({
           lines: docLines,
           root,
@@ -52,7 +56,7 @@ export function getSelectionGeometry(params: {
     : null;
   const containerRect = container.getBoundingClientRect();
   const scroll = { top: container.scrollTop, left: container.scrollLeft };
-  const startLine = resolveOffsetToLine(docLines, normalized.start);
+  const startLine = params.resolveOffsetToLine(normalized.start);
   const hasSelection = normalized.start !== normalized.end;
 
   if (!hasSelection) {
@@ -104,7 +108,7 @@ export function getSelectionGeometry(params: {
   });
   const focusOffset =
     normalized.affinity === "backward" ? normalized.start : normalized.end;
-  const focusLine = resolveOffsetToLine(docLines, focusOffset);
+  const focusLine = params.resolveOffsetToLine(focusOffset);
   const focusLineElement = getLineElement(root, focusLine.lineIndex);
   let focusRect: SelectionRect | null = null;
 

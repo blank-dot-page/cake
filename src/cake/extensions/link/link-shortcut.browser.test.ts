@@ -12,6 +12,18 @@ const mod =
 
 const linkShortcut = { ...mod, shift: true };
 
+function getSelectionLink(contentRoot: HTMLElement): HTMLAnchorElement | null {
+  const selection = window.getSelection();
+  const focusNode = selection?.focusNode ?? null;
+  const focusElement =
+    focusNode instanceof Element ? focusNode : focusNode?.parentElement ?? null;
+  if (!focusElement || !contentRoot.contains(focusElement)) {
+    return null;
+  }
+  const link = focusElement.closest("a.cake-link");
+  return link instanceof HTMLAnchorElement ? link : null;
+}
+
 describe("link shortcut (Cmd+Shift+U)", () => {
   let harness: TestHarness | null = null;
 
@@ -132,16 +144,21 @@ describe("link shortcut (Cmd+Shift+U)", () => {
     // Visible text: "hello world"; place caret within "world"
     harness.engine.setSelection({ start: 7, end: 7, affinity: "forward" });
     await harness.focus();
+    await expect
+      .poll(() => getSelectionLink(harness!.contentRoot) !== null)
+      .toBe(true);
     await harness.pressKey("u", linkShortcut);
 
     await expect
       .poll(() => document.querySelector(".cake-link-popover"))
       .not.toBeNull();
     await expect
-      .poll(() => document.querySelector<HTMLInputElement>(".cake-link-input"))
-      .not.toBeNull();
-    const input = document.querySelector<HTMLInputElement>(".cake-link-input");
-    expect(input?.value).toBe("https://example.com");
+      .poll(
+        () =>
+          document.querySelector<HTMLInputElement>(".cake-link-input")?.value ??
+          null,
+      )
+      .toBe("https://example.com");
     expect(calls).toBe(0);
   });
 

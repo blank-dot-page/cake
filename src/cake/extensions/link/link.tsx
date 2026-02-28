@@ -6,11 +6,6 @@ import {
 import type { Inline } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 import { CakeLinkPopover } from "./link-popover";
-import { getDocLines } from "../../editor/selection/selection-layout";
-import {
-  cursorOffsetToVisibleOffset,
-  getVisibleText,
-} from "../../editor/selection/visible-text";
 import { ensureHttpsProtocol, isUrl } from "../../shared/url";
 import type { CakeEditor } from "../../editor/cake-editor";
 
@@ -518,11 +513,7 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
       const end = Math.max(selection.start, selection.end);
 
       if (start !== end) {
-        const lines = getDocLines(state.doc);
-        const visibleText = getVisibleText(lines);
-        const visibleStart = cursorOffsetToVisibleOffset(lines, start);
-        const visibleEnd = cursorOffsetToVisibleOffset(lines, end);
-        const selectedText = visibleText.slice(visibleStart, visibleEnd);
+        const selectedText = editor.getTextForCursorRange(start, end);
         const linkMarkdown = `[${selectedText}](${url})`;
         return { type: "insert", text: linkMarkdown };
       }

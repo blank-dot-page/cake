@@ -11,10 +11,15 @@ import type { CakeExtension } from "../editor/extension-types";
 export type { CakeExtension, CakeUIComponent } from "../editor/extension-types";
 import {
   CursorSourceBuilder,
+  createCompositeCursorSourceMap,
   type CursorSourceMap,
 } from "./mapping/cursor-source-map";
 import { graphemeSegments } from "../shared/segmenter";
 import type { DomRenderContext } from "../dom/types";
+import {
+  getEditorTextModelForDoc,
+  type StructuralLineInfo,
+} from "../editor/internal/editor-text-model";
 
 type BlockParseResult = { block: Block; nextPos: number };
 type InlineParseResult = { inline: Inline; nextPos: number };
@@ -41,6 +46,10 @@ export type StructuralEditCommand =
   | ApplyEditCommand
   | { type: "exit-block-wrapper" };
 
+export type StructuralReparsePolicy = (
+  command: StructuralEditCommand,
+) => boolean;
+
 /** Core edit commands handled by the runtime */
 export type CoreEditCommand =
   | StructuralEditCommand
@@ -51,7 +60,6 @@ export type CoreEditCommand =
 /** Base type for extension-defined commands */
 export type ExtensionCommand = {
   type: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 };
 
@@ -148,6 +156,11 @@ export type Runtime = {
   parse(source: string): Doc;
   serialize(doc: Doc): { source: string; map: CursorSourceMap };
   createState(source: string, selection?: Selection): RuntimeState;
+  createStateFromDoc(
+    doc: Doc,
+    selection?: Selection,
+    options?: { previousState?: RuntimeState; mode?: "incremental" | "full" },
+  ): RuntimeState;
   updateSelection(
     state: RuntimeState,
     selection: Selection,
@@ -203,6 +216,7 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
       state: RuntimeState,
     ) => EditResult | EditCommand | null
   > = [];
+  const structuralReparsePolicies: StructuralReparsePolicy[] = [];
   const domInlineRenderers: DomInlineRenderer[] = [];
   const domBlockRenderers: DomBlockRenderer[] = [];
 
@@ -301,6 +315,10 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
       onEditFns.push(fn);
       return () => removeFromArray(onEditFns, fn);
     },
+    registerStructuralReparsePolicy: (fn: StructuralReparsePolicy) => {
+      structuralReparsePolicies.push(fn);
+      return () => removeFromArray(structuralReparsePolicies, fn);
+    },
     registerOnPasteText: () => {
       return () => {};
     },
@@ -337,6 +355,7 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
     normalizeBlockFns,
     normalizeInlineFns,
     onEditFns,
+    structuralReparsePolicies,
     domInlineRenderers,
     domBlockRenderers,
   });
@@ -379,6 +398,7 @@ export function createRuntimeFromRegistry(registry: {
       state: RuntimeState,
     ) => EditResult | EditCommand | null
   >;
+  structuralReparsePolicies: StructuralReparsePolicy[];
   domInlineRenderers: DomInlineRenderer[];
   domBlockRenderers: DomBlockRenderer[];
 }): Runtime {
@@ -392,13 +412,55 @@ export function createRuntimeFromRegistry(registry: {
     normalizeBlockFns,
     normalizeInlineFns,
     onEditFns,
+    structuralReparsePolicies,
     domInlineRenderers,
     domBlockRenderers,
   } = registry;
   const isInclusiveAtEnd = (kind: string): boolean =>
     inclusiveAtEndByKind.get(kind) ?? true;
 
-  const context: ExtensionContext = {
+  type SerializedDocResult = { source: string; map: CursorSourceMap };
+  type TopLevelBlockSegment = {
+    block: Block;
+    source: string;
+    map: CursorSourceMap;
+    sourceLength: number;
+    cursorLength: number;
+  };
+  type SegmentedDocState = {
+    doc: Doc;
+    segments: TopLevelBlockSegment[];
+    cursorStarts: number[];
+    sourceStarts: number[];
+    totalCursorLength: number;
+    totalSourceLength: number;
+    source: string;
+    map: CursorSourceMap;
+  };
+
+  const removedBlockSentinel = Symbol("removed-block");
+  const removedInlineSentinel = Symbol("removed-inline");
+  type NormalizedBlockCacheValue = Block | typeof removedBlockSentinel;
+  type NormalizedInlineCacheValue = Inline | typeof removedInlineSentinel;
+
+  const normalizedDocCache = new WeakMap<Doc, Doc>();
+  const normalizedBlockCache = new WeakMap<Block, NormalizedBlockCacheValue>();
+  const normalizedInlineCache = new WeakMap<
+    Inline,
+    NormalizedInlineCacheValue
+  >();
+  const serializedDocCache = new WeakMap<Doc, SerializedDocResult>();
+  const serializedBlockCache = new WeakMap<Block, SerializeBlockResult>();
+  const serializedInlineCache = new WeakMap<Inline, SerializeInlineResult>();
+  const segmentedDocCache = new WeakMap<Doc, SegmentedDocState>();
+
+  const emptyCursorMap = new CursorSourceBuilder().build().map;
+  const emptySerialized: SerializeBlockResult = {
+    source: "",
+    map: emptyCursorMap,
+  };
+
+  const extensionContext: ExtensionContext = {
     parseInline: (source, start, end) => parseInlineRange(source, start, end),
     serializeInline: (inline) => serializeInline(inline),
     serializeBlock: (block) => serializeBlock(block),
@@ -406,13 +468,13 @@ export function createRuntimeFromRegistry(registry: {
 
   function parseBlockAt(source: string, start: number): BlockParseResult {
     for (const parseBlock of parseBlockFns) {
-      const result = parseBlock(source, start, context);
+      const result = parseBlock(source, start, extensionContext);
       if (result) {
         return result;
       }
     }
 
-    return parseLiteralBlock(source, start, context);
+    return parseLiteralBlock(source, start, extensionContext);
   }
 
   function parseInlineRange(
@@ -425,7 +487,7 @@ export function createRuntimeFromRegistry(registry: {
     while (pos < end) {
       let matched = false;
       for (const parseInline of parseInlineFns) {
-        const result = parseInline(source, pos, end, context);
+        const result = parseInline(source, pos, end, extensionContext);
         if (result) {
           inlines.push(result.inline);
           pos = result.nextPos;
@@ -465,6 +527,11 @@ export function createRuntimeFromRegistry(registry: {
   }
 
   function serialize(doc: Doc): { source: string; map: CursorSourceMap } {
+    const cached = serializedDocCache.get(doc);
+    if (cached) {
+      return cached;
+    }
+
     const builder = new CursorSourceBuilder();
     const blocks = doc.blocks;
     blocks.forEach((block, index) => {
@@ -475,32 +542,51 @@ export function createRuntimeFromRegistry(registry: {
       }
     });
 
-    return builder.build();
+    const serialized = builder.build();
+    serializedDocCache.set(doc, serialized);
+    return serialized;
   }
 
   function serializeBlock(block: Block): SerializeBlockResult {
+    const cached = serializedBlockCache.get(block);
+    if (cached) {
+      return cached;
+    }
+
     for (const serializeBlockFn of serializeBlockFns) {
-      const result = serializeBlockFn(block, context);
+      const result = serializeBlockFn(block, extensionContext);
       if (result) {
+        serializedBlockCache.set(block, result);
         return result;
       }
     }
 
     if (block.type === "paragraph") {
-      return serializeParagraph(block, serializeInline);
+      const result = serializeParagraph(block, (inline) => serializeInline(inline));
+      serializedBlockCache.set(block, result);
+      return result;
     }
 
     if (block.type === "block-wrapper") {
-      return serializeBlockWrapper(block, serializeBlock);
+      const result = serializeBlockWrapper(block, (child) => serializeBlock(child));
+      serializedBlockCache.set(block, result);
+      return result;
     }
 
-    return { source: "", map: new CursorSourceBuilder().build().map };
+    serializedBlockCache.set(block, emptySerialized);
+    return emptySerialized;
   }
 
   function serializeInline(inline: Inline): SerializeInlineResult {
+    const cached = serializedInlineCache.get(inline);
+    if (cached) {
+      return cached;
+    }
+
     for (const serializeInlineFn of serializeInlineFns) {
-      const result = serializeInlineFn(inline, context);
+      const result = serializeInlineFn(inline, extensionContext);
       if (result) {
+        serializedInlineCache.set(inline, result);
         return result;
       }
     }
@@ -508,53 +594,128 @@ export function createRuntimeFromRegistry(registry: {
     if (inline.type === "text") {
       const builder = new CursorSourceBuilder();
       builder.appendText(inline.text);
-      return builder.build();
+      const result = builder.build();
+      serializedInlineCache.set(inline, result);
+      return result;
     }
 
     if (inline.type === "inline-wrapper") {
-      return serializeInlineWrapper(inline, serializeInline);
+      const result = serializeInlineWrapper(inline, (child) =>
+        serializeInline(child),
+      );
+      serializedInlineCache.set(inline, result);
+      return result;
     }
 
-    return { source: "", map: new CursorSourceBuilder().build().map };
+    serializedInlineCache.set(inline, emptySerialized);
+    return emptySerialized;
   }
 
   function normalize(doc: Doc): Doc {
-    return {
-      type: "doc",
-      blocks: doc.blocks
-        .map((block) => normalizeBlock(block))
-        .filter((block): block is Block => block !== null),
-    };
+    const cached = normalizedDocCache.get(doc);
+    if (cached) {
+      return cached;
+    }
+
+    let changed = false;
+    const blocks: Block[] = [];
+
+    for (const block of doc.blocks) {
+      const normalized = normalizeBlock(block);
+      if (normalized === null) {
+        changed = true;
+        continue;
+      }
+      if (normalized !== block) {
+        changed = true;
+      }
+      blocks.push(normalized);
+    }
+
+    const normalized = changed
+      ? ({
+          type: "doc",
+          blocks,
+        } satisfies Doc)
+      : doc;
+
+    normalizedDocCache.set(doc, normalized);
+    if (normalized !== doc) {
+      normalizedDocCache.set(normalized, normalized);
+    }
+
+    return normalized;
   }
 
   function normalizeBlock(block: Block): Block | null {
+    const cached = normalizedBlockCache.get(block);
+    if (cached !== undefined) {
+      return cached === removedBlockSentinel ? null : cached;
+    }
+
     let next = block;
     for (const normalizeBlockFn of normalizeBlockFns) {
       const result = normalizeBlockFn(next);
       if (result === null) {
+        normalizedBlockCache.set(block, removedBlockSentinel);
         return null;
       }
       next = result;
     }
 
     if (next.type === "paragraph") {
-      return {
+      let changed = next !== block;
+      const content: Inline[] = [];
+      for (const inline of next.content) {
+        const normalizedInline = normalizeInline(inline);
+        if (normalizedInline === null) {
+          changed = true;
+          continue;
+        }
+        if (normalizedInline !== inline) {
+          changed = true;
+        }
+        content.push(normalizedInline);
+      }
+      if (!changed) {
+        normalizedBlockCache.set(block, next);
+        return next;
+      }
+      const normalized: Block = {
         ...next,
-        content: next.content
-          .map((inline) => normalizeInline(inline))
-          .filter((inline): inline is Inline => inline !== null),
+        content,
       };
+      normalizedBlockCache.set(block, normalized);
+      return normalized;
     }
 
     if (next.type === "block-wrapper") {
-      return {
+      let changed = next !== block;
+      const blocks: Block[] = [];
+      for (const child of next.blocks) {
+        const normalizedChild = normalizeBlock(child);
+        if (normalizedChild === null) {
+          changed = true;
+          continue;
+        }
+        if (normalizedChild !== child) {
+          changed = true;
+        }
+        blocks.push(normalizedChild);
+      }
+      if (!changed) {
+        normalizedBlockCache.set(block, next);
+        return next;
+      }
+      const normalized: Block = {
         ...next,
-        blocks: next.blocks
-          .map((child) => normalizeBlock(child))
-          .filter((child): child is Block => child !== null),
+        blocks,
       };
+      normalizedBlockCache.set(block, normalized);
+      return normalized;
     }
 
+    normalizedBlockCache.set(block, next);
     return next;
   }
 
@@ -571,8 +732,14 @@ export function createRuntimeFromRegistry(registry: {
   }
 
   function normalizeInline(inline: Inline): Inline | null {
+    const cached = normalizedInlineCache.get(inline);
+    if (cached !== undefined) {
+      return cached === removedInlineSentinel ? null : cached;
+    }
+
     const pre = applyInlineNormalizers(inline);
     if (!pre) {
+      normalizedInlineCache.set(inline, removedInlineSentinel);
       return null;
     }
 
@@ -586,7 +753,242 @@ export function createRuntimeFromRegistry(registry: {
       };
     }
 
-    return applyInlineNormalizers(next);
+    const normalized = applyInlineNormalizers(next);
+    normalizedInlineCache.set(inline, normalized ?? removedInlineSentinel);
+    return normalized;
+  }
+
+  function createTopLevelBlockSegment(block: Block): TopLevelBlockSegment {
+    const serialized = serializeBlock(block);
+    return {
+      block,
+      source: serialized.source,
+      map: serialized.map,
+      sourceLength: serialized.source.length,
+      cursorLength: serialized.map.cursorLength,
+    };
+  }
+
+  function hasSharedTopLevelBlockIdentity(
+    previousDoc: Doc,
+    nextDoc: Doc,
+  ): boolean {
+    if (previousDoc === nextDoc) {
+      return true;
+    }
+    if (previousDoc.blocks.length === 0 || nextDoc.blocks.length === 0) {
+      return false;
+    }
+
+    const previousBlocks = new Set(previousDoc.blocks);
+    return nextDoc.blocks.some((block) => previousBlocks.has(block));
+  }
+
+  function buildTopLevelSegments(
+    doc: Doc,
+    previous?: SegmentedDocState,
+  ): TopLevelBlockSegment[] {
+    const previousByBlock = new Map<Block, TopLevelBlockSegment>();
+    if (previous) {
+      for (const segment of previous.segments) {
+        previousByBlock.set(segment.block, segment);
+      }
+    }
+
+    return doc.blocks.map((block) => {
+      const reused = previousByBlock.get(block);
+      return reused ?? createTopLevelBlockSegment(block);
+    });
+  }
+
+  function buildPrefixIndexes(segments: TopLevelBlockSegment[]): {
+    cursorStarts: number[];
+    sourceStarts: number[];
+    totalCursorLength: number;
+    totalSourceLength: number;
+  } {
+    const cursorStarts: number[] = [];
+    const sourceStarts: number[] = [];
+    let cursorOffset = 0;
+    let sourceOffset = 0;
+
+    for (let i = 0; i < segments.length; i += 1) {
+      const segment = segments[i];
+      cursorStarts.push(cursorOffset);
+      sourceStarts.push(sourceOffset);
+      cursorOffset += segment?.cursorLength ?? 0;
+      sourceOffset += segment?.sourceLength ?? 0;
+      if (i < segments.length - 1) {
+        cursorOffset += 1;
+        sourceOffset += 1;
+      }
+    }
+
+    return {
+      cursorStarts,
+      sourceStarts,
+      totalCursorLength: cursorOffset,
+      totalSourceLength: sourceOffset,
+    };
+  }
+
+  function serializeSegmentRange(
+    segments: TopLevelBlockSegment[],
+    startIndex: number,
+    endIndex: number,
+  ): string {
+    if (startIndex >= endIndex) {
+      return "";
+    }
+    let source = "";
+    for (let i = startIndex; i < endIndex; i += 1) {
+      const segment = segments[i];
+      if (!segment) {
+        continue;
+      }
+      source += segment.source;
+      if (i < segments.length - 1) {
+        source += "\n";
+      }
+    }
+    return source;
+  }
+
+  function sourceOffsetForBlockStart(
+    state: SegmentedDocState,
+    blockIndex: number,
+  ): number {
+    if (blockIndex <= 0) {
+      return 0;
+    }
+    if (blockIndex >= state.segments.length) {
+      return state.source.length;
+    }
+    return state.sourceStarts[blockIndex] ?? state.source.length;
+  }
+
+  function buildSegmentedSource(
+    segments: TopLevelBlockSegment[],
+    previous?: SegmentedDocState,
+  ): string {
+    if (!previous) {
+      return serializeSegmentRange(segments, 0, segments.length);
+    }
+
+    const previousSegments = previous.segments;
+    let prefix = 0;
+    const maxPrefix = Math.min(previousSegments.length, segments.length);
+    while (
+      prefix < maxPrefix &&
+      previousSegments[prefix]?.block === segments[prefix]?.block
+    ) {
+      prefix += 1;
+    }
+
+    let suffix = 0;
+    const maxSuffix = Math.min(
+      previousSegments.length - prefix,
+      segments.length - prefix,
+    );
+    while (
+      suffix < maxSuffix &&
+      previousSegments[previousSegments.length - 1 - suffix]?.block ===
+        segments[segments.length - 1 - suffix]?.block
+    ) {
+      suffix += 1;
+    }
+
+    if (prefix === previousSegments.length && prefix === segments.length) {
+      return previous.source;
+    }
+
+    const oldStart = sourceOffsetForBlockStart(previous, prefix);
+    const oldEnd = sourceOffsetForBlockStart(
+      previous,
+      previousSegments.length - suffix,
+    );
+    const middle = serializeSegmentRange(
+      segments,
+      prefix,
+      segments.length - suffix,
+    );
+
+    return (
+      previous.source.slice(0, oldStart) +
+      middle +
+      previous.source.slice(oldEnd)
+    );
+  }
+
+  function buildSegmentedDocState(
+    doc: Doc,
+    previous?: SegmentedDocState,
+  ): SegmentedDocState {
+    const cached = segmentedDocCache.get(doc);
+    if (cached) {
+      return cached;
+    }
+
+    const segments = buildTopLevelSegments(doc, previous);
+    const {
+      cursorStarts,
+      sourceStarts,
+      totalCursorLength,
+      totalSourceLength,
+    } = buildPrefixIndexes(segments);
+    const source = buildSegmentedSource(segments, previous);
+    const map = createCompositeCursorSourceMap({
+      segments: segments.map((segment) => ({
+        map: segment.map,
+        cursorLength: segment.cursorLength,
+        sourceLength: segment.sourceLength,
+      })),
+      cursorStarts,
+      sourceStarts,
+      cursorLength: totalCursorLength,
+    });
+
+    const segmented: SegmentedDocState = {
+      doc,
+      segments,
+      cursorStarts,
+      sourceStarts,
+      totalCursorLength,
+      totalSourceLength,
+      source,
+      map,
+    };
+    segmentedDocCache.set(doc, segmented);
+    return segmented;
+  }
+
+  type StateDerivationMode = "incremental" | "full";
+
+  function buildStateFromDoc(
+    doc: Doc,
+    selection: Selection,
+    options?: { previousState?: RuntimeState; mode?: StateDerivationMode },
+  ): RuntimeState {
+    const normalized = normalize(doc);
+    const mode = options?.mode ?? "incremental";
+    const previousSegmented =
+      mode === "incremental" && options?.previousState
+        ? segmentedDocCache.get(options.previousState.doc)
+        : undefined;
+    const reusablePrevious =
+      previousSegmented &&
+      hasSharedTopLevelBlockIdentity(previousSegmented.doc, normalized)
+        ? previousSegmented
+        : undefined;
+    const segmented = buildSegmentedDocState(normalized, reusablePrevious);
+
+    return {
+      source: segmented.source,
+      selection,
+      map: segmented.map,
+      doc: normalized,
+      runtime: runtime,
+    };
   }
 
   function createState(
@@ -594,30 +996,44 @@ export function createRuntimeFromRegistry(registry: {
     selection: Selection = defaultSelection,
   ): RuntimeState {
     const doc = parse(source);
-    const normalized = normalize(doc);
-    const serialized = serialize(normalized);
-    return {
-      source: serialized.source,
-      selection,
-      map: serialized.map,
-      doc: normalized,
-      runtime: runtime,
-    };
+    return buildStateFromDoc(doc, selection, { mode: "full" });
   }
 
   function createStateFromDoc(
     doc: Doc,
     selection: Selection = defaultSelection,
+    options?: { previousState?: RuntimeState; mode?: StateDerivationMode },
   ): RuntimeState {
-    const normalized = normalize(doc);
-    const serialized = serialize(normalized);
-    return {
-      source: serialized.source,
-      selection,
-      map: serialized.map,
-      doc: normalized,
-      runtime: runtime,
-    };
+    return buildStateFromDoc(doc, selection, options);
+  }
+
+  function isIncrementalDerivationCandidate(
+    command: StructuralEditCommand,
+    selection: Selection,
+  ): boolean {
+    if (selection.start !== selection.end) {
+      return false;
+    }
+
+    if (command.type === "insert") {
+      return command.text.length > 0 && !command.text.includes("\n");
+    }
+
+    return (
+      command.type === "delete-backward" ||
+      command.type === "delete-forward" ||
+      command.type === "insert-line-break" ||
+      command.type === "insert-hard-line-break"
+    );
+  }
+
+  function shouldReparseAfterStructuralEdit(
+    command: StructuralEditCommand,
+  ): boolean {
+    if (structuralReparsePolicies.length === 0) {
+      return true;
+    }
+    return structuralReparsePolicies.some((policy) => policy(command));
   }
 
   function applyEdit(command: EditCommand, state: RuntimeState): RuntimeState {
@@ -766,16 +1182,38 @@ export function createRuntimeFromRegistry(registry: {
         return state;
       }
 
-      // Structural edits operate directly on the current doc tree. To support
-      // markdown-first behavior while typing, we reparse from the resulting
-      // source and then remap the caret through source space so it stays stable
-      // even when marker characters become source-only.
-      const interim = createStateFromDoc(structural.doc);
+      // Structural edits operate on the doc tree first. Common collapsed
+      // typing/edit flows stay on the incremental segmented path when policy
+      // allows; everything else takes the explicit full fallback path through
+      // source + parse.
+      const shouldReparse = shouldReparseAfterStructuralEdit(command);
+      const useIncrementalSegmentedDerivation =
+        !shouldReparse && isIncrementalDerivationCandidate(command, selection);
+      const interim = createStateFromDoc(structural.doc, defaultSelection, {
+        mode: useIncrementalSegmentedDerivation ? "incremental" : "full",
+        previousState: useIncrementalSegmentedDerivation ? state : undefined,
+      });
       const interimAffinity = structural.nextAffinity ?? "forward";
       const caretSource = interim.map.cursorToSource(
         structural.nextCursor,
         interimAffinity,
       );
+
+      if (useIncrementalSegmentedDerivation) {
+        const caretCursor = interim.map.sourceToCursor(
+          caretSource,
+          interimAffinity,
+        );
+        return {
+          ...interim,
+          selection: {
+            start: caretCursor.cursorOffset,
+            end: caretCursor.cursorOffset,
+            affinity: caretCursor.affinity,
+          },
+        };
+      }
+
       const next = createState(interim.source);
       const caretCursor = next.map.sourceToCursor(caretSource, interimAffinity);
 
@@ -816,37 +1254,32 @@ export function createRuntimeFromRegistry(registry: {
     key: string;
   };
 
-  type Run = {
-    type: "text";
-    text: string;
-    marks: Mark[];
-  } | {
-    type: "atom";
-    atom: { kind: string; data?: Record<string, unknown> };
-    marks: Mark[];
-  };
+  type Run =
+    | {
+        type: "text";
+        text: string;
+        marks: Mark[];
+      }
+    | {
+        type: "atom";
+        atom: { kind: string; data?: Record<string, unknown> };
+        marks: Mark[];
+      };
 
-  type FlatBlockLine = {
-    path: number[];
-    parentPath: number[];
-    indexInParent: number;
-    block: Block;
-    text: string;
-    cursorLength: number;
-    hasNewline: boolean;
-  };
+  type FlatBlockLine = StructuralLineInfo;
 
   function applyStructuralEdit(
     command: StructuralEditCommand,
     doc: Doc,
     selection: Selection,
   ): { doc: Doc; nextCursor: number; nextAffinity?: Affinity } | null {
-    const lines = flattenDocToLines(doc);
+    const textModel = getEditorTextModelForDoc(doc);
+    const lines = textModel.getStructuralLines();
     if (lines.length === 0) {
       return null;
     }
 
-    const docCursorLength = cursorLengthForLines(lines);
+    const docCursorLength = textModel.getCursorLength();
 
     const cursorStart = Math.max(
       0,
@@ -907,13 +1340,13 @@ export function createRuntimeFromRegistry(registry: {
       command.type === "insert" &&
       replaceText.length > 0 &&
       range.start === range.end &&
-      graphemeAtCursor(lines, range.start) === "\u200B";
+      textModel.getGraphemeAtCursor(range.start) === "\u200B";
     const effectiveRange = shouldReplacePlaceholder
       ? { start: range.start, end: Math.min(docCursorLength, range.start + 1) }
       : range;
 
-    const startLoc = resolveCursorToLine(lines, effectiveRange.start);
-    const endLoc = resolveCursorToLine(lines, effectiveRange.end);
+    const startLoc = textModel.resolveOffsetToLine(effectiveRange.start);
+    const endLoc = textModel.resolveOffsetToLine(effectiveRange.end);
     const startLine = lines[startLoc.lineIndex];
     const endLine = lines[endLoc.lineIndex];
     if (!startLine || !endLine) {
@@ -960,8 +1393,9 @@ export function createRuntimeFromRegistry(registry: {
           );
 
           const nextDoc: Doc = { ...doc, blocks: nextBlocks };
-          const nextLines = flattenDocToLines(nextDoc);
-          const lineStarts = getLineStartOffsets(nextLines);
+          const nextModel = getEditorTextModelForDoc(nextDoc);
+          const nextLines = nextModel.getStructuralLines();
+          const lineStarts = nextModel.getLineOffsets();
           const mergedLineIndex = nextLines.findIndex((line) =>
             pathsEqual(line.path, prevLine.path),
           );
@@ -1038,8 +1472,9 @@ export function createRuntimeFromRegistry(registry: {
             () => nextParentBlocks,
           ),
         };
-        const nextLines = flattenDocToLines(nextDoc);
-        const lineStarts = getLineStartOffsets(nextLines);
+        const nextModel = getEditorTextModelForDoc(nextDoc);
+        const nextLines = nextModel.getStructuralLines();
+        const lineStarts = nextModel.getLineOffsets();
         const nextLineIndex = Math.min(
           nextLines.length - 1,
           startLoc.lineIndex + 1,
@@ -1067,8 +1502,9 @@ export function createRuntimeFromRegistry(registry: {
           ...doc,
           blocks: updateBlocksAtPath(doc.blocks, parentPath, () => ensured),
         };
-        const nextLines = flattenDocToLines(nextDoc);
-        const lineStarts = getLineStartOffsets(nextLines);
+        const nextModel = getEditorTextModelForDoc(nextDoc);
+        const nextLines = nextModel.getStructuralLines();
+        const lineStarts = nextModel.getLineOffsets();
         const nextLineIndex = Math.min(
           nextLines.length - 1,
           startLoc.lineIndex,
@@ -1112,8 +1548,9 @@ export function createRuntimeFromRegistry(registry: {
             ),
           };
 
-          const nextLines = flattenDocToLines(nextDoc);
-          const lineStarts = getLineStartOffsets(nextLines);
+          const nextModel = getEditorTextModelForDoc(nextDoc);
+          const nextLines = nextModel.getStructuralLines();
+          const lineStarts = nextModel.getLineOffsets();
           const nextLineIndex = Math.max(0, startLoc.lineIndex - 1);
           return {
             doc: nextDoc,
@@ -1190,8 +1627,9 @@ export function createRuntimeFromRegistry(registry: {
           ),
         };
 
-        const nextLines = flattenDocToLines(nextDoc);
-        const lineStarts = getLineStartOffsets(nextLines);
+        const nextModel = getEditorTextModelForDoc(nextDoc);
+        const nextLines = nextModel.getStructuralLines();
+        const lineStarts = nextModel.getLineOffsets();
         const insertedPath = [...wrapperParentPath, wrapperIndexInParent + 1];
         const insertedLineIndex = nextLines.findIndex((line) =>
           pathsEqual(line.path, insertedPath),
@@ -1209,17 +1647,17 @@ export function createRuntimeFromRegistry(registry: {
     const hasSelectedText = effectiveRange.start !== effectiveRange.end;
     const baseMarks = hasSelectedText
       ? commonMarksAcrossSelection(
+          textModel,
           lines,
           effectiveRange.start,
           effectiveRange.end,
-          doc,
         )
       : marksAtCursor(startRuns, startLoc.offsetInLine, affinity);
 
     const insertDoc = parse(replaceText);
-    const insertLines = flattenDocToLines(insertDoc);
+    const insertModel = getEditorTextModelForDoc(insertDoc);
     const insertBlocks = insertDoc.blocks;
-    const insertCursorLength = cursorLengthForLines(insertLines);
+    const insertCursorLength = insertModel.getCursorLength();
 
     const replacementBlocks = buildReplacementBlocks({
       baseMarks,
@@ -1243,14 +1681,13 @@ export function createRuntimeFromRegistry(registry: {
       ),
     };
 
-    const nextDocCursorLength = cursorLengthForLines(
-      flattenDocToLines(nextDoc),
-    );
+    const nextModel = getEditorTextModelForDoc(nextDoc);
+    const nextDocCursorLength = nextModel.getCursorLength();
     const nextCursor = Math.max(
       0,
       Math.min(nextDocCursorLength, effectiveRange.start + insertCursorLength),
     );
-    const nextLines = flattenDocToLines(nextDoc);
+    const nextLines = nextModel.getStructuralLines();
     const around = marksAroundCursor(nextDoc, nextCursor);
     const fallbackAffinity: Affinity =
       command.type === "delete-backward"
@@ -1274,8 +1711,8 @@ export function createRuntimeFromRegistry(registry: {
     // If the cursor is at the start of a non-first line (i.e., right after a
     // serialized newline), keep affinity "forward" so selection anchors in the
     // following line, not at the end of the previous one.
-    const nextLoc = resolveCursorToLine(nextLines, nextCursor);
-    const lineStarts = getLineStartOffsets(nextLines);
+    const nextLoc = nextModel.resolveOffsetToLine(nextCursor);
+    const lineStarts = nextModel.getLineOffsets();
     if (
       nextLoc.lineIndex > 0 &&
       nextLoc.offsetInLine === 0 &&
@@ -1288,146 +1725,6 @@ export function createRuntimeFromRegistry(registry: {
       nextCursor,
       nextAffinity,
     };
-  }
-
-  function cursorLengthForLines(
-    lines: Array<{ cursorLength: number; hasNewline: boolean }>,
-  ): number {
-    let length = 0;
-    for (const line of lines) {
-      length += line.cursorLength;
-      if (line.hasNewline) {
-        length += 1;
-      }
-    }
-    return length;
-  }
-
-  function flattenDocToLines(doc: Doc): FlatBlockLine[] {
-    const entries: Array<{ path: number[]; block: Block }> = [];
-    const visit = (blocks: Block[], prefix: number[]) => {
-      blocks.forEach((block, index) => {
-        const path = [...prefix, index];
-        if (block.type === "block-wrapper") {
-          visit(block.blocks, path);
-          return;
-        }
-        entries.push({ path, block });
-      });
-    };
-    visit(doc.blocks, []);
-    if (entries.length === 0) {
-      return [
-        {
-          path: [0],
-          parentPath: [],
-          indexInParent: 0,
-          block: { type: "paragraph", content: [] },
-          text: "",
-          cursorLength: 0,
-          hasNewline: false,
-        },
-      ];
-    }
-    return entries.map((entry, i) => {
-      const parentPath = entry.path.slice(0, -1);
-      const indexInParent = entry.path[entry.path.length - 1] ?? 0;
-      const text = blockVisibleText(entry.block);
-      return {
-        path: entry.path,
-        parentPath,
-        indexInParent,
-        block: entry.block,
-        text,
-        cursorLength: graphemeSegments(text).length,
-        hasNewline: i < entries.length - 1,
-      };
-    });
-  }
-
-  function resolveCursorToLine(
-    lines: FlatBlockLine[],
-    cursorOffset: number,
-  ): { lineIndex: number; offsetInLine: number } {
-    const total = cursorLengthForLines(lines);
-    const clamped = Math.max(0, Math.min(cursorOffset, total));
-    let start = 0;
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i];
-      const end = start + line.cursorLength;
-      if (clamped <= end || i === lines.length - 1) {
-        return {
-          lineIndex: i,
-          offsetInLine: Math.max(
-            0,
-            Math.min(clamped - start, line.cursorLength),
-          ),
-        };
-      }
-      start = end + (line.hasNewline ? 1 : 0);
-      if (line.hasNewline && clamped === start) {
-        return {
-          lineIndex: Math.min(lines.length - 1, i + 1),
-          offsetInLine: 0,
-        };
-      }
-    }
-    return {
-      lineIndex: lines.length - 1,
-      offsetInLine: lines[lines.length - 1]?.cursorLength ?? 0,
-    };
-  }
-
-  function getLineStartOffsets(lines: FlatBlockLine[]): number[] {
-    const offsets: number[] = [];
-    let current = 0;
-    for (const line of lines) {
-      offsets.push(current);
-      current += line.cursorLength + (line.hasNewline ? 1 : 0);
-    }
-    return offsets;
-  }
-
-  function graphemeAtCursor(
-    lines: FlatBlockLine[],
-    cursorOffset: number,
-  ): string | null {
-    const loc = resolveCursorToLine(lines, cursorOffset);
-    const line = lines[loc.lineIndex];
-    if (!line) {
-      return null;
-    }
-    if (loc.offsetInLine >= line.cursorLength) {
-      return null;
-    }
-    const segments = Array.from(graphemeSegments(line.text));
-    return segments[loc.offsetInLine]?.segment ?? null;
-  }
-
-  function blockVisibleText(block: Block): string {
-    if (block.type === "paragraph") {
-      return block.content.map(inlineVisibleText).join("");
-    }
-    if (block.type === "block-atom") {
-      return "";
-    }
-    if (block.type === "block-wrapper") {
-      return block.blocks.map(blockVisibleText).join("\n");
-    }
-    return "";
-  }
-
-  function inlineVisibleText(inline: Inline): string {
-    if (inline.type === "text") {
-      return inline.text;
-    }
-    if (inline.type === "inline-wrapper") {
-      return inline.children.map(inlineVisibleText).join("");
-    }
-    if (inline.type === "inline-atom") {
-      return " ";
-    }
-    return "";
   }
 
   function stableStringify(value: unknown): string {
@@ -1470,7 +1767,10 @@ export function createRuntimeFromRegistry(registry: {
       runs.push({ type: "text", text, marks });
     };
 
-    const pushAtom = (atom: { kind: string; data?: Record<string, unknown> }) => {
+    const pushAtom = (atom: {
+      kind: string;
+      data?: Record<string, unknown>;
+    }) => {
       const marks = stack.slice();
       runs.push({ type: "atom", atom, marks });
     };
@@ -1633,13 +1933,14 @@ export function createRuntimeFromRegistry(registry: {
     doc: Doc,
     cursorOffset: number,
   ): { left: Mark[]; right: Mark[] } {
-    const lines = flattenDocToLines(doc);
-    const loc = resolveCursorToLine(lines, cursorOffset);
+    const textModel = getEditorTextModelForDoc(doc);
+    const lines = textModel.getStructuralLines();
+    const loc = textModel.resolveOffsetToLine(cursorOffset);
     const line = lines[loc.lineIndex];
     if (!line) {
       return { left: [], right: [] };
     }
-    const block = getBlockAtPath(doc.blocks, line.path);
+    const block = line.block;
     if (!block || block.type !== "paragraph") {
       return { left: [], right: [] };
     }
@@ -1851,16 +2152,21 @@ export function createRuntimeFromRegistry(registry: {
   }
 
   function commonMarksAcrossSelection(
-    lines: FlatBlockLine[],
+    textModel: {
+      resolveOffsetToLine: (offset: number) => {
+        lineIndex: number;
+        offsetInLine: number;
+      };
+    },
+    lines: readonly FlatBlockLine[],
     startCursor: number,
     endCursor: number,
-    doc: Doc,
   ): Mark[] {
     if (startCursor === endCursor) {
       return [];
     }
-    const startLoc = resolveCursorToLine(lines, startCursor);
-    const endLoc = resolveCursorToLine(lines, endCursor);
+    const startLoc = textModel.resolveOffsetToLine(startCursor);
+    const endLoc = textModel.resolveOffsetToLine(endCursor);
     const slices: Run[] = [];
     for (
       let lineIndex = startLoc.lineIndex;
@@ -1871,7 +2177,7 @@ export function createRuntimeFromRegistry(registry: {
       if (!line) {
         continue;
       }
-      const block = getBlockAtPath(doc.blocks, line.path);
+      const block = line.block;
       if (!block || block.type !== "paragraph") {
         continue;
       }
@@ -2132,8 +2438,7 @@ export function createRuntimeFromRegistry(registry: {
       const preferBackward =
         insertAtBackward !== insertAtForward && openLen <= betweenLen;
       const insertAt =
-        placeholderPos ??
-        (preferBackward ? insertAtBackward : insertAtForward);
+        placeholderPos ?? (preferBackward ? insertAtBackward : insertAtForward);
 
       const nextSource =
         placeholderPos !== null
@@ -2164,9 +2469,10 @@ export function createRuntimeFromRegistry(registry: {
 
     const cursorStart = Math.min(selection.start, selection.end);
     const cursorEnd = Math.max(selection.start, selection.end);
-    const linesForSelection = flattenDocToLines(state.doc);
-    const startLoc = resolveCursorToLine(linesForSelection, cursorStart);
-    const endLoc = resolveCursorToLine(linesForSelection, cursorEnd);
+    const selectionModel = getEditorTextModelForDoc(state.doc);
+    const linesForSelection = selectionModel.getStructuralLines();
+    const startLoc = selectionModel.resolveOffsetToLine(cursorStart);
+    const endLoc = selectionModel.resolveOffsetToLine(cursorEnd);
     const splitRunsOnNewlines = (runs: Run[]): Run[] => {
       const split: Run[] = [];
       for (const run of runs) {
@@ -2213,7 +2519,7 @@ export function createRuntimeFromRegistry(registry: {
         continue;
       }
 
-      const block = getBlockAtPath(state.doc.blocks, line.path);
+      const block = line.block;
       if (!block || block.type !== "paragraph") {
         continue;
       }
@@ -2403,8 +2709,9 @@ export function createRuntimeFromRegistry(registry: {
     selection: Selection,
   ): string {
     const normalized = normalizeSelection(selection);
-    const lines = flattenDocToLines(state.doc);
-    const docCursorLength = cursorLengthForLines(lines);
+    const textModel = getEditorTextModelForDoc(state.doc);
+    const lines = textModel.getStructuralLines();
+    const docCursorLength = textModel.getCursorLength();
     const cursorStart = Math.max(
       0,
       Math.min(docCursorLength, Math.min(normalized.start, normalized.end)),
@@ -2418,8 +2725,8 @@ export function createRuntimeFromRegistry(registry: {
       return "";
     }
 
-    const startLoc = resolveCursorToLine(lines, cursorStart);
-    const endLoc = resolveCursorToLine(lines, cursorEnd);
+    const startLoc = textModel.resolveOffsetToLine(cursorStart);
+    const endLoc = textModel.resolveOffsetToLine(cursorEnd);
 
     const blocks: Block[] = [];
     for (
@@ -2431,7 +2738,7 @@ export function createRuntimeFromRegistry(registry: {
       if (!line) {
         continue;
       }
-      const block = getBlockAtPath(state.doc.blocks, line.path);
+      const block = line.block;
       if (!block || block.type !== "paragraph") {
         continue;
       }
@@ -2513,8 +2820,9 @@ export function createRuntimeFromRegistry(registry: {
     selection: Selection,
   ): string {
     const normalized = normalizeSelection(selection);
-    const lines = flattenDocToLines(state.doc);
-    const docCursorLength = cursorLengthForLines(lines);
+    const textModel = getEditorTextModelForDoc(state.doc);
+    const lines = textModel.getStructuralLines();
+    const docCursorLength = textModel.getCursorLength();
     const cursorStart = Math.max(
       0,
       Math.min(docCursorLength, Math.min(normalized.start, normalized.end)),
@@ -2528,8 +2836,8 @@ export function createRuntimeFromRegistry(registry: {
       return "";
     }
 
-    const startLoc = resolveCursorToLine(lines, cursorStart);
-    const endLoc = resolveCursorToLine(lines, cursorEnd);
+    const startLoc = textModel.resolveOffsetToLine(cursorStart);
+    const endLoc = textModel.resolveOffsetToLine(cursorEnd);
 
     let html = "";
     let activeList: { type: "ol" | "ul"; indent: number } | null = null;
@@ -2563,7 +2871,7 @@ export function createRuntimeFromRegistry(registry: {
       if (!line) {
         continue;
       }
-      const block = getBlockAtPath(state.doc.blocks, line.path);
+      const block = line.block;
       if (!block || block.type !== "paragraph") {
         continue;
       }
@@ -2665,6 +2973,7 @@ export function createRuntimeFromRegistry(registry: {
     parse,
     serialize,
     createState,
+    createStateFromDoc,
     updateSelection,
     serializeSelection,
     serializeSelectionToHtml,

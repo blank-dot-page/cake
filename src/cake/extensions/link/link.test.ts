@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRuntimeForTests } from "../../core/runtime";
+import type { Inline, InlineWrapper } from "../../core/types";
 import { linkExtension } from "./link";
 
 describe("link extension", () => {
@@ -119,18 +120,22 @@ describe("link extension", () => {
       return;
     }
 
-    const toVisibleText = (inline: (typeof block.content)[number]): string => {
+    const toVisibleText = (inline: Inline): string => {
       if (inline.type === "text") {
         return inline.text;
       }
-      return inline.children.map((child) => toVisibleText(child)).join("");
+      if (inline.type === "inline-wrapper") {
+        return inline.children.map((child) => toVisibleText(child)).join("");
+      }
+      return "";
     };
 
     const visible = block.content.map((inline) => toVisibleText(inline)).join("");
     expect(visible).toBe("before [00:24] text foo");
 
     const links = block.content.filter(
-      (inline) => inline.type === "inline-wrapper" && inline.kind === "link",
+      (inline): inline is InlineWrapper =>
+        inline.type === "inline-wrapper" && inline.kind === "link",
     );
     expect(links).toHaveLength(1);
     const linkLabel = links[0]!.children.map((child) => toVisibleText(child)).join("");

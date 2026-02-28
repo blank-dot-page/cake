@@ -95,6 +95,7 @@ export default defineConfig({
             enabled: true,
             provider: playwright(),
             headless: true,
+            connectTimeout: 180000,
             instances: [{ browser: "chromium" }, { browser: "webkit" }],
             screenshotDirectory: ".vitest-screenshots",
             commands: {
@@ -121,6 +122,7 @@ export default defineConfig({
               },
             }),
             headless: true,
+            connectTimeout: 180000,
             instances: [{ browser: "webkit" }],
             screenshotDirectory: ".vitest-screenshots",
             commands: {

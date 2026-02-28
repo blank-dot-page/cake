@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { CursorSourceBuilder } from "./cursor-source-map";
+import {
+  CursorSourceBuilder,
+  createCompositeCursorSourceMap,
+} from "./cursor-source-map";
 
 function assertMonotonic(values: number[]): void {
   for (let i = 1; i < values.length; i += 1) {
@@ -74,5 +77,62 @@ describe("CursorSourceMap", () => {
       cursorOffset: 1,
       affinity: "forward",
     });
+  });
+
+  it("matches a fully-built map when composing per-block segments", () => {
+    const block1Builder = new CursorSourceBuilder();
+    block1Builder.appendSourceOnly("**");
+    block1Builder.appendText("ab");
+    block1Builder.appendSourceOnly("**");
+    const block1 = block1Builder.build();
+
+    const block2Builder = new CursorSourceBuilder();
+    block2Builder.appendSourceOnly("[");
+    block2Builder.appendText("x");
+    block2Builder.appendSourceOnly("](url)");
+    const block2 = block2Builder.build();
+
+    const fullBuilder = new CursorSourceBuilder();
+    fullBuilder.appendSerialized(block1);
+    fullBuilder.appendText("\n");
+    fullBuilder.appendSerialized(block2);
+    const full = fullBuilder.build();
+
+    const composite = createCompositeCursorSourceMap({
+      segments: [
+        {
+          map: block1.map,
+          cursorLength: block1.map.cursorLength,
+          sourceLength: block1.source.length,
+        },
+        {
+          map: block2.map,
+          cursorLength: block2.map.cursorLength,
+          sourceLength: block2.source.length,
+        },
+      ],
+      cursorStarts: [0, block1.map.cursorLength + 1],
+      sourceStarts: [0, block1.source.length + 1],
+      cursorLength: full.map.cursorLength,
+    });
+
+    for (let cursor = 0; cursor <= full.map.cursorLength; cursor += 1) {
+      expect(composite.cursorToSource(cursor, "backward")).toBe(
+        full.map.cursorToSource(cursor, "backward"),
+      );
+      expect(composite.cursorToSource(cursor, "forward")).toBe(
+        full.map.cursorToSource(cursor, "forward"),
+      );
+      expect(composite.boundaries[cursor]).toEqual(full.map.boundaries[cursor]);
+    }
+
+    for (let source = 0; source <= full.source.length; source += 1) {
+      expect(composite.sourceToCursor(source, "backward")).toEqual(
+        full.map.sourceToCursor(source, "backward"),
+      );
+      expect(composite.sourceToCursor(source, "forward")).toEqual(
+        full.map.sourceToCursor(source, "forward"),
+      );
+    }
   });
 });

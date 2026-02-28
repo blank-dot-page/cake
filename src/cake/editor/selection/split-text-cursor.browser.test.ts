@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import { getDocLines } from "./selection-layout";
+import { getEditorTextModelForDoc } from "../internal/editor-text-model";
 import {
   resolveDomPosition,
   cursorOffsetToDomOffset,
@@ -8,7 +8,7 @@ import type { Doc } from "../../core/types";
 
 /**
  * This test demonstrates the cursor positioning problem when a line is rendered
- * with multiple text nodes but getDocLines only sees partial text content.
+ * with multiple text nodes but the text model only sees partial text content.
  *
  * The bug: If a line visually shows "AB" (two text nodes: "A" and "B") but the
  * Doc structure only contains "B", then cursor position 2 (end of "AB") will be
@@ -67,8 +67,8 @@ describe("split text cursor positioning", () => {
     };
 
     // Get line info from both docs
-    const linesPartial = getDocLines(docWithPartialText);
-    const linesFull = getDocLines(docWithFullText);
+    const linesPartial = getEditorTextModelForDoc(docWithPartialText).getLines();
+    const linesFull = getEditorTextModelForDoc(docWithFullText).getLines();
 
     // Partial doc thinks line is "B" (1 char)
     expect(linesPartial[0].text).toBe("B");
@@ -167,8 +167,8 @@ describe("split text cursor positioning", () => {
       ],
     };
 
-    const linesBuggy = getDocLines(docBuggy);
-    const linesCorrect = getDocLines(docCorrect);
+    const linesBuggy = getEditorTextModelForDoc(docBuggy).getLines();
+    const linesCorrect = getEditorTextModelForDoc(docCorrect).getLines();
 
     // Test cursor at position 7 (end of "- hello")
     const cursorAtEnd = 7;

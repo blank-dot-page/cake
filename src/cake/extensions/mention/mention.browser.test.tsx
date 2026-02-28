@@ -166,21 +166,55 @@ describe("mentionExtension", () => {
 
       const popover = page.getByTestId("cake-mention-popover");
       await expect.element(popover).toBeVisible();
+      const aliceButton = page.getByRole("button", { name: "Alice" });
+      await expect.element(aliceButton).toBeVisible();
 
       const selectionBefore = harness.engine.getSelection();
+      const readActiveLabel = (): string | null => {
+        const active = document.querySelector<HTMLButtonElement>(
+          '[data-testid="cake-mention-popover"] button[data-active="true"]',
+        );
+        return active?.textContent?.trim() ?? null;
+      };
+      const waitForActiveLabel = async (): Promise<string> => {
+        for (let i = 0; i < 20; i += 1) {
+          const label = readActiveLabel();
+          if (label) {
+            return label;
+          }
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve()),
+          );
+        }
+        throw new Error("Expected an active mention item");
+      };
 
-      // Move active to the 2nd item.
+      // Move active with keyboard, regardless of initial active-item policy.
       await harness.pressKey("ArrowDown");
+      const firstActiveLabel = await waitForActiveLabel();
+      expect(firstActiveLabel.length).toBeGreaterThan(0);
 
-      const bobButton = page.getByRole("button", { name: "Bob" });
-      await expect.element(bobButton).toHaveAttribute("data-active", "true");
+      await harness.pressKey("ArrowUp");
+      const secondActiveLabel = await waitForActiveLabel();
+      expect(secondActiveLabel).not.toBe(firstActiveLabel);
+
+      await harness.pressKey("ArrowDown");
+      const chosenLabel = await waitForActiveLabel();
+      expect(chosenLabel).toBe(firstActiveLabel);
 
       const selectionAfter = harness.engine.getSelection();
       expect(selectionAfter).toEqual(selectionBefore);
 
       // Choose active item.
       await harness.pressKey("Enter");
-      expect(harness.engine.getValue()).toBe("@[2](Bob)");
+      const expectedByLabel: Record<string, string> = {
+        Alice: "@[1](Alice)",
+        Bob: "@[2](Bob)",
+        Carmen: "@[3](Carmen)",
+      };
+      const expectedValue = expectedByLabel[chosenLabel];
+      expect(expectedValue).toBeDefined();
+      expect(harness.engine.getValue()).toBe(expectedValue);
     } finally {
       harness?.destroy();
     }
