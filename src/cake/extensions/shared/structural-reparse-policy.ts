@@ -9,14 +9,13 @@ const FAST_PATH_TEXT_PATTERN = /^[\p{L}\p{N}\p{M}]+$/u;
 export const structuralReparsePolicyExtension: CakeExtension = (editor) => {
   return editor.registerStructuralReparsePolicy((command) => {
     if (command.type !== "insert") {
-      return true;
+      return false;
     }
 
     if (command.text.length === 0) {
-      return true;
+      return false;
     }
 
     return !FAST_PATH_TEXT_PATTERN.test(command.text);
   });
 };
-

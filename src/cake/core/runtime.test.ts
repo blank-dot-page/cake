@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createRuntimeForTests, type RuntimeState } from "./runtime";
+import {
+  createRuntimeForTests,
+  type RuntimeState,
+} from "./runtime";
 import type { Doc } from "./types";
 
 const cases = [
@@ -29,6 +32,51 @@ async function createBundledRuntime() {
   const { bundledExtensions } = await import("../extensions");
   return createRuntimeForTests(bundledExtensions);
 }
+
+function sourceOffsetForSelectionStart(state: RuntimeState): number {
+  const affinity = state.selection.affinity ?? "forward";
+  return state.map.cursorToSource(state.selection.start, affinity);
+}
+
+function spliceSource(
+  source: string,
+  start: number,
+  end: number,
+  replacement: string,
+): string {
+  return source.slice(0, start) + replacement + source.slice(end);
+}
+
+function sampledPositions(max: number, sampleCount = 24): number[] {
+  if (max <= 0) {
+    return [0];
+  }
+  const step = Math.max(1, Math.floor(max / sampleCount));
+  const positions: number[] = [];
+  for (let cursor = 0; cursor <= max; cursor += step) {
+    positions.push(cursor);
+  }
+  if (positions[positions.length - 1] !== max) {
+    positions.push(max);
+  }
+  return positions;
+}
+
+function buildLargeMixedSource(): string {
+  const lines: string[] = [];
+  for (let section = 1; section <= 8; section += 1) {
+    lines.push(
+      `## Section ${section} **bold-${section}** [ref-${section}](https://example.com/${section})`,
+      `> quote-${section} with *italic-${section}* and [q-${section}](https://quotes.example/${section})`,
+      `- list-${section} item with **strong-${section}** text`,
+      `- list-${section} item with [list-link-${section}](https://lists.example/${section})`,
+      `Paragraph ${section} typing-target replace-window-abcdefghij plain tail.`,
+    );
+  }
+  return lines.join("\n");
+}
+
+const largeMixedSource = buildLargeMixedSource();
 
 describe("createRuntimeForTests([])", () => {
   it("roundtrips literal text without syntax knowledge", () => {
@@ -154,46 +202,359 @@ describe("createRuntimeForTests([])", () => {
     expect(result.source).toBe("**hello**\n**world**");
   });
 
-  it("keeps untouched block objects stable for plain character insertions", async () => {
+  it("keeps source + cursor mapping stable across common collapsed typing/edit commands", async () => {
     const runtime = await createBundledRuntime();
-    const source = Array.from({ length: 200 }, (_, index) => `line ${index}`)
-      .join("\n");
-    const initial = runtime.createState(source);
-    const firstBlockBefore = initial.doc.blocks[0];
-    const secondBlockBefore = initial.doc.blocks[1];
-    const cursor = initial.map.sourceToCursor(source.length, "forward");
+    let state = runtime.createState("alpha\nbeta");
+    const end = state.map.sourceToCursor(state.source.length, "forward");
+    state = {
+      ...state,
+      selection: {
+        start: end.cursorOffset,
+        end: end.cursorOffset,
+        affinity: end.affinity,
+      },
+    };
 
-    const result = runtime.applyEdit(
-      { type: "insert", text: "a" },
+    state = runtime.applyEdit(
+      { type: "insert", text: "x" },
+      state,
+    );
+    expect(state.source).toBe("alpha\nbetax");
+    expect(state.selection.start).toBe(state.selection.end);
+    expect(sourceOffsetForSelectionStart(state)).toBe(state.source.length);
+
+    state = runtime.applyEdit({ type: "delete-backward" }, state);
+    expect(state.source).toBe("alpha\nbeta");
+    expect(state.selection.start).toBe(state.selection.end);
+    expect(sourceOffsetForSelectionStart(state)).toBe(state.source.length);
+
+    state = runtime.applyEdit({ type: "insert-line-break" }, state);
+    expect(state.source).toBe("alpha\nbeta\n");
+    expect(state.selection.start).toBe(state.selection.end);
+    expect(sourceOffsetForSelectionStart(state)).toBe(state.source.length);
+
+    state = runtime.applyEdit({ type: "delete-backward" }, state);
+    expect(state.source).toBe("alpha\nbeta");
+    expect(state.selection.start).toBe(state.selection.end);
+    expect(sourceOffsetForSelectionStart(state)).toBe(state.source.length);
+  });
+
+  it("keeps replacement edits correct for a range insertion", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState("alpha\nbeta\ngamma");
+    const start = state.map.sourceToCursor(1, "forward");
+    const end = state.map.sourceToCursor(3, "forward");
+
+    const next = runtime.applyEdit(
+      { type: "insert", text: "z" },
       {
-        ...initial,
+        ...state,
         selection: {
-          start: cursor.cursorOffset,
-          end: cursor.cursorOffset,
-          affinity: cursor.affinity,
+          start: start.cursorOffset,
+          end: end.cursorOffset,
+          affinity: "forward",
         },
       },
     );
 
-    expect(result.doc.blocks[0]).toBe(firstBlockBefore);
-    expect(result.doc.blocks[1]).toBe(secondBlockBefore);
+    expect(next.source).toBe("azha\nbeta\ngamma");
+    expect(next.selection.start).toBe(next.selection.end);
+    expect(sourceOffsetForSelectionStart(next)).toBe(2);
   });
 
   it("still reparses when markdown marker characters are inserted", async () => {
     const runtime = await createBundledRuntime();
-    let state = runtime.createState("", { start: 0, end: 0, affinity: "forward" });
+    let state = runtime.createState("", {
+      start: 0,
+      end: 0,
+      affinity: "forward",
+    });
     state = runtime.applyEdit({ type: "insert", text: "*" }, state);
     state = runtime.applyEdit({ type: "insert", text: "a" }, state);
     state = runtime.applyEdit({ type: "insert", text: "*" }, state);
 
     expect(state.source).toBe("*a*");
-    const paragraph = state.doc.blocks[0];
-    expect(paragraph?.type).toBe("paragraph");
-    if (!paragraph || paragraph.type !== "paragraph") {
-      return;
+    expect(state.map.cursorLength).toBe(1);
+    expect(state.selection.start).toBe(state.selection.end);
+    expect(state.selection.start).toBe(1);
+
+    state = runtime.applyEdit({ type: "delete-backward" }, state);
+    expect(state.source).toBe("");
+    expect(state.selection.start).toBe(0);
+    expect(state.selection.end).toBe(0);
+  });
+
+  it("keeps createState(source) equivalent to createStateFromDoc(parse(source))", async () => {
+    const runtime = await createBundledRuntime();
+    const initial = runtime.createState(largeMixedSource);
+    const start = initial.map.sourceToCursor(40, "forward");
+    const end = initial.map.sourceToCursor(120, "backward");
+    const selection = {
+      start: start.cursorOffset,
+      end: end.cursorOffset,
+      affinity: "forward" as const,
+    };
+
+    const fromSource = runtime.createState(largeMixedSource, selection);
+    const fromDoc = runtime.createStateFromDoc(
+      runtime.parse(largeMixedSource),
+      selection,
+    );
+
+    expect(fromDoc.source).toBe(fromSource.source);
+    expect(fromDoc.selection).toEqual(fromSource.selection);
+    expect(runtime.serialize(fromDoc.doc).source).toBe(
+      runtime.serialize(fromSource.doc).source,
+    );
+    expect(fromDoc.map.cursorLength).toBe(fromSource.map.cursorLength);
+
+    for (const cursor of sampledPositions(fromSource.map.cursorLength)) {
+      expect(fromDoc.map.cursorToSource(cursor, "forward")).toBe(
+        fromSource.map.cursorToSource(cursor, "forward"),
+      );
+      expect(fromDoc.map.cursorToSource(cursor, "backward")).toBe(
+        fromSource.map.cursorToSource(cursor, "backward"),
+      );
     }
-    const firstInline = paragraph.content[0];
-    expect(firstInline?.type).toBe("inline-wrapper");
+
+    for (const offset of sampledPositions(fromSource.source.length)) {
+      expect(fromDoc.map.sourceToCursor(offset, "forward")).toEqual(
+        fromSource.map.sourceToCursor(offset, "forward"),
+      );
+      expect(fromDoc.map.sourceToCursor(offset, "backward")).toEqual(
+        fromSource.map.sourceToCursor(offset, "backward"),
+      );
+    }
+  });
+
+  it("keeps repeated inserts stable on a large mixed-format document", async () => {
+    const runtime = await createBundledRuntime();
+    let state = runtime.createState(largeMixedSource);
+    const anchorText = "typing-target";
+    const anchorIndex = state.source.indexOf(anchorText);
+    expect(anchorIndex).toBeGreaterThan(-1);
+
+    const anchorCursor = state.map.sourceToCursor(
+      anchorIndex + anchorText.length,
+      "forward",
+    );
+    state = {
+      ...state,
+      selection: {
+        start: anchorCursor.cursorOffset,
+        end: anchorCursor.cursorOffset,
+        affinity: anchorCursor.affinity,
+      },
+    };
+
+    let expectedSource = state.source;
+    const inserts = Array.from({ length: 48 }, (_, index) =>
+      String(index % 10),
+    );
+    for (const text of inserts) {
+      const beforeOffset = sourceOffsetForSelectionStart(state);
+      expectedSource = spliceSource(
+        expectedSource,
+        beforeOffset,
+        beforeOffset,
+        text,
+      );
+      state = runtime.applyEdit({ type: "insert", text }, state);
+
+      expect(state.source).toBe(expectedSource);
+      expect(state.selection.start).toBe(state.selection.end);
+      expect(sourceOffsetForSelectionStart(state)).toBe(
+        beforeOffset + text.length,
+      );
+    }
+
+    expect(runtime.serialize(state.doc).source).toBe(state.source);
+  });
+
+  it("keeps delete and range-replace edits correct on the large mixed-format document", async () => {
+    const runtime = await createBundledRuntime();
+    let state = runtime.createState(largeMixedSource);
+    let expectedSource = state.source;
+
+    const windowText = "replace-window-abcdefghij";
+    const windowIndex = expectedSource.indexOf(windowText);
+    expect(windowIndex).toBeGreaterThan(-1);
+    const cursorAt = windowIndex + "replace-window-abc".length;
+    const anchorCursor = state.map.sourceToCursor(cursorAt, "forward");
+    state = {
+      ...state,
+      selection: {
+        start: anchorCursor.cursorOffset,
+        end: anchorCursor.cursorOffset,
+        affinity: anchorCursor.affinity,
+      },
+    };
+
+    const backwardFrom = sourceOffsetForSelectionStart(state);
+    state = runtime.applyEdit({ type: "delete-backward" }, state);
+    expectedSource = spliceSource(
+      expectedSource,
+      backwardFrom - 1,
+      backwardFrom,
+      "",
+    );
+    expect(state.source).toBe(expectedSource);
+    expect(state.selection.start).toBe(state.selection.end);
+    expect(sourceOffsetForSelectionStart(state)).toBe(backwardFrom - 1);
+
+    const forwardFrom = sourceOffsetForSelectionStart(state);
+    state = runtime.applyEdit({ type: "delete-forward" }, state);
+    expectedSource = spliceSource(
+      expectedSource,
+      forwardFrom,
+      forwardFrom + 1,
+      "",
+    );
+    expect(state.source).toBe(expectedSource);
+    expect(state.selection.start).toBe(state.selection.end);
+    expect(sourceOffsetForSelectionStart(state)).toBe(forwardFrom);
+
+    const replaceStart = expectedSource.indexOf("replace-window-") + 15;
+    const replaceEnd = replaceStart + 4;
+    const replaceStartCursor = state.map.sourceToCursor(replaceStart, "forward");
+    const replaceEndCursor = state.map.sourceToCursor(replaceEnd, "backward");
+    state = {
+      ...state,
+      selection: {
+        start: replaceStartCursor.cursorOffset,
+        end: replaceEndCursor.cursorOffset,
+        affinity: "forward",
+      },
+    };
+    state = runtime.applyEdit({ type: "insert", text: "WXYZ" }, state);
+    expectedSource = spliceSource(
+      expectedSource,
+      replaceStart,
+      replaceEnd,
+      "WXYZ",
+    );
+    expect(state.source).toBe(expectedSource);
+    expect(state.selection.start).toBe(state.selection.end);
+    expect(sourceOffsetForSelectionStart(state)).toBe(replaceStart + 4);
+    expect(runtime.serialize(state.doc).source).toBe(state.source);
+  });
+
+  it("updates selection without changing source or serialized doc semantics", async () => {
+    const runtime = await createBundledRuntime();
+    const state = runtime.createState(largeMixedSource);
+    const beforeSerialized = runtime.serialize(state.doc).source;
+
+    const sourceStart = state.source.indexOf("bold-4");
+    const sourceEnd = sourceStart + "bold-4 [ref-4]".length;
+    const start = state.map.sourceToCursor(sourceStart, "forward");
+    const end = state.map.sourceToCursor(sourceEnd, "backward");
+
+    const next = runtime.updateSelection(
+      state,
+      {
+        start: start.cursorOffset,
+        end: end.cursorOffset,
+        affinity: "forward",
+      },
+      { kind: "programmatic" },
+    );
+
+    expect(next.source).toBe(state.source);
+    expect(runtime.serialize(next.doc).source).toBe(beforeSerialized);
+    expect(next.selection).toEqual({
+      start: start.cursorOffset,
+      end: end.cursorOffset,
+      affinity: "forward",
+    });
+    expect(next.map.cursorLength).toBe(state.map.cursorLength);
+
+    for (const cursor of sampledPositions(state.map.cursorLength)) {
+      expect(next.map.cursorToSource(cursor, "forward")).toBe(
+        state.map.cursorToSource(cursor, "forward"),
+      );
+      expect(next.map.cursorToSource(cursor, "backward")).toBe(
+        state.map.cursorToSource(cursor, "backward"),
+      );
+    }
+  });
+
+  it("keeps unicode/grapheme edit paths correct for emoji, ZWJ, and combining marks", async () => {
+    const runtime = await createBundledRuntime();
+    let expectedSource = "start 😀 middle 👨‍👩‍👧‍👦 cafe\u0301 done";
+    let state = runtime.createState(expectedSource);
+
+    const setCollapsedSelectionAtSource = (
+      sourceOffset: number,
+      affinity: "forward" | "backward" = "forward",
+    ) => {
+      const cursor = state.map.sourceToCursor(sourceOffset, affinity);
+      state = {
+        ...state,
+        selection: {
+          start: cursor.cursorOffset,
+          end: cursor.cursorOffset,
+          affinity: cursor.affinity,
+        },
+      };
+    };
+
+    const emoji = "😀";
+    const emojiStart = expectedSource.indexOf(emoji);
+    const emojiEnd = emojiStart + emoji.length;
+    setCollapsedSelectionAtSource(emojiEnd, "forward");
+    state = runtime.applyEdit({ type: "delete-backward" }, state);
+    expectedSource = spliceSource(expectedSource, emojiStart, emojiEnd, "");
+    expect(state.source).toBe(expectedSource);
+    expect(sourceOffsetForSelectionStart(state)).toBe(emojiStart);
+
+    const family = "👨‍👩‍👧‍👦";
+    const familyStart = expectedSource.indexOf(family);
+    const familyEnd = familyStart + family.length;
+    setCollapsedSelectionAtSource(familyStart, "forward");
+    state = runtime.applyEdit({ type: "delete-forward" }, state);
+    expectedSource = spliceSource(expectedSource, familyStart, familyEnd, "");
+    expect(state.source).toBe(expectedSource);
+    expect(sourceOffsetForSelectionStart(state)).toBe(familyStart);
+
+    const combining = "e\u0301";
+    const combiningStart = expectedSource.indexOf(combining);
+    const combiningEnd = combiningStart + combining.length;
+    const combiningStartCursor = state.map.sourceToCursor(
+      combiningStart,
+      "forward",
+    );
+    const combiningEndCursor = state.map.sourceToCursor(combiningEnd, "backward");
+    state = {
+      ...state,
+      selection: {
+        start: combiningStartCursor.cursorOffset,
+        end: combiningEndCursor.cursorOffset,
+        affinity: "forward",
+      },
+    };
+    state = runtime.applyEdit({ type: "insert", text: "E" }, state);
+    expectedSource = spliceSource(expectedSource, combiningStart, combiningEnd, "E");
+    expect(state.source).toBe(expectedSource);
+    expect(sourceOffsetForSelectionStart(state)).toBe(combiningStart + 1);
+
+    const thumbs = "👍🏽";
+    const insertAt = expectedSource.indexOf(" done");
+    setCollapsedSelectionAtSource(insertAt, "forward");
+    state = runtime.applyEdit({ type: "insert", text: thumbs }, state);
+    expectedSource = spliceSource(expectedSource, insertAt, insertAt, thumbs);
+    expect(state.source).toBe(expectedSource);
+    expect(sourceOffsetForSelectionStart(state)).toBe(insertAt + thumbs.length);
+
+    state = runtime.applyEdit({ type: "delete-backward" }, state);
+    expectedSource = spliceSource(
+      expectedSource,
+      insertAt,
+      insertAt + thumbs.length,
+      "",
+    );
+    expect(state.source).toBe(expectedSource);
+    expect(sourceOffsetForSelectionStart(state)).toBe(insertAt);
+    expect(runtime.serialize(state.doc).source).toBe(state.source);
   });
 });
 

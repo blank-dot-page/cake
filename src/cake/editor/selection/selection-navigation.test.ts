@@ -6,12 +6,14 @@ import { moveSelectionVertically } from "./selection-navigation";
 function asciiLineInfo(params: {
   lineIndex: number;
   length: number;
+  lineStartOffset?: number;
   hasNewline?: boolean;
   isAtomic?: boolean;
 }): LineInfo {
   const text = "x".repeat(params.length);
   return {
     lineIndex: params.lineIndex,
+    lineStartOffset: params.lineStartOffset ?? 0,
     text,
     cursorLength: params.length,
     hasNewline: params.hasNewline ?? false,
@@ -24,9 +26,34 @@ function collapsed(offset: number): Selection {
   return { start: offset, end: offset, affinity: "forward" };
 }
 
+function resolveOffsetToLine(lines: LineInfo[], offset: number) {
+  if (lines.length === 0) {
+    return { lineIndex: 0, offsetInLine: 0 };
+  }
+  const lastLine = lines[lines.length - 1]!;
+  const totalLength = lastLine.lineStartOffset + lastLine.cursorLength;
+  const clampedOffset = Math.max(0, Math.min(offset, totalLength));
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    const lineStart = line.lineStartOffset;
+    const lineEnd = lineStart + line.cursorLength;
+    if (clampedOffset <= lineEnd || index === lines.length - 1) {
+      return { lineIndex: index, offsetInLine: clampedOffset - lineStart };
+    }
+  }
+
+  return {
+    lineIndex: lines.length - 1,
+    offsetInLine: lastLine.cursorLength,
+  };
+}
+
 describe("selection-navigation: moveSelectionVertically", () => {
   it("moves within wrapped rows using goalX (end of last row -> previous row)", () => {
-    const lines: LineInfo[] = [asciiLineInfo({ lineIndex: 0, length: 20 })];
+    const lines: LineInfo[] = [
+      asciiLineInfo({ lineIndex: 0, lineStartOffset: 0, length: 20 }),
+    ];
     const layout: LayoutModel = {
       container: { top: 0, left: 0, width: 200, height: 20 },
       lines: [
@@ -56,6 +83,7 @@ describe("selection-navigation: moveSelectionVertically", () => {
       lines,
       layout,
       selection: collapsed(20),
+      resolveOffsetToLine: (offset) => resolveOffsetToLine(lines, offset),
       direction: "up",
       goalX: null,
     });
@@ -70,7 +98,9 @@ describe("selection-navigation: moveSelectionVertically", () => {
   });
 
   it("clamps to row end with backward affinity when goalX is past target row right edge", () => {
-    const lines: LineInfo[] = [asciiLineInfo({ lineIndex: 0, length: 20 })];
+    const lines: LineInfo[] = [
+      asciiLineInfo({ lineIndex: 0, lineStartOffset: 0, length: 20 }),
+    ];
     const layout: LayoutModel = {
       container: { top: 0, left: 0, width: 200, height: 20 },
       lines: [
@@ -100,6 +130,7 @@ describe("selection-navigation: moveSelectionVertically", () => {
       lines,
       layout,
       selection: collapsed(20),
+      resolveOffsetToLine: (offset) => resolveOffsetToLine(lines, offset),
       direction: "up",
       goalX: null,
     });
@@ -117,18 +148,21 @@ describe("selection-navigation: moveSelectionVertically", () => {
     const lines: LineInfo[] = [
       asciiLineInfo({
         lineIndex: 0,
+        lineStartOffset: 0,
         length: 5,
         hasNewline: true,
         isAtomic: false,
       }),
       asciiLineInfo({
         lineIndex: 1,
+        lineStartOffset: 6,
         length: 0,
         hasNewline: true,
         isAtomic: true,
       }),
       asciiLineInfo({
         lineIndex: 2,
+        lineStartOffset: 7,
         length: 4,
         hasNewline: false,
         isAtomic: false,
@@ -186,6 +220,7 @@ describe("selection-navigation: moveSelectionVertically", () => {
       lines,
       layout,
       selection: collapsed(4),
+      resolveOffsetToLine: (offset) => resolveOffsetToLine(lines, offset),
       direction: "down",
       goalX: null,
     });

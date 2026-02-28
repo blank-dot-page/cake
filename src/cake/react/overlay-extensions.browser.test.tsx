@@ -8,7 +8,7 @@ import type {
   ParseInlineResult,
   SerializeInlineResult,
 } from "../core/runtime";
-import type { CakeEditor } from "../editor/cake-editor";
+import type { CakeEditor as RuntimeCakeEditor } from "../editor/cake-editor";
 import { CursorSourceBuilder } from "../core/mapping/cursor-source-map";
 import type { Inline } from "../core/types";
 
@@ -101,7 +101,7 @@ const helloInlineExtension: CakeExtension = (editor) => {
       .forEach((d) => d());
 };
 
-function HelloPopoverUI({ editor }: { editor: CakeEditor }) {
+function HelloPopoverUI({ editor }: { editor: RuntimeCakeEditor }) {
   const container = editor.getContainer();
   const contentRoot = editor.getContentRoot();
   if (!contentRoot) {

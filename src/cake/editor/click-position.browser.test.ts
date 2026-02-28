@@ -284,9 +284,10 @@ describe("CakeEditor click positioning", () => {
       // Vitest browser mode runs in an iframe that may have coordinate scaling.
       // Detect the scale factor by doing a probe click and comparing clientX vs
       // the coordinates we passed in.
-      let capturedEvent: PointerEvent | null = null;
+      const probeClient = { x: 100, y: 100 };
       const listener = (e: PointerEvent) => {
-        capturedEvent = e;
+        probeClient.x = e.clientX;
+        probeClient.y = e.clientY;
       };
       harness.container.addEventListener("pointerdown", listener, {
         capture: true,
@@ -296,14 +297,13 @@ describe("CakeEditor click positioning", () => {
       await commands.clickAtCoordinates(100, 100, false);
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const scaleX = capturedEvent ? capturedEvent.clientX / 100 : 1;
-      const scaleY = capturedEvent ? capturedEvent.clientY / 100 : 1;
+      const scaleX = probeClient.x / 100;
+      const scaleY = probeClient.y / 100;
 
       // Click at the adjusted coordinates to compensate for scaling
       const adjustedMidX = midX / scaleX;
       const adjustedClickY = clickY / scaleY;
 
-      capturedEvent = null;
       await commands.clickAtCoordinates(adjustedMidX, adjustedClickY, false);
       await new Promise((resolve) => setTimeout(resolve, 100));
 

@@ -83,14 +83,15 @@ describe("select-all viewport behavior", () => {
     const scrollBeforeSelection = harness.container.scrollTop;
 
     const visibleMidpoint = Math.floor(cursorLength * 0.5);
-    const engineWithScrollSpy = harness.engine as unknown as {
+    const editorEngine = harness.engine;
+    const engineWithScrollSpy = editorEngine as unknown as {
       scrollCaretIntoView: () => void;
     };
     const originalScrollCaretIntoView = engineWithScrollSpy.scrollCaretIntoView;
     let scrollCaretIntoViewCalls = 0;
     engineWithScrollSpy.scrollCaretIntoView = () => {
       scrollCaretIntoViewCalls += 1;
-      originalScrollCaretIntoView.call(harness.engine);
+      originalScrollCaretIntoView.call(editorEngine);
     };
     const observedDuringRangeSelection: number[] = [scrollBeforeSelection];
     const trackRangeSelectionScroll = () => {
