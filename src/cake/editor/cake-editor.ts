@@ -296,6 +296,8 @@ export class CakeEditor {
   private lastRenderPerf: RenderPerf | null = null;
   private renderSnapshot: RenderSnapshot | null = null;
   private lastRenderedState: RenderStateSnapshot | null = null;
+  private renderInvalidationVersion = 0;
+  private lastRenderedInvalidationVersion = 0;
   private history: HistoryState = {
     undoStack: [],
     redoStack: [],
@@ -1429,6 +1431,11 @@ export class CakeEditor {
     this.render();
   }
 
+  invalidateRender() {
+    this.renderInvalidationVersion += 1;
+    this.render();
+  }
+
   focus(selection?: Selection) {
     // Only set selection if we don't already have focus.
     // This prevents stale selection from resetting the current selection
@@ -1813,10 +1820,21 @@ export class CakeEditor {
     if (perfEnabled) {
       renderStart = performance.now();
     }
-    const dirtyCursorRange = computeDirtyCursorRange(
-      this.lastRenderedState,
-      this.state,
-    );
+    const shouldForceFullRerender =
+      this.renderInvalidationVersion !== this.lastRenderedInvalidationVersion;
+    const dirtyCursorRange =
+      shouldForceFullRerender && this.lastRenderedState
+        ? {
+            previous: {
+              start: 0,
+              end: this.lastRenderedState.map.cursorLength,
+            },
+            next: {
+              start: 0,
+              end: this.state.map.cursorLength,
+            },
+          }
+        : computeDirtyCursorRange(this.lastRenderedState, this.state);
     const { content, map, snapshot } = renderDocContent(
       this.state.doc,
       this.runtime.dom,
@@ -1849,6 +1867,7 @@ export class CakeEditor {
       source: this.state.source,
       map: this.state.map,
     };
+    this.lastRenderedInvalidationVersion = this.renderInvalidationVersion;
     if (perfEnabled) {
       renderAndMapMs = performance.now() - renderStart;
     }

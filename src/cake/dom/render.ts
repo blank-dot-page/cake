@@ -342,6 +342,7 @@ export function renderDocContent(
     renderBlock,
     renderBlocks,
     createTextRun,
+    getCursorOffset: () => cursorOffset,
     getLineIndex: () => lineIndex,
     incrementLineIndex: () => {
       lineIndex += 1;

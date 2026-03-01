@@ -6,6 +6,7 @@ export type DomRenderContext = {
   renderBlock: (block: Block) => Node[];
   renderBlocks: (blocks: Block[]) => Node[];
   createTextRun: (node: Text) => TextRun;
+  getCursorOffset: () => number;
   getLineIndex: () => number;
   incrementLineIndex: () => void;
 };
