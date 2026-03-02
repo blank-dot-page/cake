@@ -34,7 +34,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run test && npm run build",
-    "demo": "npm --workspace demo run dev"
+    "demo": "npm --workspace demo run dev",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "lucide-react": "^0.395.0",
