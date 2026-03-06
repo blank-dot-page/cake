@@ -841,6 +841,32 @@ describe("list toggle commands", () => {
     expect(harness.engine.getValue()).toBe("- hello world");
   });
 
+  test("toggle-bullet-list on middle paragraph keeps a collapsed caret on that line", async () => {
+    harness = createTestHarness("line one\nline two\nline three");
+
+    await harness.focus();
+    // Place caret within the middle paragraph (between two other paragraphs).
+    harness.engine.setSelection({ start: 12, end: 12, affinity: "forward" });
+
+    harness.engine.executeCommand({ type: "toggle-bullet-list" });
+
+    expect(harness.engine.getValue()).toBe("line one\n- line two\nline three");
+
+    const selection = harness.engine.getSelection();
+    expect(selection.start).toBe(selection.end);
+    expect(selection.start).toBeGreaterThanOrEqual(9);
+    expect(selection.end).toBeLessThanOrEqual(19);
+
+    const caretRect = harness.getCaretRect();
+    expect(caretRect).not.toBeNull();
+    if (caretRect) {
+      const middleLineRect = harness.getLineRect(1);
+      const caretCenterY = caretRect.top + caretRect.height / 2;
+      expect(caretCenterY).toBeGreaterThanOrEqual(middleLineRect.top - 2);
+      expect(caretCenterY).toBeLessThanOrEqual(middleLineRect.bottom + 2);
+    }
+  });
+
   test("toggle-bullet-list on multiple lines creates bullet list for each", async () => {
     harness = createTestHarness("line one\nline two\nline three");
 
@@ -877,6 +903,32 @@ describe("list toggle commands", () => {
     harness.engine.executeCommand({ type: "toggle-numbered-list" });
 
     expect(harness.engine.getValue()).toBe("1. hello world");
+  });
+
+  test("toggle-numbered-list on middle paragraph keeps a collapsed caret on that line", async () => {
+    harness = createTestHarness("line one\nline two\nline three");
+
+    await harness.focus();
+    // Place caret within the middle paragraph (between two other paragraphs).
+    harness.engine.setSelection({ start: 12, end: 12, affinity: "forward" });
+
+    harness.engine.executeCommand({ type: "toggle-numbered-list" });
+
+    expect(harness.engine.getValue()).toBe("line one\n1. line two\nline three");
+
+    const selection = harness.engine.getSelection();
+    expect(selection.start).toBe(selection.end);
+    expect(selection.start).toBeGreaterThanOrEqual(9);
+    expect(selection.end).toBeLessThanOrEqual(20);
+
+    const caretRect = harness.getCaretRect();
+    expect(caretRect).not.toBeNull();
+    if (caretRect) {
+      const middleLineRect = harness.getLineRect(1);
+      const caretCenterY = caretRect.top + caretRect.height / 2;
+      expect(caretCenterY).toBeGreaterThanOrEqual(middleLineRect.top - 2);
+      expect(caretCenterY).toBeLessThanOrEqual(middleLineRect.bottom + 2);
+    }
   });
 
   test("toggle-numbered-list on multiple lines creates numbered list with sequential numbers", async () => {
@@ -937,7 +989,7 @@ describe("list toggle commands", () => {
 
     expect(harness.engine.getValue()).toBe("- ");
     // Cursor should be positioned after the marker
-    expect(harness.engine.getSelection()).toEqual({ start: 2, end: 2, affinity: "forward" });
+    expect(harness.engine.getSelection()).toEqual({ start: 2, end: 2, affinity: "backward" });
   });
 
   test("toggle-numbered-list on empty line creates numbered list marker", async () => {
@@ -950,7 +1002,7 @@ describe("list toggle commands", () => {
 
     expect(harness.engine.getValue()).toBe("1. ");
     // Cursor should be positioned after the marker
-    expect(harness.engine.getSelection()).toEqual({ start: 3, end: 3, affinity: "forward" });
+    expect(harness.engine.getSelection()).toEqual({ start: 3, end: 3, affinity: "backward" });
   });
 
   test("toggle-bullet-list on empty line in middle of document", async () => {
@@ -964,7 +1016,7 @@ describe("list toggle commands", () => {
 
     expect(harness.engine.getValue()).toBe("line one\n- \nline three");
     // Cursor should be positioned after the marker on the middle line
-    expect(harness.engine.getSelection()).toEqual({ start: 11, end: 11, affinity: "forward" });
+    expect(harness.engine.getSelection()).toEqual({ start: 11, end: 11, affinity: "backward" });
   });
 
   test("toggle-numbered-list on empty line in middle of document", async () => {
@@ -978,7 +1030,7 @@ describe("list toggle commands", () => {
 
     expect(harness.engine.getValue()).toBe("line one\n1. \nline three");
     // Cursor should be positioned after the marker on the middle line
-    expect(harness.engine.getSelection()).toEqual({ start: 12, end: 12, affinity: "forward" });
+    expect(harness.engine.getSelection()).toEqual({ start: 12, end: 12, affinity: "backward" });
   });
 });
 
@@ -1059,6 +1111,65 @@ describe("keyboard shortcuts for list toggle", () => {
     await harness.pressKey("7", modShift);
 
     expect(harness.engine.getValue()).toBe("1. hello world");
+  });
+
+  test("Cmd+Shift+7 on an empty line between heading and paragraph keeps caret on the new list line", async () => {
+    harness = createTestHarness("# this is a title\n\nthis is text");
+
+    await harness.focus();
+    // Place caret on the empty middle line using the same DOM interaction a user would.
+    const emptyLineRect = harness.getLineRect(1);
+    await harness.clickAtCoords(
+      emptyLineRect.left + 5,
+      emptyLineRect.top + emptyLineRect.height / 2,
+    );
+
+    await harness.pressKey("7", modShift);
+
+    expect(harness.engine.getValue()).toBe("# this is a title\n1. \nthis is text");
+    expect(harness.engine.getSelection()).toEqual({
+      start: 19,
+      end: 19,
+      affinity: "backward",
+    });
+  });
+
+  test("Cmd+Shift+7 after typing heading, blank line, and paragraph from empty keeps caret on the new list line", async () => {
+    harness = createTestHarness("");
+
+    await harness.focus();
+    await harness.typeText("# this is a title");
+    await harness.pressEnter();
+    await harness.pressEnter();
+    await harness.typeText("this is text");
+    await harness.pressKey("ArrowUp");
+    await harness.pressKey("7", modShift);
+
+    const domCaretLineText = (() => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return null;
+      }
+      let current: Node | null = selection.anchorNode;
+      while (current) {
+        if (
+          current.nodeType === Node.ELEMENT_NODE &&
+          (current as Element).classList.contains("cake-line")
+        ) {
+          return current.textContent ?? "";
+        }
+        current = current.parentNode;
+      }
+      return null;
+    })();
+
+    expect(harness.engine.getValue()).toBe("# this is a title\n1. \nthis is text");
+    expect(harness.selection).toEqual({
+      start: 19,
+      end: 19,
+      affinity: "backward",
+    });
+    expect(domCaretLineText).toBe("1. ");
   });
 
   test("Cmd+Shift+7 toggles numbered list off", async () => {

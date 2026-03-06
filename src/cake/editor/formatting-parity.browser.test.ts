@@ -101,6 +101,26 @@ describe("Cake formatting parity (browser)", () => {
     h.destroy();
   });
 
+  it("Cmd+B then Cmd+I then Cmd+B off does not surface raw marker syntax", async () => {
+    const h = createTestHarness("");
+
+    await h.focus();
+    await h.pressKey("b", mod);
+    await h.typeText("bold");
+    await h.pressKey("i", mod);
+    await h.typeText("italics");
+    await h.pressKey("b", mod);
+    await h.typeText("plain");
+
+    expect(h.engine.getValue()).toBe("**bold*italics***plain");
+    const line = h.getLine(0);
+    expect((line.textContent ?? "").replace(/\u200B/g, "")).toBe(
+      "bolditalicsplain",
+    );
+    expect(line.textContent ?? "").not.toContain("*");
+    h.destroy();
+  });
+
   it("Cmd+B on selected link text wraps the label in bold", async () => {
     const h = createTestHarness("[link](url)");
 

@@ -2291,6 +2291,23 @@ export function createRuntimeFromRegistry(registry: {
       ) {
         const exiting = around.left.slice(around.right.length);
         if (exiting.some((mark) => mark.kind === markerKind)) {
+          const toggledExitingIndex = exiting.findIndex(
+            (mark) => mark.kind === markerKind,
+          );
+          if (
+            exiting.length > 1 &&
+            toggledExitingIndex !== -1 &&
+            toggledExitingIndex < exiting.length - 1
+          ) {
+            return {
+              ...state,
+              selection: {
+                start: caret,
+                end: caret,
+                affinity: "forward",
+              },
+            };
+          }
           if (exiting.length > 1) {
             const insertAtForward = map.cursorToSource(caret, "forward");
             const insertAtBackward = map.cursorToSource(caret, "backward");

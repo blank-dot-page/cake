@@ -51,6 +51,34 @@ function getFirstLine(): HTMLElement {
   return line;
 }
 
+function getCaretLineText(): string | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+
+  let current: Node | null = selection.anchorNode;
+  while (current) {
+    if (
+      current.nodeType === Node.ELEMENT_NODE &&
+      (current as Element).classList.contains("cake-line")
+    ) {
+      return current.textContent ?? "";
+    }
+    current = current.parentNode;
+  }
+
+  return null;
+}
+
+function getLine(index: number): HTMLElement {
+  const line = document.querySelector(`[data-line-index="${index}"]`);
+  if (!line || !(line instanceof HTMLElement)) {
+    throw new Error(`Missing line ${index}`);
+  }
+  return line;
+}
+
 function dispatchPaste(text: string) {
   const contentRoot = getContentRoot();
   const data = new DataTransfer();
@@ -241,6 +269,55 @@ describe("cake formatting interactions", () => {
     await new Promise((r) => setTimeout(r, 120));
 
     expect(latestActiveMarks).toEqual(["bold"]);
+  });
+
+  it("Cmd+Shift+7 on an empty line between heading and paragraph keeps the DOM caret on the new list line in controlled React usage", async () => {
+    const isMac =
+      typeof navigator !== "undefined" &&
+      typeof navigator.platform === "string" &&
+      navigator.platform.toLowerCase().includes("mac");
+    const ref = createRef<CakeEditorRef>();
+
+    function ControlledEditor() {
+      const [value, setValue] = useState("# this is a title\n\nthis is text");
+      const [selection, setSelection] = useState<{
+        start: number;
+        end: number;
+        affinity?: "backward" | "forward";
+      }>();
+
+      return (
+        <CakeEditor
+          ref={ref}
+          value={value}
+          selection={selection}
+          onChange={setValue}
+          onSelectionChange={(start, end, affinity) => {
+            setSelection({ start, end, affinity });
+          }}
+          placeholder=""
+          extensions={bundledExtensions}
+          style={{ height: 160, overflow: "auto" }}
+        />
+      );
+    }
+
+    await render(<ControlledEditor />);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    await userEvent.click(getLine(1));
+    expect(getCaretLineText()).toBe("");
+
+    if (isMac) {
+      await userEvent.keyboard("{Meta>}{Shift>}7{/Shift}{/Meta}");
+    } else {
+      await userEvent.keyboard("{Control>}{Shift>}7{/Shift}{/Control}");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(ref.current?.getValue()).toBe("# this is a title\n1. \nthis is text");
+    expect(ref.current?.getSelection()).toEqual({ start: 19, end: 19 });
+    expect(getCaretLineText()).toBe("1. ");
   });
 
   it("emits a single selection callback for one insertText update", async () => {

@@ -817,22 +817,28 @@ function handleToggleList(
     if (selection.start === selection.end && startLine === endLine && lines[startLine] === "") {
       const marker = isBullet ? "- " : "1. ";
       newLines[startLine] = marker;
-
-      // Calculate new selection position (after the marker)
-      let newCursorPos = 0;
+      // Calculate new source position after the inserted marker.
+      let newCursorSourcePos = 0;
       for (let i = 0; i < startLine; i++) {
-        newCursorPos += lines[i].length + 1; // +1 for newline
+        newCursorSourcePos += lines[i].length + 1; // +1 for newline
       }
-      newCursorPos += marker.length;
+      newCursorSourcePos += marker.length;
 
       const newSource = newLines.join("\n");
+      const next = runtime.createState(newSource);
+      // Bias backward so the caret stays on the newly created empty list line
+      // instead of normalizing to the following line at the shared boundary.
+      const nextCursor = next.map.sourceToCursor(
+        newCursorSourcePos,
+        "backward",
+      );
 
       return {
         source: newSource,
         selection: {
-          start: newCursorPos,
-          end: newCursorPos,
-          affinity: "forward",
+          start: nextCursor.cursorOffset,
+          end: nextCursor.cursorOffset,
+          affinity: nextCursor.affinity,
         },
       };
     }
@@ -904,6 +910,56 @@ function handleToggleList(
         serialized +
         newSource.slice(block.endOffset);
     }
+  }
+
+  if (selection.start === selection.end && startLine === endLine) {
+    const originalCursorSource = map.cursorToSource(
+      selection.start,
+      selection.affinity ?? "forward",
+    );
+    const originalLineInfo = getLineInfo(source, originalCursorSource);
+    const originalLine = lines[startLine] ?? "";
+    const nextLines = getSourceLines(newSource);
+    const nextLine = nextLines[startLine] ?? "";
+
+    const originalPrefixLength = getListPrefixLength(originalLine) ?? 0;
+    const nextPrefixLength = getListPrefixLength(nextLine) ?? 0;
+    const originalContentLength = Math.max(
+      0,
+      originalLine.length - originalPrefixLength,
+    );
+    const nextContentLength = Math.max(0, nextLine.length - nextPrefixLength);
+    const cursorOffsetInContent = Math.max(
+      0,
+      Math.min(
+        originalContentLength,
+        originalLineInfo.offsetInLine - originalPrefixLength,
+      ),
+    );
+    const nextOffsetInContent = Math.min(
+      nextContentLength,
+      cursorOffsetInContent,
+    );
+
+    let nextCursorSourceOffset = 0;
+    for (let i = 0; i < startLine; i += 1) {
+      nextCursorSourceOffset += (nextLines[i] ?? "").length + 1;
+    }
+    nextCursorSourceOffset += nextPrefixLength + nextOffsetInContent;
+
+    const next = runtime.createState(newSource);
+    const nextCursor = next.map.sourceToCursor(
+      nextCursorSourceOffset,
+      "forward",
+    );
+    return {
+      source: newSource,
+      selection: {
+        start: nextCursor.cursorOffset,
+        end: nextCursor.cursorOffset,
+        affinity: nextCursor.affinity,
+      },
+    };
   }
 
   // Calculate new selection to preserve the selected range
