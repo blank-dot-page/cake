@@ -2921,13 +2921,26 @@ export function createRuntimeFromRegistry(registry: {
         .join("");
       const listMatch = plainText.match(/^(\s*)([-*+]|\d+\.)( )(.*)$/);
 
-      // Determine the HTML content - strip list prefix if it's a list line
+      const prefixLength = listMatch
+        ? Array.from(
+            graphemeSegments(`${listMatch[1]}${listMatch[2]}${listMatch[3]}`),
+          ).length
+        : 0;
+      const selectsEntireWrappedListLine =
+        (wrapperKind === "bullet-list" || wrapperKind === "numbered-list") &&
+        startInLine === 0 &&
+        endInLine >= line.cursorLength;
+      const selectsEntirePlainListItem =
+        !wrapperKind &&
+        Boolean(listMatch) &&
+        startInLine <= prefixLength &&
+        endInLine >= line.cursorLength;
+
+      // Determine the HTML content - strip list prefix only when copying the
+      // entire plain list item. Partial selections should serialize as plain
+      // fragments so HTML-first paste does not reinsert the whole list item.
       let lineHtml: string;
-      if (listMatch && !wrapperKind) {
-        // For list lines, only include the content after the prefix
-        const prefixLength = Array.from(
-          graphemeSegments(`${listMatch[1]}${listMatch[2]}${listMatch[3]}`),
-        ).length;
+      if (selectsEntirePlainListItem) {
         const contentRuns = sliceRuns(
           runs,
           prefixLength,
@@ -2952,16 +2965,19 @@ export function createRuntimeFromRegistry(registry: {
           6,
         );
         html += `<h${level} style="margin:0">${lineHtml}</h${level}>`;
-      } else if (wrapperKind === "bullet-list") {
+      } else if (wrapperKind === "bullet-list" && selectsEntireWrappedListLine) {
         openList("ul", 0);
         html += `<li>${lineHtml}</li>`;
-      } else if (wrapperKind === "numbered-list") {
+      } else if (
+        wrapperKind === "numbered-list" &&
+        selectsEntireWrappedListLine
+      ) {
         openList("ol", 0);
         html += `<li>${lineHtml}</li>`;
       } else if (wrapperKind === "blockquote") {
         closeList();
         html += `<blockquote>${lineHtml}</blockquote>`;
-      } else if (listMatch) {
+      } else if (selectsEntirePlainListItem && listMatch) {
         // Plain paragraph with list markers (cake v3 list model)
         const isNumbered = /^\d+\.$/.test(listMatch[2]);
         const indent = Math.floor(listMatch[1].length / 2);
