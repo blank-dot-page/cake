@@ -278,6 +278,43 @@ function processTextNodes(element: Element) {
   });
 }
 
+function collapseCopiedLineBlockDivs(body: HTMLElement) {
+  if (body.children.length !== 1) {
+    return;
+  }
+
+  const wrapper = body.firstElementChild;
+  if (!(wrapper instanceof HTMLDivElement)) {
+    return;
+  }
+
+  const childElements = Array.from(wrapper.children);
+  if (
+    childElements.length < 2 ||
+    childElements.some((child) => !(child instanceof HTMLDivElement))
+  ) {
+    return;
+  }
+
+  const nestedBlockSelector =
+    "div,p,ul,ol,li,blockquote,table,pre,hr,h1,h2,h3,h4,h5,h6";
+  if (childElements.some((child) => child.querySelector(nestedBlockSelector))) {
+    return;
+  }
+
+  const normalized = document.createElement("div");
+  childElements.forEach((child, index) => {
+    while (child.firstChild) {
+      normalized.append(child.firstChild);
+    }
+    if (index < childElements.length - 1) {
+      normalized.append(document.createElement("br"));
+    }
+  });
+
+  wrapper.replaceWith(normalized);
+}
+
 function detectSourceApp(html: string): string {
   const detectionPatterns: Record<string, string[]> = {
     notion: ["notion-", "notranslate"],
@@ -376,6 +413,7 @@ function preprocessHtml(html: string): string {
 
   if (doc.body) {
     processTextNodes(doc.body);
+    collapseCopiedLineBlockDivs(doc.body);
     processedHtml = doc.body.innerHTML;
   }
 

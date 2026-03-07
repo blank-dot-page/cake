@@ -109,6 +109,26 @@ describe("clipboard selection serialization", () => {
 
     expect(html).toBe("<div><ol><li>First</li><li>Second</li></ol></div>");
   });
+
+  it("does not wrap partial list-item selections in list markup", () => {
+    const runtime = createTestRuntime();
+    const state = runtime.createState("- alpha beta");
+    const selection = selectionForText({ runtime, state, text: "beta" });
+
+    const html = runtime.serializeSelectionToHtml(state, selection);
+
+    expect(html).toBe("<div><div>beta</div></div>");
+  });
+
+  it("does not infer list markup without the list extension", () => {
+    const runtime = createRuntimeForTests([]);
+    const state = runtime.createState("- alpha\n- beta");
+    const selection = { start: 0, end: 100 };
+
+    const html = runtime.serializeSelectionToHtml(state, selection);
+
+    expect(html).toBe("<div><div>- alpha</div><div>- beta</div></div>");
+  });
 });
 
 describe("clipboard html paste", () => {
@@ -216,12 +236,26 @@ describe("clipboard html paste", () => {
     expect(result).toBe("1. First\n2. Second");
   });
 
+  it("converts copied multiline block html without inserting blank lines", () => {
+    const result = htmlToMarkdownForPaste(
+      "<div><div>alpha</div><div>beta</div><div>gamma</div></div>",
+    );
+
+    expect(result).toBe("alpha\nbeta\ngamma");
+  });
+
   it("converts blockquotes to markdown", () => {
     const result = htmlToMarkdownForPaste(
       "<blockquote>This is a quote</blockquote>",
     );
 
     expect(result).toBe("> This is a quote");
+  });
+
+  it("ignores bare horizontal rule html instead of inserting text artifacts", () => {
+    const result = htmlToMarkdownForPaste("<hr>");
+
+    expect(result).toBeNull();
   });
 
   it("converts inline code to markdown", () => {

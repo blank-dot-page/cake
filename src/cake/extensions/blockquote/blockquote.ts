@@ -241,6 +241,21 @@ export const blockquoteExtension: CakeExtension = (editor) => {
     }),
   );
 
+  disposers.push(
+    editor.registerSerializeSelectionLineToHtml((context) => {
+      if (
+        context.wrapperBlock?.type !== "block-wrapper" ||
+        context.wrapperBlock.kind !== BLOCKQUOTE_KIND
+      ) {
+        return null;
+      }
+
+      return {
+        html: `<blockquote>${context.selectedHtml}</blockquote>`,
+      };
+    }),
+  );
+
   return () =>
     disposers
       .splice(0)
