@@ -1042,6 +1042,40 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("pasting multiline web html into a list item keeps the following list structure intact", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "- before\n- target\n- after",
+      extensions: [plainTextListExtension],
+    });
+
+    engine.setSelection({ start: 17, end: 17, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "alpha\nbeta");
+    dataTransfer.setData(
+      "text/html",
+      "<div><div>alpha</div><div>beta</div></div>",
+    );
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe("- before\n- targetalpha\nbeta\n- after");
+    engine.destroy();
+  });
+
   it("copying a partial selection inside a list item copies only the selected text", async () => {
     const container = createContainer();
     let lastValue = "- alpha beta\ndestination";
