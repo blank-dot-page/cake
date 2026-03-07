@@ -18,6 +18,7 @@ import {
   countNumberedItemsBefore,
 } from "./list-ast";
 import { getLineBlockContent } from "../shared/line-content";
+import { graphemeSegments } from "../../shared/segmenter";
 
 // Match list lines - capture exactly one space after marker, rest goes to content
 const LIST_LINE_REGEX = /^(\s*)([-*+]|\d+\.)( )(.*)$/;
@@ -1268,6 +1269,72 @@ export const plainTextListExtension: CakeExtension = (editor) => {
         return handleMarkerSwitch(state, command.text);
       }
       return null;
+    }),
+  );
+
+  disposers.push(
+    editor.registerSerializeSelectionLineToHtml((context) => {
+      const { wrapperBlock, lineText, startInLine, endInLine, lineCursorLength } =
+        context;
+      const listMatch = matchListLine(lineText);
+      const prefixLength = listMatch
+        ? Array.from(graphemeSegments(listMatch.prefix)).length
+        : 0;
+      const selectsEntirePlainListItem =
+        !wrapperBlock &&
+        Boolean(listMatch) &&
+        startInLine === 0 &&
+        endInLine >= lineCursorLength;
+
+      if (
+        wrapperBlock?.type === "block-wrapper" &&
+        (wrapperBlock.kind === "bullet-list" ||
+          wrapperBlock.kind === "numbered-list") &&
+        startInLine === 0 &&
+        endInLine >= lineCursorLength
+      ) {
+        const type = wrapperBlock.kind === "numbered-list" ? "ol" : "ul";
+        return {
+          html: `<li>${context.selectedHtml}</li>`,
+          group: {
+            key: `${type}:0`,
+            open: `<${type}>`,
+            close: `</${type}>`,
+          },
+        };
+      }
+
+      if (!selectsEntirePlainListItem || !listMatch) {
+        return null;
+      }
+
+      const contentStart = Math.min(prefixLength, lineCursorLength);
+      const selectedContent = lineText.slice(listMatch.prefix.length);
+      const contentHtml =
+        startInLine <= contentStart && endInLine >= lineCursorLength
+          ? context.state.runtime.serializeSelectionToHtml(
+              context.state,
+              {
+                start:
+                  context.line.lineStartOffset +
+                  Math.min(contentStart, context.lineCursorLength),
+                end: context.line.lineStartOffset + lineCursorLength,
+                affinity: "forward",
+              },
+            )
+              .replace(/^<div><div>/, "")
+              .replace(/<\/div><\/div>$/, "")
+          : context.selectedHtml;
+      const type = listMatch.number === null ? "ul" : "ol";
+      const indent = Math.floor(listMatch.indent.length / 2);
+      return {
+        html: `<li>${contentHtml || selectedContent}</li>`,
+        group: {
+          key: `${type}:${indent}`,
+          open: `<${type}>`,
+          close: `</${type}>`,
+        },
+      };
     }),
   );
 

@@ -471,6 +471,26 @@ describe("Cake formatting parity (browser)", () => {
     h.destroy();
   });
 
+  it("internal copy/paste preserves plain multiline blocks without adding spacing", async () => {
+    const source = createTestHarness("alpha\nbeta\ngamma");
+    source.engine.selectAll();
+    await tick();
+
+    const copyDt = new DataTransfer();
+    dispatchClipboardEvent(source.contentRoot, "copy", copyDt);
+
+    const destination = createTestHarness("");
+    const pasteDt = new DataTransfer();
+    pasteDt.setData("text/plain", copyDt.getData("text/plain"));
+    pasteDt.setData("text/html", copyDt.getData("text/html"));
+    dispatchClipboardEvent(destination.contentRoot, "paste", pasteDt);
+
+    expect(destination.engine.getValue()).toBe("alpha\nbeta\ngamma");
+
+    source.destroy();
+    destination.destroy();
+  });
+
   it("Cmd+B then Cmd+I then typing produces combined emphasis", async () => {
     const h = createTestHarness("");
 

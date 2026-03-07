@@ -166,6 +166,14 @@ export const italicExtension: CakeExtension = (editor) => {
       return element;
     }),
   );
+  disposers.push(
+    editor.registerInlineHtmlSerializer((mark, content) => {
+      if (mark.kind !== ITALIC_KIND) {
+        return null;
+      }
+      return `<em>${content}</em>`;
+    }),
+  );
 
   return () =>
     disposers

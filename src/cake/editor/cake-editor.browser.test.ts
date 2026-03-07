@@ -1042,6 +1042,153 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("pasting multiline web html into a list item keeps the following list structure intact", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "- before\n- target\n- after",
+      extensions: [plainTextListExtension],
+    });
+
+    engine.setSelection({ start: 17, end: 17, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "alpha\nbeta");
+    dataTransfer.setData(
+      "text/html",
+      "<div><div>alpha</div><div>beta</div></div>",
+    );
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe("- before\n- targetalpha\nbeta\n- after");
+    engine.destroy();
+  });
+
+  it("copying a partial selection inside a list item copies only the selected text", async () => {
+    const container = createContainer();
+    let lastValue = "- alpha beta\ndestination";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const contentRoot = container.querySelector(".cake-content");
+    const line = container.querySelector('[data-line-index="0"]');
+    if (!contentRoot || !line) {
+      throw new Error("Missing rendered list line");
+    }
+
+    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+    let contentTextNode: Text | null = null;
+    let currentNode = walker.nextNode();
+    while (currentNode) {
+      if (
+        currentNode instanceof Text &&
+        currentNode.data.includes("alpha beta")
+      ) {
+        contentTextNode = currentNode;
+        break;
+      }
+      currentNode = walker.nextNode();
+    }
+    if (!contentTextNode) {
+      throw new Error("Missing list content text node");
+    }
+
+    const selectedText = "beta";
+    const selectionStart = contentTextNode.data.indexOf(selectedText);
+    if (selectionStart === -1) {
+      throw new Error("Missing selected text in rendered list node");
+    }
+    setDomSelection(
+      contentTextNode,
+      selectionStart,
+      selectionStart + selectedText.length,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const dataTransfer = new DataTransfer();
+    const copyEvent = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(copyEvent);
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(dataTransfer.getData("text/plain")).toBe("beta");
+
+    const destinationSelection = lastValue.length;
+    engine.setSelection({
+      start: destinationSelection,
+      end: destinationSelection,
+      affinity: "forward",
+    });
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("- alpha beta\ndestinationbeta");
+    engine.destroy();
+  });
+
+  it("pasting simple web html leaves the caret at the end of the inserted text", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "",
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "example");
+    dataTransfer.setData("text/html", "<div><span>example</span></div>");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe("example");
+    expect(engine.getSelection()).toEqual({
+      start: 7,
+      end: 7,
+      affinity: "forward",
+    });
+    engine.destroy();
+  });
+
   it("prevents default history undo/redo input", () => {
     const container = createContainer();
     let callCount = 0;

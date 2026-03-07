@@ -124,6 +124,14 @@ export const underlineExtension: CakeExtension = (editor) => {
       return element;
     }),
   );
+  disposers.push(
+    editor.registerInlineHtmlSerializer((mark, content) => {
+      if (mark.kind !== UNDERLINE_KIND) {
+        return null;
+      }
+      return `<u>${content}</u>`;
+    }),
+  );
 
   return () =>
     disposers

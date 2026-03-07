@@ -606,6 +606,15 @@ function installLinkExtension(editor: CakeEditor, options: LinkExtensionOptions)
       return element;
     }),
   );
+  disposers.push(
+    editor.registerInlineHtmlSerializer((mark, content, context) => {
+      if (mark.kind !== LINK_KIND) {
+        return null;
+      }
+      const url = (mark.data as { url?: string } | undefined)?.url ?? "";
+      return `<a href="${context.escapeHtml(url)}">${content}</a>`;
+    }),
+  );
 
   const LinkPopoverUI = ({ editor }: { editor: CakeEditor }) => (
     <CakeLinkPopover editor={editor} styles={options.styles} />

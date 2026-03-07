@@ -122,6 +122,14 @@ export const strikethroughExtension: CakeExtension = (editor) => {
       return element;
     }),
   );
+  disposers.push(
+    editor.registerInlineHtmlSerializer((mark, content) => {
+      if (mark.kind !== STRIKE_KIND) {
+        return null;
+      }
+      return `<s>${content}</s>`;
+    }),
+  );
 
   return () =>
     disposers
