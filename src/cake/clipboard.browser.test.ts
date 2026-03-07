@@ -119,6 +119,16 @@ describe("clipboard selection serialization", () => {
 
     expect(html).toBe("<div><div>beta</div></div>");
   });
+
+  it("does not infer list markup without the list extension", () => {
+    const runtime = createRuntimeForTests([]);
+    const state = runtime.createState("- alpha\n- beta");
+    const selection = { start: 0, end: 100 };
+
+    const html = runtime.serializeSelectionToHtml(state, selection);
+
+    expect(html).toBe("<div><div>- alpha</div><div>- beta</div></div>");
+  });
 });
 
 describe("clipboard html paste", () => {
@@ -240,6 +250,12 @@ describe("clipboard html paste", () => {
     );
 
     expect(result).toBe("> This is a quote");
+  });
+
+  it("ignores bare horizontal rule html instead of inserting text artifacts", () => {
+    const result = htmlToMarkdownForPaste("<hr>");
+
+    expect(result).toBeNull();
   });
 
   it("converts inline code to markdown", () => {

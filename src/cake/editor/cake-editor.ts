@@ -17,6 +17,8 @@ import {
   type DomInlineRenderer,
   type ExtensionContext,
   type InlineWrapperAffinity,
+  type InlineHtmlSerializer,
+  type SerializeSelectionLineToHtml,
   type EditResult,
 } from "../core/runtime";
 import type { CakeExtension, CakeUIComponent } from "./extension-types";
@@ -225,6 +227,8 @@ export class CakeEditor {
   private activeMarksResolvers: ActiveMarksResolver[] = [];
   private domInlineRenderers: DomInlineRenderer[] = [];
   private domBlockRenderers: DomBlockRenderer[] = [];
+  private inlineHtmlSerializers: InlineHtmlSerializer[] = [];
+  private serializeSelectionLineToHtmlFns: SerializeSelectionLineToHtml[] = [];
   private uiComponents: CakeUIComponent[] = [];
   private extensionDisposers: Array<() => void> = [];
   private textModel = new EditorTextModel();
@@ -430,6 +434,8 @@ export class CakeEditor {
       structuralReparsePolicies: this.structuralReparsePolicies,
       domInlineRenderers: this.domInlineRenderers,
       domBlockRenderers: this.domBlockRenderers,
+      inlineHtmlSerializers: this.inlineHtmlSerializers,
+      serializeSelectionLineToHtmlFns: this.serializeSelectionLineToHtmlFns,
     });
 
     this.installExtensions(options.extensions ?? bundledExtensions);
@@ -610,6 +616,16 @@ export class CakeEditor {
   registerBlockRenderer(fn: DomBlockRenderer) {
     this.domBlockRenderers.push(fn);
     return () => removeFromArray(this.domBlockRenderers, fn);
+  }
+
+  registerInlineHtmlSerializer(fn: InlineHtmlSerializer) {
+    this.inlineHtmlSerializers.push(fn);
+    return () => removeFromArray(this.inlineHtmlSerializers, fn);
+  }
+
+  registerSerializeSelectionLineToHtml(fn: SerializeSelectionLineToHtml) {
+    this.serializeSelectionLineToHtmlFns.push(fn);
+    return () => removeFromArray(this.serializeSelectionLineToHtmlFns, fn);
   }
 
   registerUI(component: CakeUIComponent) {

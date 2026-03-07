@@ -1156,6 +1156,39 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("pasting simple web html leaves the caret at the end of the inserted text", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "",
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "example");
+    dataTransfer.setData("text/html", "<div><span>example</span></div>");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe("example");
+    expect(engine.getSelection()).toEqual({
+      start: 7,
+      end: 7,
+      affinity: "forward",
+    });
+    engine.destroy();
+  });
+
   it("prevents default history undo/redo input", () => {
     const container = createContainer();
     let callCount = 0;

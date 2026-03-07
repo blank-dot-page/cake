@@ -140,6 +140,44 @@ export type ToggleInlineSpec = {
   markers: Array<string | { open: string; close: string }>;
 };
 
+export type InlineHtmlMark = {
+  kind: string;
+  data?: Record<string, unknown>;
+};
+
+export type InlineHtmlSerializer = (
+  mark: InlineHtmlMark,
+  content: string,
+  context: { escapeHtml: (text: string) => string },
+) => string | null;
+
+export type SelectionHtmlGroup = {
+  key: string;
+  open: string;
+  close: string;
+};
+
+export type SerializeSelectionLineToHtmlContext = {
+  state: RuntimeState;
+  line: StructuralLineInfo;
+  block: ParagraphBlock;
+  wrapperBlock: Block | null;
+  lineText: string;
+  startInLine: number;
+  endInLine: number;
+  lineCursorLength: number;
+  selectedHtml: string;
+};
+
+export type SerializeSelectionLineToHtmlResult = {
+  html: string;
+  group?: SelectionHtmlGroup;
+};
+
+export type SerializeSelectionLineToHtml = (
+  context: SerializeSelectionLineToHtmlContext,
+) => SerializeSelectionLineToHtmlResult | null;
+
 export type RuntimeState = {
   source: string;
   selection: Selection;
@@ -219,6 +257,8 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
   const structuralReparsePolicies: StructuralReparsePolicy[] = [];
   const domInlineRenderers: DomInlineRenderer[] = [];
   const domBlockRenderers: DomBlockRenderer[] = [];
+  const inlineHtmlSerializers: InlineHtmlSerializer[] = [];
+  const serializeSelectionLineToHtmlFns: SerializeSelectionLineToHtml[] = [];
 
   const editor = {
     registerInlineWrapperAffinity: (specs: InlineWrapperAffinity[]) => {
@@ -336,6 +376,14 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
       domBlockRenderers.push(fn);
       return () => removeFromArray(domBlockRenderers, fn);
     },
+    registerInlineHtmlSerializer: (fn: InlineHtmlSerializer) => {
+      inlineHtmlSerializers.push(fn);
+      return () => removeFromArray(inlineHtmlSerializers, fn);
+    },
+    registerSerializeSelectionLineToHtml: (fn: SerializeSelectionLineToHtml) => {
+      serializeSelectionLineToHtmlFns.push(fn);
+      return () => removeFromArray(serializeSelectionLineToHtmlFns, fn);
+    },
     registerUI: () => {
       return () => {};
     },
@@ -358,6 +406,8 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
     structuralReparsePolicies,
     domInlineRenderers,
     domBlockRenderers,
+    inlineHtmlSerializers,
+    serializeSelectionLineToHtmlFns,
   });
 
   return runtime;
@@ -401,6 +451,8 @@ export function createRuntimeFromRegistry(registry: {
   structuralReparsePolicies: StructuralReparsePolicy[];
   domInlineRenderers: DomInlineRenderer[];
   domBlockRenderers: DomBlockRenderer[];
+  inlineHtmlSerializers: InlineHtmlSerializer[];
+  serializeSelectionLineToHtmlFns: SerializeSelectionLineToHtml[];
 }): Runtime {
   const {
     toggleMarkerToSpec,
@@ -415,6 +467,8 @@ export function createRuntimeFromRegistry(registry: {
     structuralReparsePolicies,
     domInlineRenderers,
     domBlockRenderers,
+    inlineHtmlSerializers,
+    serializeSelectionLineToHtmlFns,
   } = registry;
   const isInclusiveAtEnd = (kind: string): boolean =>
     inclusiveAtEndByKind.get(kind) ?? true;
@@ -2816,15 +2870,16 @@ export function createRuntimeFromRegistry(registry: {
       // Apply marks in reverse order so outer marks wrap inner marks
       const sortedMarks = [...run.marks].reverse();
       for (const mark of sortedMarks) {
-        if (mark.kind === "bold") {
-          content = `<strong>${content}</strong>`;
-        } else if (mark.kind === "italic") {
-          content = `<em>${content}</em>`;
-        } else if (mark.kind === "strikethrough") {
-          content = `<s>${content}</s>`;
-        } else if (mark.kind === "link") {
-          const url = (mark.data as { url?: string } | undefined)?.url ?? "";
-          content = `<a href="${escapeHtml(url)}">${content}</a>`;
+        for (const serializeMarkToHtml of inlineHtmlSerializers) {
+          const next = serializeMarkToHtml(
+            { kind: mark.kind, data: mark.data },
+            content,
+            { escapeHtml },
+          );
+          if (next !== null) {
+            content = next;
+            break;
+          }
         }
       }
       html += content;
@@ -2857,26 +2912,14 @@ export function createRuntimeFromRegistry(registry: {
     const endLoc = textModel.resolveOffsetToLine(cursorEnd);
 
     let html = "";
-    let activeList: { type: "ol" | "ul"; indent: number } | null = null;
+    let activeGroup: SelectionHtmlGroup | null = null;
 
-    const closeList = () => {
-      if (activeList) {
-        html += `</${activeList.type}>`;
-        activeList = null;
-      }
-    };
-
-    const openList = (type: "ol" | "ul", indent: number) => {
-      if (
-        activeList &&
-        activeList.type === type &&
-        activeList.indent === indent
-      ) {
+    const closeGroup = () => {
+      if (!activeGroup) {
         return;
       }
-      closeList();
-      html += `<${type}>`;
-      activeList = { type, indent };
+      html += activeGroup.close;
+      activeGroup = null;
     };
 
     for (
@@ -2902,94 +2945,50 @@ export function createRuntimeFromRegistry(registry: {
           : line.cursorLength;
 
       const selectedRuns = sliceRuns(runs, startInLine, endInLine).selected;
-
-      // Check if this line is inside a block-wrapper (heading or list)
-      let wrapperKind: string | null = null;
-      let wrapperData: Record<string, unknown> | undefined;
+      const lineHtml = runsToHtml(normalizeRuns(selectedRuns));
+      const lineText = runs
+        .map((r) => (r.type === "text" ? r.text : " "))
+        .join("");
+      let wrapperBlock: Block | null = null;
       if (line.path.length > 1) {
         const wrapperPath = line.path.slice(0, -1);
         const wrapper = getBlockAtPath(state.doc.blocks, wrapperPath);
         if (wrapper && wrapper.type === "block-wrapper") {
-          wrapperKind = wrapper.kind;
-          wrapperData = wrapper.data;
+          wrapperBlock = wrapper;
         }
       }
 
-      // Extract plain text to check for list patterns
-      const plainText = runs
-        .map((r) => (r.type === "text" ? r.text : " "))
-        .join("");
-      const listMatch = plainText.match(/^(\s*)([-*+]|\d+\.)( )(.*)$/);
-
-      const prefixLength = listMatch
-        ? Array.from(
-            graphemeSegments(`${listMatch[1]}${listMatch[2]}${listMatch[3]}`),
-          ).length
-        : 0;
-      const selectsEntireWrappedListLine =
-        (wrapperKind === "bullet-list" || wrapperKind === "numbered-list") &&
-        startInLine === 0 &&
-        endInLine >= line.cursorLength;
-      const selectsEntirePlainListItem =
-        !wrapperKind &&
-        Boolean(listMatch) &&
-        startInLine <= prefixLength &&
-        endInLine >= line.cursorLength;
-
-      // Determine the HTML content - strip list prefix only when copying the
-      // entire plain list item. Partial selections should serialize as plain
-      // fragments so HTML-first paste does not reinsert the whole list item.
-      let lineHtml: string;
-      if (selectsEntirePlainListItem) {
-        const contentRuns = sliceRuns(
-          runs,
-          prefixLength,
-          runs.reduce(
-            (sum, r) =>
-              sum +
-              (r.type === "text"
-                ? Array.from(graphemeSegments(r.text)).length
-                : 1),
-            0,
-          ),
-        ).selected;
-        lineHtml = runsToHtml(normalizeRuns(contentRuns));
-      } else {
-        lineHtml = runsToHtml(normalizeRuns(selectedRuns));
+      let lineResult: SerializeSelectionLineToHtmlResult | null = null;
+      for (const serializeLineToHtml of serializeSelectionLineToHtmlFns) {
+        lineResult = serializeLineToHtml({
+          state,
+          line,
+          block,
+          wrapperBlock,
+          lineText,
+          startInLine,
+          endInLine,
+          lineCursorLength: line.cursorLength,
+          selectedHtml: lineHtml,
+        });
+        if (lineResult) {
+          break;
+        }
       }
 
-      if (wrapperKind === "heading") {
-        closeList();
-        const level = Math.min(
-          (wrapperData?.level as number | undefined) ?? 1,
-          6,
-        );
-        html += `<h${level} style="margin:0">${lineHtml}</h${level}>`;
-      } else if (wrapperKind === "bullet-list" && selectsEntireWrappedListLine) {
-        openList("ul", 0);
-        html += `<li>${lineHtml}</li>`;
-      } else if (
-        wrapperKind === "numbered-list" &&
-        selectsEntireWrappedListLine
-      ) {
-        openList("ol", 0);
-        html += `<li>${lineHtml}</li>`;
-      } else if (wrapperKind === "blockquote") {
-        closeList();
-        html += `<blockquote>${lineHtml}</blockquote>`;
-      } else if (selectsEntirePlainListItem && listMatch) {
-        // Plain paragraph with list markers (cake v3 list model)
-        const isNumbered = /^\d+\.$/.test(listMatch[2]);
-        const indent = Math.floor(listMatch[1].length / 2);
-        openList(isNumbered ? "ol" : "ul", indent);
-        html += `<li>${lineHtml}</li>`;
-      } else {
-        closeList();
-        html += `<div>${lineHtml}</div>`;
+      const group = lineResult?.group ?? null;
+      if (!group || !activeGroup || activeGroup.key !== group.key) {
+        closeGroup();
+        if (group) {
+          html += group.open;
+          activeGroup = group;
+        }
       }
+
+      html += lineResult?.html ?? `<div>${lineHtml}</div>`;
     }
 
-    closeList();
+    closeGroup();
 
     if (!html) {
       return "";

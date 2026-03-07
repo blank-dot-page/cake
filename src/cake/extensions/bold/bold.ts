@@ -138,6 +138,14 @@ export const boldExtension: CakeExtension = (editor) => {
       return element;
     }),
   );
+  disposers.push(
+    editor.registerInlineHtmlSerializer((mark, content) => {
+      if (mark.kind !== BOLD_KIND) {
+        return null;
+      }
+      return `<strong>${content}</strong>`;
+    }),
+  );
 
   return () => {
     disposers

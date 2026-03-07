@@ -623,6 +623,25 @@ export const headingExtension: CakeExtension = (editor) => {
     }),
   );
 
+  disposers.push(
+    editor.registerSerializeSelectionLineToHtml((context) => {
+      if (
+        context.wrapperBlock?.type !== "block-wrapper" ||
+        context.wrapperBlock.kind !== HEADING_KIND
+      ) {
+        return null;
+      }
+
+      const level = Math.min(
+        (context.wrapperBlock.data?.level as number | undefined) ?? 1,
+        6,
+      );
+      return {
+        html: `<h${level} style="margin:0">${context.selectedHtml}</h${level}>`,
+      };
+    }),
+  );
+
   return () =>
     disposers
       .splice(0)
