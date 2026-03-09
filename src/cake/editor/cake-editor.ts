@@ -1418,14 +1418,18 @@ export class CakeEditor {
     this.scheduleScrollCaretIntoView();
   }
 
-  setSelection(selection: Selection, options?: { scrollIntoView?: boolean }) {
+  setSelection(
+    selection: Selection,
+    options?: { scrollIntoView?: boolean; applyDomSelection?: boolean },
+  ) {
     this.state = this.runtime.updateSelection(this.state, selection, {
       kind: "programmatic",
     });
-    if (!this.isComposing) {
+    const shouldApplyDomSelection = options?.applyDomSelection ?? true;
+    if (!this.isComposing && shouldApplyDomSelection) {
       this.applySelection(this.state.selection);
     }
-    if (options?.scrollIntoView ?? true) {
+    if (shouldApplyDomSelection && (options?.scrollIntoView ?? true)) {
       this.scheduleScrollCaretIntoView();
     }
   }
@@ -1438,7 +1442,9 @@ export class CakeEditor {
     }
 
     if (!valueChanged && selection !== undefined) {
-      this.setSelection(selection);
+      this.setSelection(selection, {
+        applyDomSelection: this.hasFocus(),
+      });
       return;
     }
 

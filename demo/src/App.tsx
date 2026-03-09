@@ -77,7 +77,115 @@ async function requestLinkInput(): Promise<{
 const onRequestLinkInput: OnRequestLinkInput = async () => {
   return requestLinkInput();
 };
+
+function FocusStealHarness() {
+  const editorRef = useRef<CakeEditorRef>(null);
+  const [value] = useState("Alpha beta gamma");
+  const [selection, setSelection] = useState<{
+    start: number;
+    end: number;
+    affinity: "forward" | "backward";
+  } | null>(null);
+  const [promptOpen, setPromptOpen] = useState(false);
+
+  return (
+    <main
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#f5f5f5",
+        padding: 24,
+      }}
+    >
+      <div
+        style={{
+          width: 720,
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        <button
+          type="button"
+          data-testid="focus-steal-open"
+          onClick={() => {
+            setPromptOpen(true);
+            window.setTimeout(() => {
+              setSelection((current) =>
+                current
+                  ? {
+                      start: current.start,
+                      end: current.end,
+                      affinity: current.affinity,
+                    }
+                  : current,
+              );
+            }, 1200);
+          }}
+          style={{
+            width: "fit-content",
+            padding: "10px 14px",
+            borderRadius: 999,
+            border: "1px solid rgba(0,0,0,0.15)",
+            background: "white",
+          }}
+        >
+          Open prompt
+        </button>
+
+        {promptOpen ? (
+          <input
+            data-testid="focus-steal-input"
+            placeholder="Ask AI to edit..."
+            style={{
+              height: 44,
+              borderRadius: 12,
+              border: "1px solid rgba(0,0,0,0.15)",
+              padding: "0 14px",
+              fontSize: 16,
+            }}
+            autoFocus
+          />
+        ) : null}
+
+        <CakeEditor
+          ref={editorRef}
+          value={value}
+          selection={selection ?? undefined}
+          onSelectionChange={(start, end, affinity) =>
+            setSelection({
+              start,
+              end,
+              affinity: affinity ?? "forward",
+            })
+          }
+          onChange={() => undefined}
+          placeholder=""
+          extensions={bundledExtensionsWithoutImage}
+          style={{
+            height: 220,
+            overflow: "auto",
+            background: "white",
+            borderRadius: 18,
+            border: "1px solid rgba(0,0,0,0.15)",
+            padding: 16,
+          }}
+        />
+      </div>
+    </main>
+  );
+}
+
 export default function App() {
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("focus-harness")) {
+      return <FocusStealHarness />;
+    }
+  }
+
   const editorRef = useRef<CakeEditorRef>(null);
   const [value, setValue] = useState(
     "# Cake Demo\n\nTry **bold**, *italic*, ~~strike~~, <u>underline</u>, and [links](https://example.com).\n\nType @ to mention someone (social-style).",
