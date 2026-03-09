@@ -86,6 +86,8 @@ type InputIntent =
   | { type: "insert-line-break" }
   | { type: "delete-backward" }
   | { type: "delete-forward" }
+  | { type: "delete-word-backward" }
+  | { type: "delete-word-forward" }
   | { type: "replace-text"; text: string; selection: Selection }
   | { type: "undo" }
   | { type: "redo" };
@@ -2929,6 +2931,14 @@ export class CakeEditor {
       this.applyEdit({ type: "delete-forward" });
       return;
     }
+    if (intent.type === "delete-word-backward") {
+      this.deleteByWord("backward");
+      return;
+    }
+    if (intent.type === "delete-word-forward") {
+      this.deleteByWord("forward");
+      return;
+    }
     if (intent.type === "replace-text") {
       this.state = this.runtime.updateSelection(this.state, intent.selection, {
         kind: "dom",
@@ -3099,6 +3109,18 @@ export class CakeEditor {
     if (inputType === "deleteContentForward") {
       return {
         type: "delete-forward",
+      };
+    }
+
+    if (inputType === "deleteWordBackward") {
+      return {
+        type: "delete-word-backward",
+      };
+    }
+
+    if (inputType === "deleteWordForward") {
+      return {
+        type: "delete-word-forward",
       };
     }
 

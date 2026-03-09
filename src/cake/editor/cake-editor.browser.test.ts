@@ -2320,6 +2320,25 @@ describe("CakeEditor Cmd+Backspace then backspace", () => {
     expect(harness.selection.end).toBe(6);
   });
 
+  it("deleteWordBackward beforeinput at the start of a line deletes the previous word", async () => {
+    harness = createTestHarness("alpha beta\ngamma");
+
+    await harness.focus();
+
+    harness.engine.setSelection({ start: 11, end: 11, affinity: "forward" });
+
+    const event = new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteWordBackward",
+    });
+    harness.contentRoot.dispatchEvent(event);
+
+    expect(harness.engine.getValue()).toBe("alpha gamma");
+    expect(harness.selection.start).toBe(6);
+    expect(harness.selection.end).toBe(6);
+  });
+
   it("typing after emoji inserts text correctly", async () => {
     harness = createTestHarness("");
 
