@@ -1360,34 +1360,47 @@ export const plainTextListExtension: CakeExtension = (editor) => {
         element.classList.add("cake-line", "is-list");
         context.incrementLineIndex();
 
+        const markerPrefix = `${listMatch.marker}${listMatch.space}`;
+        element.style.paddingLeft = "0";
+        element.style.textIndent = "0";
+
+        const content = document.createElement("span");
+        content.style.display = "block";
+        content.style.position = "relative";
+
         const indentLevel = Math.floor(listMatch.indent.length / 2);
         if (indentLevel > 0) {
-          element.style.setProperty(
-            "--cake-list-indent",
-            `${indentLevel * 2}ch`,
-          );
+          content.style.marginLeft = `${indentLevel * 2}ch`;
         }
-
-        const markerPrefix = `${listMatch.marker}${listMatch.space}`;
-        element.style.setProperty(
-          "--cake-list-marker",
-          `${markerPrefix.length}ch`,
-        );
 
         if (block.content.length === 0) {
           const textNode = document.createTextNode("");
           context.createTextRun(textNode);
-          element.append(textNode);
-          element.append(document.createElement("br"));
+          content.append(textNode);
+          content.append(document.createElement("br"));
         } else {
           const mergedContent = mergeInlineForRender(block.content);
+          let didRenderMarker = false;
           for (const inline of mergedContent) {
+            if (!didRenderMarker && inline.type === "text") {
+              const listText = renderListTextInline({
+                text: inline.text,
+                markerPrefix,
+                createTextRun: context.createTextRun,
+              });
+              if (listText) {
+                content.append(listText);
+                didRenderMarker = true;
+                continue;
+              }
+            }
             for (const node of context.renderInline(inline)) {
-              element.append(node);
+              content.append(node);
             }
           }
         }
 
+        element.append(content);
         return element;
       },
     ),
@@ -1399,3 +1412,33 @@ export const plainTextListExtension: CakeExtension = (editor) => {
       .reverse()
       .forEach((d) => d());
 };
+
+function renderListTextInline(params: {
+  text: string;
+  markerPrefix: string;
+  createTextRun: (node: Text) => unknown;
+}): HTMLSpanElement | null {
+  if (!params.text.startsWith(params.markerPrefix)) {
+    return null;
+  }
+
+  const element = document.createElement("span");
+  element.className = "cake-text";
+
+  const marker = document.createElement("span");
+  marker.setAttribute("data-cake-list-marker", "true");
+  marker.style.position = "absolute";
+  marker.style.right = "100%";
+  marker.style.whiteSpace = "pre";
+  const markerText = document.createTextNode(params.markerPrefix);
+  params.createTextRun(markerText);
+  marker.append(markerText);
+
+  const trailingText = document.createTextNode(
+    params.text.slice(params.markerPrefix.length),
+  );
+  params.createTextRun(trailingText);
+
+  element.append(marker, trailingText);
+  return element;
+}
