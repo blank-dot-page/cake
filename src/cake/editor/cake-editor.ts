@@ -2579,6 +2579,16 @@ export class CakeEditor {
       return;
     }
 
+    if (isWordModifier && event.key === "Backspace") {
+      event.preventDefault();
+      this.keydownHandledBeforeInput = true;
+      this.deleteByWord("backward");
+      queueMicrotask(() => {
+        this.keydownHandledBeforeInput = false;
+      });
+      return;
+    }
+
     if (event.key === "ArrowLeft") {
       this.verticalNavGoalX = null;
       if (isLineModifier) {
@@ -3978,6 +3988,35 @@ export class CakeEditor {
     };
     this.state = { ...this.state, selection: deleteSelection };
     this.applyEdit({ type: "delete-backward" });
+  }
+
+  private deleteByWord(direction: Affinity) {
+    const maxLength = this.state.map.cursorLength;
+    const normalized = normalizeSelection(this.state.selection, maxLength);
+    if (normalized.start !== normalized.end) {
+      this.applyEdit(
+        direction === "backward"
+          ? { type: "delete-backward" }
+          : { type: "delete-forward" },
+      );
+      return;
+    }
+
+    const nextOffset = this.moveOffsetByWord(normalized.start, direction);
+    if (nextOffset === normalized.start) {
+      return;
+    }
+
+    const deleteSelection: Selection =
+      direction === "backward"
+        ? { start: nextOffset, end: normalized.end, affinity: "forward" }
+        : { start: normalized.start, end: nextOffset, affinity: "forward" };
+    this.state = { ...this.state, selection: deleteSelection };
+    this.applyEdit(
+      direction === "backward"
+        ? { type: "delete-backward" }
+        : { type: "delete-forward" },
+    );
   }
 
   private handleIndent() {
