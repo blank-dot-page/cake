@@ -156,24 +156,6 @@ describe("createRuntimeForTests([])", () => {
     expect(result.source).toBe("[hello](http://localhost:3000/)\nother text");
   });
 
-  it("delete-backward within a list prefix still removes the marker for linked content", async () => {
-    const { bundledExtensions } = await import("../extensions");
-    const runtime = createRuntimeForTests(bundledExtensions);
-    const value = "- [hello](http://localhost:3000/)\nother text";
-    const base = runtime.createState(value);
-    const cursor = base.map.sourceToCursor(1, "forward"); // inside "- "
-    const state = {
-      ...base,
-      selection: {
-        start: cursor.cursorOffset,
-        end: cursor.cursorOffset,
-        affinity: cursor.affinity,
-      },
-    };
-    const result = runtime.applyEdit({ type: "delete-backward" }, state);
-    expect(result.source).toBe("[hello](http://localhost:3000/)\nother text");
-  });
-
   it("delete-backward with range selection ending at list content start does not delete source-only '['", async () => {
     const { bundledExtensions } = await import("../extensions");
     const runtime = createRuntimeForTests(bundledExtensions);

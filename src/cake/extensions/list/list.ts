@@ -472,7 +472,7 @@ function handleDeleteBackward(state: RuntimeState): EditResult | null {
     return null;
   }
 
-  if (lineInfo.offsetInLine > 0 && lineInfo.offsetInLine <= prefixLength) {
+  if (lineInfo.offsetInLine === prefixLength) {
     const transformed = applyListTransform(
       source,
       lineInfo.lineIndex,

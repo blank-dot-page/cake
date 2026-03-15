@@ -80,6 +80,8 @@ export type RenderPerf = {
   runCount: number;
 };
 
+const LIST_LINE_PREFIX_REGEX = /^(\s*)([-*+]|\d+\.)( )/;
+
 type InputIntent =
   | { type: "noop" }
   | { type: "insert-text"; text: string }
@@ -2565,26 +2567,12 @@ export class CakeEditor {
       event.key === "Backspace" &&
       !event.metaKey &&
       !event.ctrlKey &&
-      !event.altKey
+      !event.altKey &&
+      this.isAtCollapsedListContentStart()
     ) {
       event.preventDefault();
       this.keydownHandledBeforeInput = true;
       this.applyEdit({ type: "delete-backward" });
-      queueMicrotask(() => {
-        this.keydownHandledBeforeInput = false;
-      });
-      return;
-    }
-
-    if (
-      event.key === "Delete" &&
-      !event.metaKey &&
-      !event.ctrlKey &&
-      !event.altKey
-    ) {
-      event.preventDefault();
-      this.keydownHandledBeforeInput = true;
-      this.applyEdit({ type: "delete-forward" });
       queueMicrotask(() => {
         this.keydownHandledBeforeInput = false;
       });
@@ -2788,6 +2776,33 @@ export class CakeEditor {
         return;
       }
     }
+  }
+
+  private isAtCollapsedListContentStart(): boolean {
+    const selection = this.state.selection;
+    if (selection.start !== selection.end) {
+      return false;
+    }
+
+    const lineOffsets = this.textModel.getLineOffsets();
+    const { lineIndex, offsetInLine } = this.textModel.resolveOffsetToLine(
+      selection.start,
+    );
+    const lineInfo = this.textModel.getLines()[lineIndex];
+    if (!lineInfo) {
+      return false;
+    }
+
+    const lineStart = lineOffsets[lineIndex] ?? 0;
+    const lineEnd = lineStart + lineInfo.cursorLength;
+    const lineText = this.state.source.slice(lineStart, lineEnd);
+    const match = lineText.match(LIST_LINE_PREFIX_REGEX);
+    if (!match) {
+      return false;
+    }
+
+    const prefixLength = Array.from(graphemeSegments(match[0])).length;
+    return offsetInLine === prefixLength;
   }
 
   private resolveExtensionKeybinding(event: KeyboardEvent): EditCommand | null {
