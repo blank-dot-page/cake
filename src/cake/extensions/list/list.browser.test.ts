@@ -87,7 +87,7 @@ describe("list extension DOM rendering", () => {
     expect(allLines[2]?.classList.contains("is-list")).toBe(false);
   });
 
-  test("sets list marker CSS variable for text-indent", () => {
+  test("renders the list marker in its own column", () => {
     engine = new CakeEditor({
       container,
       value: "- item",
@@ -96,12 +96,14 @@ describe("list extension DOM rendering", () => {
 
     const line = container.querySelector(".cake-line") as HTMLElement;
     expect(line).not.toBeNull();
-    // CSS variable is used for text-indent, in ch units (marker + space length)
-    const marker = line.style.getPropertyValue("--cake-list-marker");
-    expect(marker).toBe("2ch");
+    const marker = line.querySelector<HTMLElement>("[data-cake-list-marker]");
+    expect(marker).not.toBeNull();
+    expect(marker?.textContent).toBe("- ");
+    expect(line.style.display).toBe("grid");
+    expect(line.style.gridTemplateColumns).toBe("max-content minmax(0px, 1fr)");
   });
 
-  test("sets list indent CSS variable for nested list", () => {
+  test("applies nested list indentation to the line container", () => {
     engine = new CakeEditor({
       container,
       value: "  - indented",
@@ -110,9 +112,56 @@ describe("list extension DOM rendering", () => {
 
     const line = container.querySelector(".cake-line") as HTMLElement;
     expect(line).not.toBeNull();
-    // Indent is in ch units (indent level * 2)
-    const indent = line.style.getPropertyValue("--cake-list-indent");
+    const indent = line.style.paddingLeft;
     expect(indent).toBe("2ch");
+
+    const marker = line.querySelector<HTMLElement>("[data-cake-list-marker]");
+    expect(marker?.textContent).toBe("- ");
+
+    const content = line.querySelector<HTMLElement>("[data-cake-list-content]");
+    expect(content?.textContent).toBe("indented");
+  });
+
+  test("keeps wrapped list rows aligned with the first content row in proportional fonts", () => {
+    container.style.width = "180px";
+    container.style.fontFamily = "Arial, sans-serif";
+    engine = new CakeEditor({
+      container,
+      value:
+        "- This is a long list item that should wrap onto another visual row",
+      extensions: bundledExtensions,
+    });
+
+    const list = container.querySelector<HTMLElement>(".cake-line.is-list");
+    expect(list).not.toBeNull();
+
+    const content = list?.querySelector<HTMLElement>("[data-cake-list-content]");
+    expect(content).not.toBeNull();
+
+    const [firstRect, wrappedRect] = getWrappedContentRects(content!);
+    expect(wrappedRect).not.toBeNull();
+    expect(Math.abs(firstRect.left - wrappedRect!.left)).toBeLessThan(1);
+  });
+
+  test("keeps wrapped nested list rows aligned with the first content row in proportional fonts", () => {
+    container.style.width = "180px";
+    container.style.fontFamily = "Arial, sans-serif";
+    engine = new CakeEditor({
+      container,
+      value:
+        "  - This is a long nested list item that should wrap onto another visual row",
+      extensions: bundledExtensions,
+    });
+
+    const list = container.querySelector<HTMLElement>(".cake-line.is-list");
+    expect(list).not.toBeNull();
+
+    const content = list?.querySelector<HTMLElement>("[data-cake-list-content]");
+    expect(content).not.toBeNull();
+
+    const [firstRect, wrappedRect] = getWrappedContentRects(content!);
+    expect(wrappedRect).not.toBeNull();
+    expect(Math.abs(firstRect.left - wrappedRect!.left)).toBeLessThan(1);
   });
 
   test("renders list with bold content", () => {
@@ -167,12 +216,8 @@ describe("list extension DOM rendering", () => {
 
     const line = container.querySelector(".cake-line.is-list");
     expect(line).not.toBeNull();
-
-    // CSS variable is in ch units for text-indent
-    const marker = (line as HTMLElement).style.getPropertyValue(
-      "--cake-list-marker",
-    );
-    expect(marker).toBe("2ch");
+    const marker = line?.querySelector<HTMLElement>("[data-cake-list-marker]");
+    expect(marker?.textContent).toBe("* ");
     // Verify marker is in text content
     expect(line?.textContent).toBe("* item");
   });
@@ -186,12 +231,8 @@ describe("list extension DOM rendering", () => {
 
     const line = container.querySelector(".cake-line.is-list");
     expect(line).not.toBeNull();
-
-    // CSS variable is in ch units for text-indent
-    const marker = (line as HTMLElement).style.getPropertyValue(
-      "--cake-list-marker",
-    );
-    expect(marker).toBe("2ch");
+    const marker = line?.querySelector<HTMLElement>("[data-cake-list-marker]");
+    expect(marker?.textContent).toBe("+ ");
     // Verify marker is in text content
     expect(line?.textContent).toBe("+ item");
   });
@@ -222,6 +263,45 @@ describe("list extension DOM rendering", () => {
     expect(engine.getActiveMarks()).toContain("numbered-list");
   });
 });
+
+function getWrappedContentRects(element: HTMLElement): [DOMRect, DOMRect | null] {
+  const rectsByRow = new Map<number, DOMRect[]>();
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let currentNode: Node | null = walker.nextNode();
+
+  while (currentNode) {
+    const nodeText = currentNode.textContent ?? "";
+    for (let index = 0; index < nodeText.length; index += 1) {
+      if (/\s/.test(nodeText[index] ?? "")) {
+        continue;
+      }
+
+      const range = document.createRange();
+      range.setStart(currentNode, index);
+      range.setEnd(currentNode, Math.min(index + 1, nodeText.length));
+      const rect = range.getBoundingClientRect();
+      const key = Math.round(rect.top);
+      rectsByRow.set(key, [...(rectsByRow.get(key) ?? []), rect]);
+    }
+
+    currentNode = walker.nextNode();
+  }
+
+  const sortedRows = [...rectsByRow.entries()].sort((a, b) => a[0] - b[0]);
+  if (sortedRows.length === 0) {
+    throw new Error("Could not resolve any visible content rects");
+  }
+
+  const firstRect = sortedRows[0][1].reduce((best, rect) =>
+    rect.left < best.left ? rect : best,
+  );
+  const wrappedRect =
+    sortedRows[1]?.[1].reduce((best, rect) =>
+      rect.left < best.left ? rect : best,
+    ) ?? null;
+
+  return [firstRect, wrappedRect];
+}
 
 describe("list extension Enter key behavior", () => {
   let harness: TestHarness | null = null;
@@ -586,10 +666,13 @@ describe("list extension caret and selection", () => {
     const lineRect = line.getBoundingClientRect();
     console.log("Line rect left:", lineRect.left);
 
-    // Create a range that selects all text in the line to find the text extent
-    const range = document.createRange();
-    range.selectNodeContents(line);
-    const textExtent = range.getBoundingClientRect();
+    const contentRange = document.createRange();
+    const content = line.querySelector("[data-cake-list-content]");
+    if (!content) {
+      throw new Error("Missing list content wrapper");
+    }
+    contentRange.selectNodeContents(content);
+    const textExtent = contentRange.getBoundingClientRect();
     console.log("Text extent right:", textExtent.right);
     console.log(
       "Expected caret left (relative):",

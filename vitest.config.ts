@@ -96,7 +96,7 @@ export default defineConfig({
             provider: playwright(),
             headless: true,
             connectTimeout: 180000,
-            instances: [{ browser: "chromium" }, { browser: "webkit" }],
+            instances: [{ browser: "chromium" }],
             screenshotDirectory: ".vitest-screenshots",
             commands: {
               clickAtCoordinates,

@@ -80,12 +80,16 @@ export type RenderPerf = {
   runCount: number;
 };
 
+const LIST_LINE_PREFIX_REGEX = /^(\s*)([-*+]|\d+\.)( )/;
+
 type InputIntent =
   | { type: "noop" }
   | { type: "insert-text"; text: string }
   | { type: "insert-line-break" }
   | { type: "delete-backward" }
   | { type: "delete-forward" }
+  | { type: "delete-word-backward" }
+  | { type: "delete-word-forward" }
   | { type: "replace-text"; text: string; selection: Selection }
   | { type: "undo" }
   | { type: "redo" };
@@ -252,6 +256,11 @@ export class CakeEditor {
   private beforeInputHandled = false;
   private beforeInputResetId: number | null = null;
   private keydownHandledBeforeInput = false;
+  private pendingDeleteIntentFromKeydown:
+    | "delete-word-backward"
+    | "delete-word-forward"
+    | null = null;
+  private pendingDeleteIntentResetId: number | null = null;
   private suppressSelectionChange = false;
   private suppressSelectionChangeResetId: number | null = null;
   private ignoreTouchNativeSelectionUntil: number | null = null;
@@ -2561,6 +2570,37 @@ export class CakeEditor {
       return;
     }
 
+    if (
+      event.key === "Backspace" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      this.isAtCollapsedListContentStart()
+    ) {
+      event.preventDefault();
+      this.keydownHandledBeforeInput = true;
+      this.applyEdit({ type: "delete-backward" });
+      queueMicrotask(() => {
+        this.keydownHandledBeforeInput = false;
+      });
+      return;
+    }
+
+    if (isWordModifier && event.key === "Backspace") {
+      this.rememberDeleteIntentFromKeydown("delete-word-backward");
+      event.preventDefault();
+      this.keydownHandledBeforeInput = true;
+      this.deleteByWord("backward");
+      queueMicrotask(() => {
+        this.keydownHandledBeforeInput = false;
+      });
+      return;
+    }
+
+    if (isWordModifier && event.key === "Delete") {
+      this.rememberDeleteIntentFromKeydown("delete-word-forward");
+    }
+
     if (event.key === "ArrowLeft") {
       this.verticalNavGoalX = null;
       if (isLineModifier) {
@@ -2760,6 +2800,33 @@ export class CakeEditor {
     }
   }
 
+  private isAtCollapsedListContentStart(): boolean {
+    const selection = this.state.selection;
+    if (selection.start !== selection.end) {
+      return false;
+    }
+
+    const lineOffsets = this.textModel.getLineOffsets();
+    const { lineIndex, offsetInLine } = this.textModel.resolveOffsetToLine(
+      selection.start,
+    );
+    const lineInfo = this.textModel.getLines()[lineIndex];
+    if (!lineInfo) {
+      return false;
+    }
+
+    const lineStart = lineOffsets[lineIndex] ?? 0;
+    const lineEnd = lineStart + lineInfo.cursorLength;
+    const lineText = this.state.source.slice(lineStart, lineEnd);
+    const match = lineText.match(LIST_LINE_PREFIX_REGEX);
+    if (!match) {
+      return false;
+    }
+
+    const prefixLength = Array.from(graphemeSegments(match[0])).length;
+    return offsetInLine === prefixLength;
+  }
+
   private resolveExtensionKeybinding(event: KeyboardEvent): EditCommand | null {
     const eventKey =
       event.key.length === 1 ? event.key.toLowerCase() : event.key;
@@ -2889,6 +2956,7 @@ export class CakeEditor {
     // skip beforeinput processing to avoid double-applying the edit.
     if (this.keydownHandledBeforeInput) {
       this.keydownHandledBeforeInput = false;
+      this.clearPendingDeleteIntentFromKeydown();
       event.preventDefault();
       return;
     }
@@ -2923,6 +2991,14 @@ export class CakeEditor {
     }
     if (intent.type === "delete-forward") {
       this.applyEdit({ type: "delete-forward" });
+      return;
+    }
+    if (intent.type === "delete-word-backward") {
+      this.deleteByWord("backward");
+      return;
+    }
+    if (intent.type === "delete-word-forward") {
+      this.deleteByWord("forward");
       return;
     }
     if (intent.type === "replace-text") {
@@ -3087,14 +3163,42 @@ export class CakeEditor {
       inputType === "deleteByCut" ||
       inputType === "deleteByLineBoundary"
     ) {
+      if (this.pendingDeleteIntentFromKeydown === "delete-word-backward") {
+        this.clearPendingDeleteIntentFromKeydown();
+        return {
+          type: "delete-word-backward",
+        };
+      }
+      this.clearPendingDeleteIntentFromKeydown();
       return {
         type: "delete-backward",
       };
     }
 
     if (inputType === "deleteContentForward") {
+      if (this.pendingDeleteIntentFromKeydown === "delete-word-forward") {
+        this.clearPendingDeleteIntentFromKeydown();
+        return {
+          type: "delete-word-forward",
+        };
+      }
+      this.clearPendingDeleteIntentFromKeydown();
       return {
         type: "delete-forward",
+      };
+    }
+
+    if (inputType === "deleteWordBackward") {
+      this.clearPendingDeleteIntentFromKeydown();
+      return {
+        type: "delete-word-backward",
+      };
+    }
+
+    if (inputType === "deleteWordForward") {
+      this.clearPendingDeleteIntentFromKeydown();
+      return {
+        type: "delete-word-forward",
       };
     }
 
@@ -3132,6 +3236,27 @@ export class CakeEditor {
     }
 
     return null;
+  }
+
+  private rememberDeleteIntentFromKeydown(
+    intent: "delete-word-backward" | "delete-word-forward",
+  ) {
+    this.clearPendingDeleteIntentFromKeydown();
+    this.pendingDeleteIntentFromKeydown = intent;
+    this.pendingDeleteIntentResetId = window.setTimeout(() => {
+      if (this.pendingDeleteIntentFromKeydown === intent) {
+        this.pendingDeleteIntentFromKeydown = null;
+      }
+      this.pendingDeleteIntentResetId = null;
+    }, 0);
+  }
+
+  private clearPendingDeleteIntentFromKeydown() {
+    this.pendingDeleteIntentFromKeydown = null;
+    if (this.pendingDeleteIntentResetId !== null) {
+      window.clearTimeout(this.pendingDeleteIntentResetId);
+      this.pendingDeleteIntentResetId = null;
+    }
   }
 
   private selectionFromTargetRangesWithStatus(
@@ -3925,6 +4050,35 @@ export class CakeEditor {
     };
     this.state = { ...this.state, selection: deleteSelection };
     this.applyEdit({ type: "delete-backward" });
+  }
+
+  private deleteByWord(direction: Affinity) {
+    const maxLength = this.state.map.cursorLength;
+    const normalized = normalizeSelection(this.state.selection, maxLength);
+    if (normalized.start !== normalized.end) {
+      this.applyEdit(
+        direction === "backward"
+          ? { type: "delete-backward" }
+          : { type: "delete-forward" },
+      );
+      return;
+    }
+
+    const nextOffset = this.moveOffsetByWord(normalized.start, direction);
+    if (nextOffset === normalized.start) {
+      return;
+    }
+
+    const deleteSelection: Selection =
+      direction === "backward"
+        ? { start: nextOffset, end: normalized.end, affinity: "forward" }
+        : { start: normalized.start, end: nextOffset, affinity: "forward" };
+    this.state = { ...this.state, selection: deleteSelection };
+    this.applyEdit(
+      direction === "backward"
+        ? { type: "delete-backward" }
+        : { type: "delete-forward" },
+    );
   }
 
   private handleIndent() {
