@@ -3063,14 +3063,6 @@ export class CakeEditor {
     // while our beforeinput-handled suppression window is still active. In that case,
     // we must not drop the edit; reconcile if the DOM diverged from the model.
     if (this.beforeInputHandled) {
-      if (
-        event.inputType === "deleteContentBackward" ||
-        event.inputType === "deleteContentForward" ||
-        event.inputType === "deleteByLineBoundary" ||
-        event.inputType === "deleteByCut"
-      ) {
-        return;
-      }
       const domText = this.readDomText();
       const modelText = this.textModel.getVisibleText();
       if (domText === modelText) {
