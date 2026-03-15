@@ -2561,6 +2561,36 @@ export class CakeEditor {
       return;
     }
 
+    if (
+      event.key === "Backspace" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      this.keydownHandledBeforeInput = true;
+      this.applyEdit({ type: "delete-backward" });
+      queueMicrotask(() => {
+        this.keydownHandledBeforeInput = false;
+      });
+      return;
+    }
+
+    if (
+      event.key === "Delete" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      this.keydownHandledBeforeInput = true;
+      this.applyEdit({ type: "delete-forward" });
+      queueMicrotask(() => {
+        this.keydownHandledBeforeInput = false;
+      });
+      return;
+    }
+
     if (event.key === "ArrowLeft") {
       this.verticalNavGoalX = null;
       if (isLineModifier) {
@@ -2987,6 +3017,14 @@ export class CakeEditor {
     // while our beforeinput-handled suppression window is still active. In that case,
     // we must not drop the edit; reconcile if the DOM diverged from the model.
     if (this.beforeInputHandled) {
+      if (
+        event.inputType === "deleteContentBackward" ||
+        event.inputType === "deleteContentForward" ||
+        event.inputType === "deleteByLineBoundary" ||
+        event.inputType === "deleteByCut"
+      ) {
+        return;
+      }
       const domText = this.readDomText();
       const modelText = this.textModel.getVisibleText();
       if (domText === modelText) {
