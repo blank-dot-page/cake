@@ -256,6 +256,11 @@ export class CakeEditor {
   private beforeInputHandled = false;
   private beforeInputResetId: number | null = null;
   private keydownHandledBeforeInput = false;
+  private pendingDeleteIntentFromKeydown:
+    | "delete-word-backward"
+    | "delete-word-forward"
+    | null = null;
+  private pendingDeleteIntentResetId: number | null = null;
   private suppressSelectionChange = false;
   private suppressSelectionChangeResetId: number | null = null;
   private ignoreTouchNativeSelectionUntil: number | null = null;
@@ -2582,6 +2587,7 @@ export class CakeEditor {
     }
 
     if (isWordModifier && event.key === "Backspace") {
+      this.rememberDeleteIntentFromKeydown("delete-word-backward");
       event.preventDefault();
       this.keydownHandledBeforeInput = true;
       this.deleteByWord("backward");
@@ -2589,6 +2595,10 @@ export class CakeEditor {
         this.keydownHandledBeforeInput = false;
       });
       return;
+    }
+
+    if (isWordModifier && event.key === "Delete") {
+      this.rememberDeleteIntentFromKeydown("delete-word-forward");
     }
 
     if (event.key === "ArrowLeft") {
@@ -2946,6 +2956,7 @@ export class CakeEditor {
     // skip beforeinput processing to avoid double-applying the edit.
     if (this.keydownHandledBeforeInput) {
       this.keydownHandledBeforeInput = false;
+      this.clearPendingDeleteIntentFromKeydown();
       event.preventDefault();
       return;
     }
@@ -3160,24 +3171,40 @@ export class CakeEditor {
       inputType === "deleteByCut" ||
       inputType === "deleteByLineBoundary"
     ) {
+      if (this.pendingDeleteIntentFromKeydown === "delete-word-backward") {
+        this.clearPendingDeleteIntentFromKeydown();
+        return {
+          type: "delete-word-backward",
+        };
+      }
+      this.clearPendingDeleteIntentFromKeydown();
       return {
         type: "delete-backward",
       };
     }
 
     if (inputType === "deleteContentForward") {
+      if (this.pendingDeleteIntentFromKeydown === "delete-word-forward") {
+        this.clearPendingDeleteIntentFromKeydown();
+        return {
+          type: "delete-word-forward",
+        };
+      }
+      this.clearPendingDeleteIntentFromKeydown();
       return {
         type: "delete-forward",
       };
     }
 
     if (inputType === "deleteWordBackward") {
+      this.clearPendingDeleteIntentFromKeydown();
       return {
         type: "delete-word-backward",
       };
     }
 
     if (inputType === "deleteWordForward") {
+      this.clearPendingDeleteIntentFromKeydown();
       return {
         type: "delete-word-forward",
       };
@@ -3217,6 +3244,27 @@ export class CakeEditor {
     }
 
     return null;
+  }
+
+  private rememberDeleteIntentFromKeydown(
+    intent: "delete-word-backward" | "delete-word-forward",
+  ) {
+    this.clearPendingDeleteIntentFromKeydown();
+    this.pendingDeleteIntentFromKeydown = intent;
+    this.pendingDeleteIntentResetId = window.setTimeout(() => {
+      if (this.pendingDeleteIntentFromKeydown === intent) {
+        this.pendingDeleteIntentFromKeydown = null;
+      }
+      this.pendingDeleteIntentResetId = null;
+    }, 0);
+  }
+
+  private clearPendingDeleteIntentFromKeydown() {
+    this.pendingDeleteIntentFromKeydown = null;
+    if (this.pendingDeleteIntentResetId !== null) {
+      window.clearTimeout(this.pendingDeleteIntentResetId);
+      this.pendingDeleteIntentResetId = null;
+    }
   }
 
   private selectionFromTargetRangesWithStatus(
