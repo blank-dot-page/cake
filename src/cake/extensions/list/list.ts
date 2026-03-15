@@ -1361,17 +1361,27 @@ export const plainTextListExtension: CakeExtension = (editor) => {
         context.incrementLineIndex();
 
         const markerPrefix = `${listMatch.marker}${listMatch.space}`;
+        const indentLevel = Math.floor(listMatch.indent.length / 2);
         element.style.paddingLeft = "0";
         element.style.textIndent = "0";
+        element.style.display = "grid";
+        element.style.gridTemplateColumns = "max-content minmax(0, 1fr)";
+        element.style.alignItems = "start";
+        element.style.columnGap = "0";
+
+        if (indentLevel > 0) {
+          element.style.paddingLeft = `${indentLevel * 2}ch`;
+        }
+
+        const marker = createListMarker({
+          markerPrefix,
+          createTextRun: context.createTextRun,
+        });
 
         const content = document.createElement("span");
+        content.setAttribute("data-cake-list-content", "true");
         content.style.display = "block";
-        content.style.position = "relative";
-
-        const indentLevel = Math.floor(listMatch.indent.length / 2);
-        if (indentLevel > 0) {
-          content.style.marginLeft = `${indentLevel * 2}ch`;
-        }
+        content.style.minWidth = "0";
 
         if (block.content.length === 0) {
           const textNode = document.createTextNode("");
@@ -1380,17 +1390,19 @@ export const plainTextListExtension: CakeExtension = (editor) => {
           content.append(document.createElement("br"));
         } else {
           const mergedContent = mergeInlineForRender(block.content);
-          let didRenderMarker = false;
+          let didStripMarker = false;
           for (const inline of mergedContent) {
-            if (!didRenderMarker && inline.type === "text") {
-              const listText = renderListTextInline({
+            if (!didStripMarker && inline.type === "text") {
+              const trailingText = splitListTextInline({
                 text: inline.text,
                 markerPrefix,
                 createTextRun: context.createTextRun,
               });
-              if (listText) {
-                content.append(listText);
-                didRenderMarker = true;
+              if (trailingText) {
+                if (trailingText.textContent) {
+                  content.append(trailingText);
+                }
+                didStripMarker = true;
                 continue;
               }
             }
@@ -1400,7 +1412,7 @@ export const plainTextListExtension: CakeExtension = (editor) => {
           }
         }
 
-        element.append(content);
+        element.append(marker, content);
         return element;
       },
     ),
@@ -1413,32 +1425,31 @@ export const plainTextListExtension: CakeExtension = (editor) => {
       .forEach((d) => d());
 };
 
-function renderListTextInline(params: {
-  text: string;
+function createListMarker(params: {
   markerPrefix: string;
   createTextRun: (node: Text) => unknown;
-}): HTMLSpanElement | null {
-  if (!params.text.startsWith(params.markerPrefix)) {
-    return null;
-  }
-
-  const element = document.createElement("span");
-  element.className = "cake-text";
-
+}): HTMLSpanElement {
   const marker = document.createElement("span");
   marker.setAttribute("data-cake-list-marker", "true");
-  marker.style.position = "absolute";
-  marker.style.right = "100%";
   marker.style.whiteSpace = "pre";
   const markerText = document.createTextNode(params.markerPrefix);
   params.createTextRun(markerText);
   marker.append(markerText);
+  return marker;
+}
+
+function splitListTextInline(params: {
+  text: string;
+  markerPrefix: string;
+  createTextRun: (node: Text) => unknown;
+}): Text | null {
+  if (!params.text.startsWith(params.markerPrefix)) {
+    return null;
+  }
 
   const trailingText = document.createTextNode(
     params.text.slice(params.markerPrefix.length),
   );
   params.createTextRun(trailingText);
-
-  element.append(marker, trailingText);
-  return element;
+  return trailingText;
 }

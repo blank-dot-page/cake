@@ -87,7 +87,7 @@ describe("list extension DOM rendering", () => {
     expect(allLines[2]?.classList.contains("is-list")).toBe(false);
   });
 
-  test("renders the list marker in a hanging span", () => {
+  test("renders the list marker in its own column", () => {
     engine = new CakeEditor({
       container,
       value: "- item",
@@ -99,11 +99,11 @@ describe("list extension DOM rendering", () => {
     const marker = line.querySelector<HTMLElement>("[data-cake-list-marker]");
     expect(marker).not.toBeNull();
     expect(marker?.textContent).toBe("- ");
-    expect(marker?.style.position).toBe("absolute");
-    expect(marker?.style.right).toBe("100%");
+    expect(line.style.display).toBe("grid");
+    expect(line.style.gridTemplateColumns).toBe("max-content minmax(0px, 1fr)");
   });
 
-  test("applies nested list indentation to the content wrapper", () => {
+  test("applies nested list indentation to the line container", () => {
     engine = new CakeEditor({
       container,
       value: "  - indented",
@@ -112,35 +112,29 @@ describe("list extension DOM rendering", () => {
 
     const line = container.querySelector(".cake-line") as HTMLElement;
     expect(line).not.toBeNull();
-    const content = line.querySelector("span") as HTMLElement | null;
-    expect(content).not.toBeNull();
-    const indent = content?.style.marginLeft;
+    const indent = line.style.paddingLeft;
     expect(indent).toBe("2ch");
   });
 
-  test("keeps list text aligned with paragraph text in proportional fonts", () => {
+  test("keeps wrapped list rows aligned with the first content row in proportional fonts", () => {
+    container.style.width = "180px";
     container.style.fontFamily = "Arial, sans-serif";
     engine = new CakeEditor({
       container,
-      value: "Paragraph\n- List item",
+      value:
+        "- This is a long list item that should wrap onto another visual row",
       extensions: bundledExtensions,
     });
 
-    const lines = container.querySelectorAll<HTMLElement>(".cake-line");
-    const paragraph = Array.from(lines).find(
-      (line) => !line.classList.contains("is-list"),
-    );
-    const list = Array.from(lines).find((line) =>
-      line.classList.contains("is-list"),
-    );
-
-    expect(paragraph).not.toBeNull();
+    const list = container.querySelector<HTMLElement>(".cake-line.is-list");
     expect(list).not.toBeNull();
 
-    const paragraphRect = getVisibleTextRect(paragraph!, "P");
-    const listRect = getVisibleTextRect(list!, "L");
+    const content = list?.querySelector<HTMLElement>("[data-cake-list-content]");
+    expect(content).not.toBeNull();
 
-    expect(Math.abs(paragraphRect.left - listRect.left)).toBeLessThan(1);
+    const [firstRect, wrappedRect] = getWrappedContentRects(content!);
+    expect(wrappedRect).not.toBeNull();
+    expect(Math.abs(firstRect.left - wrappedRect!.left)).toBeLessThan(1);
   });
 
   test("renders list with bold content", () => {
@@ -243,33 +237,43 @@ describe("list extension DOM rendering", () => {
   });
 });
 
-function getVisibleTextRect(element: HTMLElement, targetText: string): DOMRect {
-  const fullText = element.textContent ?? "";
-  const startOffset = fullText.indexOf(targetText);
-  if (startOffset < 0) {
-    throw new Error(`Could not find "${targetText}" in "${fullText}"`);
-  }
-
+function getWrappedContentRects(element: HTMLElement): [DOMRect, DOMRect | null] {
+  const rectsByRow = new Map<number, DOMRect[]>();
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
   let currentNode: Node | null = walker.nextNode();
-  let globalOffset = 0;
 
   while (currentNode) {
     const nodeText = currentNode.textContent ?? "";
-    const nodeEnd = globalOffset + nodeText.length;
-    if (startOffset < nodeEnd) {
-      const localOffset = startOffset - globalOffset;
+    for (let index = 0; index < nodeText.length; index += 1) {
+      if (/\s/.test(nodeText[index] ?? "")) {
+        continue;
+      }
+
       const range = document.createRange();
-      range.setStart(currentNode, localOffset);
-      range.setEnd(currentNode, Math.min(localOffset + 1, nodeText.length));
-      return range.getBoundingClientRect();
+      range.setStart(currentNode, index);
+      range.setEnd(currentNode, Math.min(index + 1, nodeText.length));
+      const rect = range.getBoundingClientRect();
+      const key = Math.round(rect.top);
+      rectsByRow.set(key, [...(rectsByRow.get(key) ?? []), rect]);
     }
 
-    globalOffset = nodeEnd;
     currentNode = walker.nextNode();
   }
 
-  throw new Error(`Could not resolve text range for "${fullText}"`);
+  const sortedRows = [...rectsByRow.entries()].sort((a, b) => a[0] - b[0]);
+  if (sortedRows.length === 0) {
+    throw new Error("Could not resolve any visible content rects");
+  }
+
+  const firstRect = sortedRows[0][1].reduce((best, rect) =>
+    rect.left < best.left ? rect : best,
+  );
+  const wrappedRect =
+    sortedRows[1]?.[1].reduce((best, rect) =>
+      rect.left < best.left ? rect : best,
+    ) ?? null;
+
+  return [firstRect, wrappedRect];
 }
 
 describe("list extension Enter key behavior", () => {
@@ -636,22 +640,20 @@ describe("list extension caret and selection", () => {
     console.log("Line rect left:", lineRect.left);
 
     const contentRange = document.createRange();
-    const walker3 = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
-    walker3.nextNode(); // skip marker
-    const contentNode = walker3.nextNode() as Text | null;
-    if (!contentNode) {
-      throw new Error("Missing list content text node");
+    const content = line.querySelector("[data-cake-list-content]");
+    if (!content) {
+      throw new Error("Missing list content wrapper");
     }
-    contentRange.selectNodeContents(contentNode);
-    const contentExtent = contentRange.getBoundingClientRect();
-    console.log("Content extent right:", contentExtent.right);
+    contentRange.selectNodeContents(content);
+    const textExtent = contentRange.getBoundingClientRect();
+    console.log("Text extent right:", textExtent.right);
     console.log(
       "Expected caret left (relative):",
-      contentExtent.right - lineRect.left,
+      textExtent.right - lineRect.left,
     );
 
-    // The caret left position should be at the end of the visible list content.
-    expect(caretRect!.left).toBeCloseTo(contentExtent.right - lineRect.left, 0);
+    // The caret left position should be at the end of the text
+    expect(caretRect!.left).toBeCloseTo(textExtent.right - lineRect.left, 0);
   });
 
   test("selecting 'hello' in '- hello' shows correct selection rect", async () => {
@@ -684,7 +686,7 @@ describe("list extension caret and selection", () => {
 
     // Selection should be within the line bounds
     expect(selRect.top).toBeGreaterThanOrEqual(0);
-    expect(selRect.left).toBeGreaterThanOrEqual(0);
+    expect(selRect.left).toBeGreaterThan(0); // After "- "
     expect(selRect.left + selRect.width).toBeLessThanOrEqual(
       lineRect.width + 1,
     );
