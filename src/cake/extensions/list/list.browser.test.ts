@@ -114,6 +114,12 @@ describe("list extension DOM rendering", () => {
     expect(line).not.toBeNull();
     const indent = line.style.paddingLeft;
     expect(indent).toBe("2ch");
+
+    const marker = line.querySelector<HTMLElement>("[data-cake-list-marker]");
+    expect(marker?.textContent).toBe("- ");
+
+    const content = line.querySelector<HTMLElement>("[data-cake-list-content]");
+    expect(content?.textContent).toBe("indented");
   });
 
   test("keeps wrapped list rows aligned with the first content row in proportional fonts", () => {
@@ -123,6 +129,27 @@ describe("list extension DOM rendering", () => {
       container,
       value:
         "- This is a long list item that should wrap onto another visual row",
+      extensions: bundledExtensions,
+    });
+
+    const list = container.querySelector<HTMLElement>(".cake-line.is-list");
+    expect(list).not.toBeNull();
+
+    const content = list?.querySelector<HTMLElement>("[data-cake-list-content]");
+    expect(content).not.toBeNull();
+
+    const [firstRect, wrappedRect] = getWrappedContentRects(content!);
+    expect(wrappedRect).not.toBeNull();
+    expect(Math.abs(firstRect.left - wrappedRect!.left)).toBeLessThan(1);
+  });
+
+  test("keeps wrapped nested list rows aligned with the first content row in proportional fonts", () => {
+    container.style.width = "180px";
+    container.style.fontFamily = "Arial, sans-serif";
+    engine = new CakeEditor({
+      container,
+      value:
+        "  - This is a long nested list item that should wrap onto another visual row",
       extensions: bundledExtensions,
     });
 

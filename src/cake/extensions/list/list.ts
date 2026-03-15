@@ -1361,6 +1361,7 @@ export const plainTextListExtension: CakeExtension = (editor) => {
         context.incrementLineIndex();
 
         const markerPrefix = `${listMatch.marker}${listMatch.space}`;
+        const sourcePrefix = `${listMatch.indent}${markerPrefix}`;
         const indentLevel = Math.floor(listMatch.indent.length / 2);
         element.style.paddingLeft = "0";
         element.style.textIndent = "0";
@@ -1395,7 +1396,7 @@ export const plainTextListExtension: CakeExtension = (editor) => {
             if (!didStripMarker && inline.type === "text") {
               const trailingText = splitListTextInline({
                 text: inline.text,
-                markerPrefix,
+                sourcePrefix,
                 createTextRun: context.createTextRun,
               });
               if (trailingText) {
@@ -1440,15 +1441,15 @@ function createListMarker(params: {
 
 function splitListTextInline(params: {
   text: string;
-  markerPrefix: string;
+  sourcePrefix: string;
   createTextRun: (node: Text) => unknown;
 }): Text | null {
-  if (!params.text.startsWith(params.markerPrefix)) {
+  if (!params.text.startsWith(params.sourcePrefix)) {
     return null;
   }
 
   const trailingText = document.createTextNode(
-    params.text.slice(params.markerPrefix.length),
+    params.text.slice(params.sourcePrefix.length),
   );
   params.createTextRun(trailingText);
   return trailingText;
