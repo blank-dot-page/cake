@@ -406,6 +406,40 @@ function cleanupMarkdown(markdown: string): string {
   );
 }
 
+function isSingleRootHeadingHtml(html: string): boolean {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  if (doc.body.children.length !== 1) {
+    return false;
+  }
+  return doc.body.firstElementChild?.matches("h1, h2, h3, h4, h5, h6") ?? false;
+}
+
+function collapseSingleHeadingMarkdown(markdown: string): string {
+  const lines = markdown
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length <= 1) {
+    return markdown;
+  }
+
+  const headingMatch = /^(#{1,6})\s+(.+)$/.exec(lines[0] ?? "");
+  if (!headingMatch) {
+    return markdown;
+  }
+
+  const [, hashes, firstLineContent] = headingMatch;
+  const remainingContent = lines.slice(1).join(" ").trim();
+  const headingContent = [firstLineContent, remainingContent]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return `${hashes} ${headingContent}`;
+}
+
 function preprocessHtml(html: string): string {
   const sourceApp = detectSourceApp(html);
   let processedHtml = preprocessForApp(html, sourceApp);
@@ -515,7 +549,11 @@ function convertHtmlToMarkdown(html: string): string {
   try {
     const processedHtml = preprocessHtml(html);
     const markdown = turndownService.turndown(processedHtml);
-    return cleanupMarkdown(markdown);
+    const cleanedMarkdown = cleanupMarkdown(markdown);
+    if (isSingleRootHeadingHtml(processedHtml)) {
+      return collapseSingleHeadingMarkdown(cleanedMarkdown);
+    }
+    return cleanedMarkdown;
   } catch (error) {
     console.error("Error converting HTML to markdown:", error);
     return "";

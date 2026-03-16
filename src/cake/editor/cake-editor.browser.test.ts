@@ -1399,6 +1399,92 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("pasting heading html leaves the caret after the trailing punctuation", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "",
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(
+      "text/plain",
+      "An active approach for a perfect management of risk.",
+    );
+    dataTransfer.setData(
+      "text/html",
+      "<h2>An active approach for a <strong>perfect</strong> management of risk.</h2>",
+    );
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe(
+      "\n## An active approach for a **perfect** management of risk.",
+    );
+    expect(engine.getText()).toBe(
+      "\nAn active approach for a perfect management of risk.",
+    );
+    expect(engine.getSelection()).toEqual({
+      start: 53,
+      end: 53,
+      affinity: "forward",
+    });
+    engine.destroy();
+  });
+
+  it("pasting nested heading html at the caret keeps existing text before the heading", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "hello",
+      selection: {
+        start: 5,
+        end: 5,
+        affinity: "forward",
+      },
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Insurance and cybersecurity");
+    dataTransfer.setData(
+      "text/html",
+      '<h1 class="styles_title__FH2l0"><div class="styles_container_overflow__aK3UX"><div class="styles_text__N0ARI"><span class="styles_blue__3zs0C">Insurance </span>and</div><div class="styles_line__TIYaU"></div></div><div class="styles_container_overflow__aK3UX"><div class="styles_text__N0ARI"><span class="styles_pink__M351a">cybersecurity</span></div></div></h1>',
+    );
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe("hello\n# Insurance and cybersecurity");
+    expect(engine.getText()).toBe("hello\nInsurance and cybersecurity");
+    expect(engine.getSelection()).toEqual({
+      start: 33,
+      end: 33,
+      affinity: "forward",
+    });
+    engine.destroy();
+  });
+
   it("prevents default history undo/redo input", () => {
     const container = createContainer();
     let callCount = 0;

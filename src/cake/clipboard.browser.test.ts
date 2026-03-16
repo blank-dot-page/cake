@@ -214,6 +214,14 @@ describe("clipboard html paste", () => {
     expect(result).toBe("### Subsection");
   });
 
+  it("collapses nested heading block lines into a single pasted heading line", () => {
+    const result = htmlToMarkdownForPaste(
+      '<h1 class="styles_title__FH2l0"><div class="styles_container_overflow__aK3UX"><div class="styles_text__N0ARI"><span class="styles_blue__3zs0C">Insurance </span>and</div><div class="styles_line__TIYaU"></div></div><div class="styles_container_overflow__aK3UX"><div class="styles_text__N0ARI"><span class="styles_pink__M351a">cybersecurity</span></div></div></h1>',
+    );
+
+    expect(result).toBe("# Insurance and cybersecurity");
+  });
+
   it("converts strikethrough html to markdown", () => {
     const result = htmlToMarkdownForPaste(
       "<p>Hello <del>deleted</del> and <s>struck</s></p>",
