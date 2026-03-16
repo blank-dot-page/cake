@@ -468,40 +468,79 @@ export const headingExtension: CakeExtension = (editor) => {
         return null;
       }
 
-      const { source, selection, map } = state;
+      const { source, selection, map, runtime } = state;
       if (selection.start !== selection.end) {
         return null;
       }
 
-      const cursorPos = selection.start;
+      const cursorPos = Math.max(
+        0,
+        Math.min(map.cursorLength, selection.start),
+      );
       const sourcePos = map.cursorToSource(
         cursorPos,
         selection.affinity ?? "forward",
       );
       const lineStart = findLineStartInSource(source, sourcePos);
-      const prefix = source.slice(lineStart, sourcePos);
-      if (!prefix || prefix.length > 3) {
-        return null;
+      const rawPrefix = source.slice(lineStart, sourcePos);
+
+      // Fast path: hashes at the actual source line start (no inline markers).
+      if (
+        rawPrefix.length > 0 &&
+        rawPrefix.length <= 3 &&
+        /^[#]+$/.test(rawPrefix) &&
+        sourcePos === lineStart + rawPrefix.length
+      ) {
+        const nextSource =
+          source.slice(0, sourcePos) + " " + source.slice(sourcePos);
+        const lineStartCursor = cursorPos - rawPrefix.length;
+
+        return {
+          source: nextSource,
+          selection: {
+            start: lineStartCursor,
+            end: lineStartCursor,
+            affinity: "forward",
+          },
+        };
       }
-      if (!/^[#]+$/.test(prefix)) {
+
+      // Slow path: hashes may be at the *visible* start of the line but inside
+      // inline formatting markers (e.g. source is `**##text**`).  Use the cursor
+      // map to skip source-only spans and find the first visible character.
+      const lineStartCursorInfo = map.sourceToCursor(lineStart, "forward");
+      const visibleLineStart = map.cursorToSource(
+        lineStartCursorInfo.cursorOffset,
+        "forward",
+      );
+      const visiblePrefix = source.slice(visibleLineStart, sourcePos);
+      if (
+        !visiblePrefix ||
+        visiblePrefix.length > 3 ||
+        !/^[#]+$/.test(visiblePrefix)
+      ) {
         return null;
       }
 
-      // Only convert when we're immediately after the leading hashes.
-      if (sourcePos !== lineStart + prefix.length) {
-        return null;
-      }
+      // Restructure: move "## " before the inline markers so the block parser
+      // sees the heading prefix at the true line start.
+      const headingMarker = visiblePrefix + " ";
+      const inlinePrefix = source.slice(lineStart, visibleLineStart);
+      const afterHashes = source.slice(sourcePos);
 
       const nextSource =
-        source.slice(0, sourcePos) + " " + source.slice(sourcePos);
-      const lineStartCursor = cursorPos - prefix.length;
+        source.slice(0, lineStart) + headingMarker + inlinePrefix + afterHashes;
+
+      const next = runtime.createState(nextSource);
+      const caretSource = lineStart + headingMarker.length + inlinePrefix.length;
+      const caretCursor = next.map.sourceToCursor(caretSource, "forward");
 
       return {
         source: nextSource,
         selection: {
-          start: lineStartCursor,
-          end: lineStartCursor,
-          affinity: "forward",
+          start: caretCursor.cursorOffset,
+          end: caretCursor.cursorOffset,
+          affinity: caretCursor.affinity,
         },
       };
     }),
