@@ -2,6 +2,8 @@ import TurndownService from "turndown";
 
 const MAX_HTML_INPUT_LENGTH = 500000;
 const MAX_MARKDOWN_OUTPUT_LENGTH = 100000;
+export const INTERNAL_MARKDOWN_CLIPBOARD_MIME =
+  "application/x-blankpage-markdown";
 
 function isHTMLElement(node: Node | null): node is HTMLElement {
   return node !== null && node.nodeType === Node.ELEMENT_NODE;

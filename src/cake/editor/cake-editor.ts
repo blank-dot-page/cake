@@ -51,7 +51,10 @@ import {
   nextWordBreak,
   prevWordBreak,
 } from "../shared/word-break";
-import { htmlToMarkdownForPaste } from "../../cake/clipboard";
+import {
+  htmlToMarkdownForPaste,
+  INTERNAL_MARKDOWN_CLIPBOARD_MIME,
+} from "../../cake/clipboard";
 
 type EngineOptions = {
   container: HTMLElement;
@@ -2822,6 +2825,7 @@ export class CakeEditor {
 
     event.preventDefault();
     clipboardData.setData("text/plain", text);
+    clipboardData.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, text);
 
     const html = this.runtime.serializeSelectionToHtml(
       this.state,
@@ -2859,18 +2863,28 @@ export class CakeEditor {
     this.syncSelectionFromDom();
 
     const clipboardData = event.clipboardData;
+    const internalMarkdown =
+      clipboardData?.getData(INTERNAL_MARKDOWN_CLIPBOARD_MIME) ?? "";
+    if (internalMarkdown) {
+      this.pasteText(internalMarkdown, event);
+      return;
+    }
+
     const html = clipboardData?.getData("text/html") ?? "";
     if (html) {
       const markdown = htmlToMarkdownForPaste(html);
       if (markdown) {
-        event.preventDefault();
-        this.applyEdit({ type: "insert", text: markdown });
+        this.pasteText(markdown, event);
         return;
       }
     }
 
-    event.preventDefault();
     const text = clipboardData?.getData("text/plain") ?? "";
+    this.pasteText(text, event);
+  }
+
+  private pasteText(text: string, event: ClipboardEvent) {
+    event.preventDefault();
     if (!text) {
       return;
     }

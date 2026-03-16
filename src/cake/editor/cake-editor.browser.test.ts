@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
+import { INTERNAL_MARKDOWN_CLIPBOARD_MIME } from "../clipboard";
 import { CakeEditor } from "./cake-editor";
 import { createTestHarness, type TestHarness } from "../test/harness";
 import { linkExtension } from "../extensions/link/link";
@@ -1074,6 +1075,105 @@ describe("CakeEditor (browser)", () => {
     expect(pasteEvent.defaultPrevented).toBe(true);
     expect(engine.getValue()).toBe("- before\n- targetalpha\nbeta\n- after");
     engine.destroy();
+  });
+
+  it("prefers the internal markdown clipboard flavor over html when both are present", () => {
+    const container = createContainer();
+    let lastValue = "";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(
+      INTERNAL_MARKDOWN_CLIPBOARD_MIME,
+      "one\n\n\n\n\ntwo",
+    );
+    dataTransfer.setData("text/html", "<div><div>one</div><div>two</div></div>");
+    dataTransfer.setData("text/plain", "one\n\ntwo");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("one\n\n\n\n\ntwo");
+    engine.destroy();
+  });
+
+  it("copies and pastes repeated blank lines exactly with the internal markdown clipboard flavor", () => {
+    const sourceContainer = createContainer();
+    const sourceEngine = new CakeEditor({
+      container: sourceContainer,
+      value: "one\n\n\n\n\ntwo",
+    });
+    sourceEngine.selectAll();
+
+    const sourceContentRoot = sourceContainer.querySelector(".cake-content");
+    if (!sourceContentRoot) {
+      throw new Error("Missing source content root");
+    }
+
+    const copyData = new DataTransfer();
+    const copyEvent = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: copyData,
+    });
+    sourceContentRoot.dispatchEvent(copyEvent);
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(copyData.getData(INTERNAL_MARKDOWN_CLIPBOARD_MIME)).toBe(
+      "one\n\n\n\n\ntwo",
+    );
+
+    const destinationContainer = createContainer();
+    let lastValue = "";
+    const destinationEngine = new CakeEditor({
+      container: destinationContainer,
+      value: lastValue,
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    const destinationContentRoot =
+      destinationContainer.querySelector(".cake-content");
+    if (!destinationContentRoot) {
+      throw new Error("Missing destination content root");
+    }
+
+    const pasteData = new DataTransfer();
+    pasteData.setData(
+      INTERNAL_MARKDOWN_CLIPBOARD_MIME,
+      copyData.getData(INTERNAL_MARKDOWN_CLIPBOARD_MIME),
+    );
+    pasteData.setData("text/plain", copyData.getData("text/plain"));
+    pasteData.setData("text/html", copyData.getData("text/html"));
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: pasteData,
+    });
+    destinationContentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("one\n\n\n\n\ntwo");
+
+    sourceEngine.destroy();
+    destinationEngine.destroy();
   });
 
   it("copying a partial selection inside a list item copies only the selected text", async () => {
