@@ -195,6 +195,46 @@ function getListActiveMarks(state: RuntimeState): string[] {
   return listType ? [listType] : [];
 }
 
+function getNormalizedListPasteText(
+  text: string,
+  state: RuntimeState,
+): string | null {
+  const normalizedText = text.replace(/\r\n/g, "\n");
+  const singleLineText = normalizedText.replace(/^\n+|\n+$/g, "");
+  if (singleLineText.includes("\n")) {
+    return null;
+  }
+
+  const selection = state.selection;
+  if (selection.start !== selection.end) {
+    return null;
+  }
+
+  const pastedItem = parseListItem(singleLineText);
+  if (!pastedItem) {
+    return null;
+  }
+
+  const candidateOffsets = new Set<number>([
+    state.map.cursorToSource(selection.start, "backward"),
+    state.map.cursorToSource(selection.start, "forward"),
+  ]);
+
+  for (const offset of candidateOffsets) {
+    const lineInfo = getLineInfo(state.source, offset);
+    const currentItem = parseListItem(lineInfo.line);
+    if (!currentItem || currentItem.content.trim() !== "") {
+      continue;
+    }
+    if (currentItem.markerType !== pastedItem.markerType) {
+      continue;
+    }
+    return pastedItem.content;
+  }
+
+  return null;
+}
+
 function handleInsertLineBreak(state: RuntimeState): EditResult | null {
   const { source, selection, map, runtime } = state;
 
@@ -1268,6 +1308,12 @@ export const plainTextListExtension: CakeExtension = (editor) => {
       if (command.type === "insert" && command.text.length === 1) {
         return handleMarkerSwitch(state, command.text);
       }
+      if (command.type === "insert") {
+        const normalizedText = getNormalizedListPasteText(command.text, state);
+        if (normalizedText !== null && normalizedText !== command.text) {
+          return { type: "insert", text: normalizedText };
+        }
+      }
       return null;
     }),
   );
@@ -1309,26 +1355,23 @@ export const plainTextListExtension: CakeExtension = (editor) => {
       }
 
       const contentStart = Math.min(prefixLength, lineCursorLength);
-      const selectedContent = lineText.slice(listMatch.prefix.length);
       const contentHtml =
         startInLine <= contentStart && endInLine >= lineCursorLength
-          ? context.state.runtime.serializeSelectionToHtml(
-              context.state,
-              {
+          ? context.state.runtime
+              .serializeSelectionToHtml(context.state, {
                 start:
                   context.line.lineStartOffset +
                   Math.min(contentStart, context.lineCursorLength),
                 end: context.line.lineStartOffset + lineCursorLength,
                 affinity: "forward",
-              },
-            )
+              })
               .replace(/^<div><div>/, "")
               .replace(/<\/div><\/div>$/, "")
           : context.selectedHtml;
       const type = listMatch.number === null ? "ul" : "ol";
       const indent = Math.floor(listMatch.indent.length / 2);
       return {
-        html: `<li>${contentHtml || selectedContent}</li>`,
+        html: `<li>${contentHtml}</li>`,
         group: {
           key: `${type}:${indent}`,
           open: `<${type}>`,

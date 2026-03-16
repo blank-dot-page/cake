@@ -2854,6 +2854,10 @@ export class CakeEditor {
       return;
     }
 
+    // Real browser paste can arrive before selectionchange updates engine state.
+    // Sync from the live DOM caret so paste handlers act on the actual target line.
+    this.syncSelectionFromDom();
+
     const clipboardData = event.clipboardData;
     const html = clipboardData?.getData("text/html") ?? "";
     if (html) {

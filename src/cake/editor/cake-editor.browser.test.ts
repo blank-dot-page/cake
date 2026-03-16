@@ -1156,6 +1156,50 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("pasting a copied bullet list item into a new bullet list item does not duplicate the marker", () => {
+    const container = createContainer();
+    let lastValue = "- item\n- ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    engine.setSelection({ start: 0, end: 6, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    const copyEvent = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(copyEvent);
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(dataTransfer.getData("text/plain")).toBe("- item");
+
+    engine.setSelection({ start: 9, end: 9, affinity: "forward" });
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("- item\n- item");
+    engine.destroy();
+  });
+
   it("pasting simple web html leaves the caret at the end of the inserted text", () => {
     const container = createContainer();
     const engine = new CakeEditor({
