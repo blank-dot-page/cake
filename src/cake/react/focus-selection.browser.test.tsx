@@ -45,7 +45,11 @@ describe("page load caret positioning (replicates editor.client.tsx runCaretInit
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     // Initial selection should be at 0
-    expect(ref.current?.getSelection()).toEqual({ start: 0, end: 0 });
+    expect(ref.current?.getSelection()).toEqual({
+      start: 0,
+      end: 0,
+      affinity: "forward",
+    });
 
     // Step 2: Simulate runCaretInit calling applyUpdate to position at end
     const contentLength = 11; // "Hello world".length
@@ -57,7 +61,11 @@ describe("page load caret positioning (replicates editor.client.tsx runCaretInit
 
     // Caret should now be at the end
     const selection = ref.current?.getSelection();
-    expect(selection).toEqual({ start: 11, end: 11 });
+    expect(selection).toEqual({
+      start: 11,
+      end: 11,
+      affinity: "forward",
+    });
   });
 
   /**
@@ -102,7 +110,11 @@ describe("page load caret positioning (replicates editor.client.tsx runCaretInit
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     // Initial state: selection is null in React, engine has {0,0}
-    expect(ref.current?.getSelection()).toEqual({ start: 0, end: 0 });
+    expect(ref.current?.getSelection()).toEqual({
+      start: 0,
+      end: 0,
+      affinity: "forward",
+    });
     expect(externalSelection).toBe(null);
 
     // Simulate runCaretInit: call applyUpdate to position at end
@@ -114,6 +126,10 @@ describe("page load caret positioning (replicates editor.client.tsx runCaretInit
 
     // Should be at end now
     const selection = ref.current?.getSelection();
-    expect(selection).toEqual({ start: 11, end: 11 });
+    expect(selection).toEqual({
+      start: 11,
+      end: 11,
+      affinity: "forward",
+    });
   });
 });

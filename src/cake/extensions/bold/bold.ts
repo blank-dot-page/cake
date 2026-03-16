@@ -6,6 +6,7 @@ import {
 } from "../../core/runtime";
 import type { Inline } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
+import { serializeItalicInlineWithMarker } from "../italic/italic";
 
 const BOLD_KIND = "bold";
 
@@ -101,10 +102,23 @@ export const boldExtension: CakeExtension = (editor) => {
 
         const builder = new CursorSourceBuilder();
         builder.appendSourceOnly("**");
-        for (const child of inline.children) {
-          const serialized = context.serializeInline(child);
+        const defaultChildResults = inline.children.map((child) =>
+          context.serializeInline(child),
+        );
+        let previousSource = "";
+        inline.children.forEach((child, index) => {
+          const nextSource = defaultChildResults[index + 1]?.source ?? "";
+          const serialized =
+            child.type === "inline-wrapper" &&
+            child.kind === "italic" &&
+            (previousSource.endsWith("*") ||
+              nextSource.startsWith("*") ||
+              (index === 0 && inline.children.length > 1))
+              ? serializeItalicInlineWithMarker(child, context, "_")
+              : (defaultChildResults[index] ?? context.serializeInline(child));
           builder.appendSerialized(serialized);
-        }
+          previousSource = serialized.source;
+        });
         builder.appendSourceOnly("**");
         return builder.build();
       },

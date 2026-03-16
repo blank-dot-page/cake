@@ -737,6 +737,7 @@ describe("inline toggle selection edge cases", () => {
 
   it("toggle-bold off at combined bold+italic boundary keeps source parseable for subsequent typing", async () => {
     const runtime = await createBundledRuntime();
+    const placeholder = "\u200B";
     const state = runtime.createState("**bold*italics***", {
       start: 11,
       end: 11,
@@ -744,10 +745,10 @@ describe("inline toggle selection edge cases", () => {
     });
 
     const toggled = runtime.applyEdit({ type: "toggle-bold" }, state);
-    expect(toggled.source).toBe("**bold*italics***");
+    expect(toggled.source).toBe(`**bold*italics*${placeholder}**`);
 
     const typed = runtime.applyEdit({ type: "insert", text: "plain" }, toggled);
-    expect(typed.source).toBe("**bold*italics***plain");
+    expect(typed.source).toBe("**bold*italics*plain**");
   });
 
   it("inserts a placeholder when toggling bold with a collapsed selection", async () => {

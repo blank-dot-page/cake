@@ -316,7 +316,11 @@ describe("cake formatting interactions", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(ref.current?.getValue()).toBe("# this is a title\n1. \nthis is text");
-    expect(ref.current?.getSelection()).toEqual({ start: 19, end: 19 });
+    expect(ref.current?.getSelection()).toEqual({
+      start: 19,
+      end: 19,
+      affinity: "backward",
+    });
     expect(getCaretLineText()).toBe("1. ");
   });
 
