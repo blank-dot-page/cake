@@ -1471,6 +1471,34 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("pasting a heading clipboard payload into an empty heading placeholder inserts the heading text", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+    await h.typeText("# ");
+
+    expect(h.engine.getValue()).toBe("# ");
+    expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# title");
+    dataTransfer.setData(
+      "text/html",
+      '<div><h1 style="margin:0">title</h1></div>',
+    );
+    dataTransfer.setData("text/plain", "# title");
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(h.engine.getValue()).toBe("# title");
+    h.destroy();
+  });
+
   it("pasting a manually selected numbered list line into an empty numbered item preserves numbering", async () => {
     const container = createContainer();
     let lastValue = "1. one\n2. two\n3. three\n4. ";

@@ -218,6 +218,43 @@ function handleMultilineInsertInHeading(
   };
 }
 
+function getNormalizedHeadingPasteText(
+  text: string,
+  state: RuntimeState,
+): string | null {
+  const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const singleLineText = normalizedText.replace(/^\n+|\n+$/g, "");
+  if (!singleLineText || singleLineText.includes("\n")) {
+    return null;
+  }
+
+  const headingMatch = /^(#{1,6})\s+(.+)$/.exec(singleLineText);
+  if (!headingMatch) {
+    return null;
+  }
+
+  const { selection, map, source } = state;
+  if (selection.start !== selection.end) {
+    return null;
+  }
+
+  const sourcePos = map.cursorToSource(selection.start, "forward");
+  const lineStart = findLineStartInSource(source, sourcePos);
+  const lineEnd = findLineEndInSource(source, lineStart);
+  const lineContent = source.slice(lineStart, lineEnd);
+  const currentHeading = lineContent.match(HEADING_PATTERN);
+  if (!currentHeading) {
+    return null;
+  }
+
+  const currentContent = lineContent.slice(currentHeading[0].length).trim();
+  if (currentContent !== "") {
+    return null;
+  }
+
+  return headingMatch[2];
+}
+
 function handleLineBreakInHeading(
   state: RuntimeState,
 ): EditResult | { type: "exit-block-wrapper" } | null {
@@ -433,6 +470,12 @@ export const headingExtension: CakeExtension = (editor) => {
 
   disposers.push(
     editor.registerActiveMarksResolver((state) => getHeadingActiveMarks(state)),
+  );
+
+  disposers.push(
+    editor.registerNormalizePasteText((text, state) =>
+      getNormalizedHeadingPasteText(text, state),
+    ),
   );
 
   disposers.push(
