@@ -1200,6 +1200,72 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("pasting a manually selected numbered list line into an empty numbered item preserves numbering", async () => {
+    const container = createContainer();
+    let lastValue = "1. one\n2. two\n3. three\n4. ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const contentRoot = container.querySelector(".cake-content");
+    const line = container.querySelector('[data-line-index="1"]');
+    if (!contentRoot || !line) {
+      throw new Error("Missing rendered numbered list line");
+    }
+
+    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+    let lineTextNode: Text | null = null;
+    let currentNode = walker.nextNode();
+    while (currentNode) {
+      if (currentNode instanceof Text && currentNode.data.includes("2. two")) {
+        lineTextNode = currentNode;
+        break;
+      }
+      currentNode = walker.nextNode();
+    }
+    if (!lineTextNode) {
+      throw new Error("Missing numbered list line text node");
+    }
+
+    setDomSelection(lineTextNode, 0, "2. two".length);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const dataTransfer = new DataTransfer();
+    const copyEvent = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(copyEvent);
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(dataTransfer.getData("text/plain")).toBe("2. two");
+
+    engine.setSelection({
+      start: lastValue.length,
+      end: lastValue.length,
+      affinity: "forward",
+    });
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("1. one\n2. two\n3. three\n4. two");
+    engine.destroy();
+  });
+
   it("pasting simple web html leaves the caret at the end of the inserted text", () => {
     const container = createContainer();
     const engine = new CakeEditor({

@@ -236,6 +236,12 @@ describe("clipboard html paste", () => {
     expect(result).toBe("1. First\n2. Second");
   });
 
+  it("preserves an explicit number for a partial numbered-list line copied as plain block html", () => {
+    const result = htmlToMarkdownForPaste("<div><div>2. two</div></div>");
+
+    expect(result).toBe("2. two");
+  });
+
   it("converts copied multiline block html without inserting blank lines", () => {
     const result = htmlToMarkdownForPaste(
       "<div><div>alpha</div><div>beta</div><div>gamma</div></div>",

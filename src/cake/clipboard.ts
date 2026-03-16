@@ -484,9 +484,14 @@ function normalizeListPrefixes(content: string): string {
       const match = line.match(/^(\s*)([-*+]|\d+\.)( +)(.*)$/);
       if (match) {
         const [, indent, marker, , listContent] = match;
+        const nextListType = /\d+\./.test(marker) ? "numbered" : "bullet";
 
-        if (currentListType === null) {
-          currentListType = /\d+\./.test(marker) ? "numbered" : "bullet";
+        if (currentListType !== nextListType) {
+          currentListType = nextListType;
+          currentNumber =
+            nextListType === "numbered"
+              ? Number.parseInt(marker, 10)
+              : 1;
         }
 
         const newMarker =
@@ -497,6 +502,8 @@ function normalizeListPrefixes(content: string): string {
 
         return `${indent}${newMarker} ${listContent}`;
       }
+      currentListType = null;
+      currentNumber = 1;
       return line;
     })
     .join("\n");
