@@ -1721,6 +1721,7 @@ export class CakeEditor {
     // Placeholder positioning is independent of overlay visibility; the helper
     // is already a no-op when no placeholder root exists.
     this.syncPlaceholderPosition();
+    this.syncMeasuredListIndent();
 
     // Avoid scheduling expensive selection geometry work when there's nothing
     // visible that would change (e.g. blurred + collapsed selection).
@@ -1903,6 +1904,7 @@ export class CakeEditor {
       map: this.state.map,
     };
     this.lastRenderedInvalidationVersion = this.renderInvalidationVersion;
+    this.syncMeasuredListIndent();
     if (perfEnabled) {
       renderAndMapMs = performance.now() - renderStart;
     }
@@ -2001,6 +2003,30 @@ export class CakeEditor {
     }
     this.contentRoot.contentEditable = this.readOnly ? "false" : "true";
     this.contentRoot.spellcheck = this.spellCheckEnabled;
+  }
+
+  private syncMeasuredListIndent() {
+    if (!this.contentRoot) {
+      return;
+    }
+
+    const lines = this.contentRoot.querySelectorAll<HTMLElement>(".cake-line.is-list");
+    for (const line of lines) {
+      const prefixLength = getListPrefixLengthFromText(line.textContent ?? "");
+      if (prefixLength === null || prefixLength <= 0) {
+        continue;
+      }
+
+      const prefixWidth = measureLinePrefixWidth(line, prefixLength);
+      if (prefixWidth === null) {
+        continue;
+      }
+
+      const pixelWidth = `${prefixWidth}px`;
+      line.style.setProperty("--cake-list-prefix-width", pixelWidth);
+      line.style.paddingInlineStart = pixelWidth;
+      line.style.textIndent = `${-prefixWidth}px`;
+    }
   }
 
   private applySelection(selection: Selection) {
@@ -5926,6 +5952,58 @@ function findRowIndexForOffset(
   }
 
   return rows.length - 1;
+}
+
+function resolveLineDomPosition(
+  lineElement: HTMLElement,
+  offset: number,
+): { node: Node; offset: number } {
+  const walker = document.createTreeWalker(lineElement, NodeFilter.SHOW_TEXT);
+  let remaining = offset;
+  let current = walker.nextNode();
+
+  while (current) {
+    if (current instanceof Text) {
+      if (remaining <= current.data.length) {
+        return { node: current, offset: remaining };
+      }
+      remaining -= current.data.length;
+    }
+    current = walker.nextNode();
+  }
+
+  return { node: lineElement, offset: lineElement.childNodes.length };
+}
+
+function measureLinePrefixWidth(
+  lineElement: HTMLElement,
+  prefixLength: number,
+): number | null {
+  const range = document.createRange();
+  const start = resolveLineDomPosition(lineElement, 0);
+  const end = resolveLineDomPosition(lineElement, prefixLength);
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+
+  const rects = Array.from(range.getClientRects()).filter(
+    (rect) => rect.width > 0 && rect.height > 0,
+  );
+  if (rects.length > 0) {
+    const left = Math.min(...rects.map((rect) => rect.left));
+    const right = Math.max(...rects.map((rect) => rect.right));
+    return right - left;
+  }
+
+  const rect = range.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) {
+    return null;
+  }
+  return rect.width;
+}
+
+function getListPrefixLengthFromText(lineText: string): number | null {
+  const match = /^(\s*)([-*+]|\d+\.)( )/.exec(lineText);
+  return match ? match[0].length : null;
 }
 
 function resolveSelectionAffinity(selection: Selection): Affinity {

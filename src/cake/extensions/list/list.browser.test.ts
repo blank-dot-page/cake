@@ -3,6 +3,7 @@ import { userEvent } from "vitest/browser";
 import { CakeEditor } from "../../editor/cake-editor";
 import { bundledExtensions } from "../index";
 import { createTestHarness, type TestHarness } from "../../test/harness";
+import { getListPrefixLength } from "./list-ast";
 
 const mod =
   typeof navigator !== "undefined" &&
@@ -11,6 +12,86 @@ const mod =
     ? { meta: true }
     : { ctrl: true };
 const modShift = { ...mod, shift: true };
+
+const PROPORTIONAL_LIST_CSS = `
+  .cake {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 18px;
+    line-height: 1.45;
+  }
+
+  .cake-content {
+    width: 180px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    outline: none;
+    caret-color: transparent;
+  }
+
+  .cake-line {
+    display: block;
+  }
+`;
+
+function getLineDomPosition(
+  lineElement: HTMLElement,
+  offset: number,
+): { node: Node; offset: number } {
+  const walker = document.createTreeWalker(lineElement, NodeFilter.SHOW_TEXT);
+  let remaining = offset;
+  let current = walker.nextNode();
+  while (current) {
+    if (current instanceof Text) {
+      if (remaining <= current.data.length) {
+        return { node: current, offset: remaining };
+      }
+      remaining -= current.data.length;
+    }
+    current = walker.nextNode();
+  }
+
+  return { node: lineElement, offset: lineElement.childNodes.length };
+}
+
+function getListContentRows(
+  lineElement: HTMLElement,
+  sourceLine: string,
+): Array<{ left: number; top: number; height: number }> {
+  const prefixLength = getListPrefixLength(sourceLine);
+  if (prefixLength === null) {
+    throw new Error(`Line is not a list item: "${sourceLine}"`);
+  }
+
+  const range = document.createRange();
+  const start = getLineDomPosition(lineElement, prefixLength);
+  const end = getLineDomPosition(lineElement, sourceLine.length);
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+
+  return Array.from(range.getClientRects())
+    .filter((rect) => rect.width > 0 && rect.height > 0)
+    .reduce<Array<{ left: number; top: number; height: number }>>(
+      (rows, rect) => {
+        const top = Math.round(rect.top);
+        const existing = rows.find((row) => row.top === top);
+        if (existing) {
+          existing.left = Math.min(existing.left, rect.left);
+          existing.height = Math.max(existing.height, rect.height);
+          return rows;
+        }
+
+        rows.push({ left: rect.left, top, height: rect.height });
+        return rows;
+      },
+      [],
+    )
+    .sort((a, b) => a.top - b.top);
+}
+
+async function waitForLayout(): Promise<void> {
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
 
 describe("list extension DOM rendering", () => {
   let container: HTMLDivElement;
@@ -220,6 +301,174 @@ describe("list extension DOM rendering", () => {
 
     engine.setSelection({ start: 3, end: 3, affinity: "forward" });
     expect(engine.getActiveMarks()).toContain("numbered-list");
+  });
+});
+
+describe("list hanging indent layout", () => {
+  let harness: TestHarness | null = null;
+
+  afterEach(() => {
+    harness?.destroy();
+    harness = null;
+  });
+
+  test("keeps wrapped bullet rows aligned under a proportional font", async () => {
+    const value =
+      "- This is a long list item that should wrap under its own content column";
+    harness = createTestHarness({
+      value,
+      css: PROPORTIONAL_LIST_CSS,
+    });
+    await waitForLayout();
+
+    const rows = getListContentRows(harness.getLine(0), value);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    expect(Math.abs((rows[0]?.left ?? 0) - (rows[1]?.left ?? 0))).toBeLessThan(
+      1.5,
+    );
+  });
+
+  test("keeps wrapped ordered rows aligned for both 9. and 10.", async () => {
+    const lines = [
+      "9. This ordered item wraps under its content instead of the marker",
+      "10. This ordered item also wraps under the same content start",
+    ];
+    harness = createTestHarness({
+      value: lines.join("\n"),
+      css: PROPORTIONAL_LIST_CSS,
+    });
+    await waitForLayout();
+
+    const nineRows = getListContentRows(harness.getLine(0), lines[0]!);
+    const tenRows = getListContentRows(harness.getLine(1), lines[1]!);
+
+    expect(nineRows.length).toBeGreaterThanOrEqual(2);
+    expect(tenRows.length).toBeGreaterThanOrEqual(2);
+    expect(
+      Math.abs((nineRows[0]?.left ?? 0) - (nineRows[1]?.left ?? 0)),
+    ).toBeLessThan(1.5);
+    expect(
+      Math.abs((tenRows[0]?.left ?? 0) - (tenRows[1]?.left ?? 0)),
+    ).toBeLessThan(1.5);
+  });
+
+  test("preserves nested indentation while keeping wrapped rows aligned", async () => {
+    const lines = [
+      "- Parent item that wraps onto another row in a proportional font",
+      "  - Nested item that also wraps onto another row in a proportional font",
+    ];
+    harness = createTestHarness({
+      value: lines.join("\n"),
+      css: PROPORTIONAL_LIST_CSS,
+    });
+    await waitForLayout();
+
+    const parentRows = getListContentRows(harness.getLine(0), lines[0]!);
+    const nestedRows = getListContentRows(harness.getLine(1), lines[1]!);
+
+    expect(parentRows.length).toBeGreaterThanOrEqual(2);
+    expect(nestedRows.length).toBeGreaterThanOrEqual(2);
+    expect(
+      Math.abs((parentRows[0]?.left ?? 0) - (parentRows[1]?.left ?? 0)),
+    ).toBeLessThan(1.5);
+    expect(
+      Math.abs((nestedRows[0]?.left ?? 0) - (nestedRows[1]?.left ?? 0)),
+    ).toBeLessThan(1.5);
+    expect((nestedRows[0]?.left ?? 0) - (parentRows[0]?.left ?? 0)).toBeGreaterThan(
+      6,
+    );
+  });
+
+  test("keeps the caret at the end of wrapped list content", async () => {
+    const value =
+      "- This is a long list item whose caret should remain on the wrapped row end";
+    harness = createTestHarness({
+      value,
+      css: PROPORTIONAL_LIST_CSS,
+      renderOverlays: true,
+    });
+    await harness.focus();
+
+    harness.engine.setSelection({
+      start: value.length,
+      end: value.length,
+      affinity: "forward",
+    });
+    await waitForLayout();
+
+    const rows = harness.getVisualRows(0);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    harness.assertCaretAtEndOfVisualRow(rows.length - 1, 0);
+  });
+
+  test("renders wrapped selection rects inside the list content column", async () => {
+    const value =
+      "- This is a long list item whose selection should wrap inside the content column";
+    harness = createTestHarness({
+      value,
+      css: PROPORTIONAL_LIST_CSS,
+      renderOverlays: true,
+    });
+    await harness.focus();
+    await waitForLayout();
+
+    const contentRows = getListContentRows(harness.getLine(0), value);
+    expect(contentRows.length).toBeGreaterThanOrEqual(2);
+
+    const selectionStart = 22;
+    const selectionEnd = value.length - 8;
+    harness.engine.setSelection({
+      start: selectionStart,
+      end: selectionEnd,
+      affinity: "forward",
+    });
+    await waitForLayout();
+
+    const rects = harness
+      .getSelectionRects()
+      .slice()
+      .sort((a, b) => a.top - b.top);
+    expect(rects.length).toBeGreaterThanOrEqual(2);
+
+    const containerRect = harness.container.getBoundingClientRect();
+    const wrappedRect = rects[1];
+    expect(wrappedRect).toBeDefined();
+    expect((wrappedRect?.left ?? 0) + containerRect.left).toBeGreaterThanOrEqual(
+      (contentRows[1]?.left ?? 0) - 1.5,
+    );
+  });
+
+  test("hit testing in the wrapped hanging gutter places the caret on that row", async () => {
+    const value =
+      "- This is a long list item whose wrapped row gutter should still hit test correctly";
+    harness = createTestHarness({
+      value,
+      css: PROPORTIONAL_LIST_CSS,
+      renderOverlays: true,
+    });
+    await harness.focus();
+    await waitForLayout();
+
+    const contentRows = getListContentRows(harness.getLine(0), value);
+    const visualRows = harness.getVisualRows(0);
+    expect(contentRows.length).toBeGreaterThanOrEqual(2);
+    expect(visualRows.length).toBeGreaterThanOrEqual(2);
+
+    const lineRect = harness.getLineRect(0);
+    const wrappedContentLeft = contentRows[1]?.left ?? lineRect.left;
+    const gutterWidth = wrappedContentLeft - lineRect.left;
+    expect(gutterWidth).toBeGreaterThan(4);
+
+    const wrappedRow = visualRows[1]!;
+    const clickX = lineRect.left + gutterWidth / 2;
+    const clickY =
+      (contentRows[1]?.top ?? wrappedRow.top) +
+      (contentRows[1]?.height ?? wrappedRow.bottom - wrappedRow.top) / 2;
+    await harness.clickAtCoords(clickX, clickY);
+    await waitForLayout();
+
+    expect(harness.selection.start).toBe(wrappedRow.startOffset);
+    harness.assertCaretAtStartOfVisualRow(1, 0);
   });
 });
 

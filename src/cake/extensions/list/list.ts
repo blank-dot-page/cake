@@ -1417,6 +1417,7 @@ export const plainTextListExtension: CakeExtension = (editor) => {
         }
 
         const markerPrefix = `${listMatch.marker}${listMatch.space}`;
+        element.dataset.cakeListPrefixLength = String(listMatch.prefix.length);
         element.style.setProperty(
           "--cake-list-marker",
           `${markerPrefix.length}ch`,
