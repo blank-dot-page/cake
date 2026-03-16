@@ -363,6 +363,9 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
     registerOnPasteText: () => {
       return () => {};
     },
+    registerNormalizePasteText: () => {
+      return () => {};
+    },
     registerActiveMarksResolver: () => {
       return () => {};
     },

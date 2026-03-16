@@ -1300,6 +1300,177 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("pasting heading html into an empty bullet list item strips the heading marker", () => {
+    const container = createContainer();
+    let lastValue = "- ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    engine.setSelection({ start: 2, end: 2, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Title");
+    dataTransfer.setData("text/html", "<h1>Title</h1>");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("- Title");
+    engine.destroy();
+  });
+
+  it("pasting markdown heading into an empty bullet list item strips the heading marker", () => {
+    const container = createContainer();
+    let lastValue = "- ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    engine.setSelection({ start: 2, end: 2, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# Title");
+    dataTransfer.setData("text/plain", "Title");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("- Title");
+    engine.destroy();
+  });
+
+  it("pasting heading html into an empty numbered list item strips the heading marker", () => {
+    const container = createContainer();
+    let lastValue = "1. ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    engine.setSelection({ start: 3, end: 3, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Title");
+    dataTransfer.setData("text/html", "<h2>Title</h2>");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("1. Title");
+    engine.destroy();
+  });
+
+  it("pasting nested heading html into an empty bullet list item collapses then strips the heading marker", () => {
+    const container = createContainer();
+    let lastValue = "- ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    engine.setSelection({ start: 2, end: 2, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Insurance and cybersecurity");
+    dataTransfer.setData(
+      "text/html",
+      '<h1 class="styles_title__FH2l0"><div class="styles_container_overflow__aK3UX"><div class="styles_text__N0ARI"><span class="styles_blue__3zs0C">Insurance </span>and</div><div class="styles_line__TIYaU"></div></div><div class="styles_container_overflow__aK3UX"><div class="styles_text__N0ARI"><span class="styles_pink__M351a">cybersecurity</span></div></div></h1>',
+    );
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("- Insurance and cybersecurity");
+    engine.destroy();
+  });
+
+  it("pasting markdown heading outside an empty list item preserves the heading marker", () => {
+    const container = createContainer();
+    let lastValue = "";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# Title");
+    dataTransfer.setData("text/plain", "Title");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("# Title");
+    engine.destroy();
+  });
+
   it("pasting a manually selected numbered list line into an empty numbered item preserves numbering", async () => {
     const container = createContainer();
     let lastValue = "1. one\n2. two\n3. three\n4. ";

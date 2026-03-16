@@ -210,8 +210,9 @@ function getNormalizedListPasteText(
     return null;
   }
 
+  const pastedHeading = /^(#{1,6})\s+(.+)$/.exec(singleLineText);
   const pastedItem = parseListItem(singleLineText);
-  if (!pastedItem) {
+  if (!pastedItem && !pastedHeading) {
     return null;
   }
 
@@ -226,10 +227,14 @@ function getNormalizedListPasteText(
     if (!currentItem || currentItem.content.trim() !== "") {
       continue;
     }
-    if (currentItem.markerType !== pastedItem.markerType) {
-      continue;
+
+    if (pastedHeading) {
+      return pastedHeading[2];
     }
-    return pastedItem.content;
+
+    if (pastedItem && currentItem.markerType === pastedItem.markerType) {
+      return pastedItem.content;
+    }
   }
 
   return null;
@@ -1308,13 +1313,13 @@ export const plainTextListExtension: CakeExtension = (editor) => {
       if (command.type === "insert" && command.text.length === 1) {
         return handleMarkerSwitch(state, command.text);
       }
-      if (command.type === "insert") {
-        const normalizedText = getNormalizedListPasteText(command.text, state);
-        if (normalizedText !== null && normalizedText !== command.text) {
-          return { type: "insert", text: normalizedText };
-        }
-      }
       return null;
+    }),
+  );
+
+  disposers.push(
+    editor.registerNormalizePasteText((text, state) => {
+      return getNormalizedListPasteText(text, state);
     }),
   );
 

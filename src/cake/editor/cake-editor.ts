@@ -224,6 +224,9 @@ export class CakeEditor {
   private structuralReparsePolicies: StructuralReparsePolicy[] = [];
   private keybindings: KeyBinding[] = [];
   private keyDownInterceptors: Array<(event: KeyboardEvent) => boolean> = [];
+  private normalizePasteTextFns: Array<
+    (text: string, state: RuntimeState) => string | null
+  > = [];
   private onPasteTextHandlers: Array<
     (text: string, state: RuntimeState) => EditCommand | null
   > = [];
@@ -573,6 +576,13 @@ export class CakeEditor {
   ) {
     this.onPasteTextHandlers.push(fn);
     return () => removeFromArray(this.onPasteTextHandlers, fn);
+  }
+
+  registerNormalizePasteText(
+    fn: (text: string, state: RuntimeState) => string | null,
+  ) {
+    this.normalizePasteTextFns.push(fn);
+    return () => removeFromArray(this.normalizePasteTextFns, fn);
   }
 
   registerActiveMarksResolver(fn: ActiveMarksResolver) {
@@ -2889,8 +2899,19 @@ export class CakeEditor {
       return;
     }
 
+    let normalizedText = text;
+    for (const normalize of this.normalizePasteTextFns) {
+      const nextText = normalize(normalizedText, this.state);
+      if (nextText !== null) {
+        normalizedText = nextText;
+      }
+    }
+    if (!normalizedText) {
+      return;
+    }
+
     for (const handler of this.onPasteTextHandlers) {
-      const command = handler(text, this.state);
+      const command = handler(normalizedText, this.state);
       if (!command) {
         continue;
       }
@@ -2902,7 +2923,7 @@ export class CakeEditor {
       return;
     }
 
-    this.applyEdit({ type: "insert", text });
+    this.applyEdit({ type: "insert", text: normalizedText });
   }
 
   private handleBeforeInput(event: InputEvent) {
