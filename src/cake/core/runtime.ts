@@ -2627,6 +2627,9 @@ export function createRuntimeFromRegistry(registry: {
 
     if (firstParagraphIndex === -1 || lastParagraphIndex === -1) {
       const mergedRuns = normalizeRuns([...beforeRuns, ...afterRuns]);
+      if (mergedRuns.length === 0) {
+        return [...insertBlocks];
+      }
       return [
         { type: "paragraph", content: runsToInlines(mergedRuns) },
         ...insertBlocks,

@@ -1629,14 +1629,85 @@ describe("CakeEditor (browser)", () => {
 
     expect(pasteEvent.defaultPrevented).toBe(true);
     expect(engine.getValue()).toBe(
-      "\n## An active approach for a **perfect** management of risk.",
+      "## An active approach for a **perfect** management of risk.",
     );
     expect(engine.getText()).toBe(
-      "\nAn active approach for a perfect management of risk.",
+      "An active approach for a perfect management of risk.",
     );
     expect(engine.getSelection()).toEqual({
-      start: 53,
-      end: 53,
+      start: 52,
+      end: 52,
+      affinity: "forward",
+    });
+    engine.destroy();
+  });
+
+  it("pasting a simple heading html payload into an empty doc does not insert a leading blank line", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "",
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Summary");
+    dataTransfer.setData("text/html", '<h2 dir="auto">Summary</h2>');
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe("## Summary");
+    expect(engine.getSelection()).toEqual({
+      start: 7,
+      end: 7,
+      affinity: "forward",
+    });
+    engine.destroy();
+  });
+
+  it("pasting a simple heading html payload into an empty line after a heading inserts the next heading on that line", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "## Summary\n",
+      selection: {
+        start: 10,
+        end: 10,
+        affinity: "forward",
+      },
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Summary");
+    dataTransfer.setData("text/html", '<h2 dir="auto">Summary</h2>');
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe("## Summary\n## Summary");
+    expect(engine.getSelection()).toEqual({
+      start: 15,
+      end: 15,
       affinity: "forward",
     });
     engine.destroy();

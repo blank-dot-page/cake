@@ -479,13 +479,13 @@ describe("heading extension typing behavior (harness)", () => {
     h.contentRoot.dispatchEvent(pasteEvent);
 
     // Assert exact copy: content and formatting
-    // After Enter, we have an empty line, then paste inserts the heading
-    expect(h.engine.getValue()).toBe("# My Heading\n\n# My Heading");
-    expect(h.getLineCount()).toBe(3);
+    // Pasting a block heading into an empty line replaces that empty paragraph.
+    expect(h.engine.getValue()).toBe("# My Heading\n# My Heading");
+    expect(h.getLineCount()).toBe(2);
     expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
-    expect(h.getLine(2).classList.contains("is-heading")).toBe(true);
+    expect(h.getLine(1).classList.contains("is-heading")).toBe(true);
     expect(h.getLine(0).textContent).toBe("My Heading");
-    expect(h.getLine(2).textContent).toBe("My Heading");
+    expect(h.getLine(1).textContent).toBe("My Heading");
 
     h.destroy();
   });
