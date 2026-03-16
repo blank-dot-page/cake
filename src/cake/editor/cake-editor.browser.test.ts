@@ -1496,6 +1496,77 @@ describe("CakeEditor (browser)", () => {
 
     expect(pasteEvent.defaultPrevented).toBe(true);
     expect(h.engine.getValue()).toBe("# title");
+    expect(h.engine.getSelection()).toEqual({
+      start: 5,
+      end: 5,
+      affinity: "forward",
+    });
+    h.destroy();
+  });
+
+  it("pasting a heading clipboard payload after literal heading content inside a heading keeps that content and moves the caret to the end", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+    await h.typeText("# # ");
+
+    expect(h.engine.getValue()).toBe("# # ");
+    expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# title");
+    dataTransfer.setData(
+      "text/html",
+      '<div><h1 style="margin:0">title</h1></div>',
+    );
+    dataTransfer.setData("text/plain", "# title");
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(h.engine.getValue()).toBe("# # title");
+    expect(h.engine.getSelection()).toEqual({
+      start: 7,
+      end: 7,
+      affinity: "forward",
+    });
+    h.destroy();
+  });
+
+  it("pasting a heading clipboard payload after literal heading content inside a heading does not jump the caret into later paragraphs", async () => {
+    const h = createTestHarness("# # \n\nsome text here");
+    h.engine.setSelection({
+      start: 2,
+      end: 2,
+      affinity: "forward",
+    });
+    await h.focus();
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# title");
+    dataTransfer.setData(
+      "text/html",
+      '<div><h1 style="margin:0">title</h1></div>',
+    );
+    dataTransfer.setData("text/plain", "# title");
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(h.engine.getValue()).toBe("# # title\n\nsome text here");
+    expect(h.engine.getSelection()).toMatchObject({
+      start: 7,
+      end: 7,
+    });
     h.destroy();
   });
 
