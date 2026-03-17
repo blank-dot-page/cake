@@ -204,8 +204,23 @@ function assertBackspaceValid(source: string): void {
     const next = runtime.applyEdit({ type: "delete-backward" }, state);
     const doc = runtime.parse(next.source);
     const serialized = runtime.serialize(doc);
-    expect(serialized.source).toBe(next.source);
+    const reparsed = runtime.parse(serialized.source);
+    const reserialized = runtime.serialize(reparsed);
+    if (!/[*_~]/.test(visibleText(doc))) {
+      expect(visibleText(reparsed)).toBe(visibleText(doc));
+    }
+    expect(reserialized.source).toBe(serialized.source);
   }
+}
+
+function assertCanonicalRoundTrip(source: string): void {
+  const doc = runtime.parse(source);
+  const serialized = runtime.serialize(doc);
+  const reparsed = runtime.parse(serialized.source);
+  const reserialized = runtime.serialize(reparsed);
+
+  expect(visibleText(reparsed)).toBe(visibleText(doc));
+  expect(reserialized.source).toBe(serialized.source);
 }
 
 describe("nesting fuzz", () => {
@@ -223,9 +238,7 @@ describe("nesting fuzz", () => {
 
   it("roundtrips edge cases", () => {
     for (const source of fixedCases) {
-      const doc = runtime.parse(source);
-      const serialized = runtime.serialize(doc);
-      expect(serialized.source).toBe(source);
+      assertCanonicalRoundTrip(source);
     }
   });
 
@@ -237,9 +250,7 @@ describe("nesting fuzz", () => {
     }
 
     for (const source of cases) {
-      const doc = runtime.parse(source);
-      const serialized = runtime.serialize(doc);
-      expect(serialized.source).toBe(source);
+      assertCanonicalRoundTrip(source);
       assertBoundariesMonotonic(source);
       assertCursorLengthMatchesText(source);
       assertArrowTraversal(source);

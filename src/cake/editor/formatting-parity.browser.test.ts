@@ -19,6 +19,21 @@ async function tick(): Promise<void> {
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 }
 
+async function pressMarkToggle(
+  h: ReturnType<typeof createTestHarness>,
+  mark: "bold" | "italic" | "strikethrough",
+): Promise<void> {
+  if (mark === "bold") {
+    await h.pressKey("b", mod);
+    return;
+  }
+  if (mark === "italic") {
+    await h.pressKey("i", mod);
+    return;
+  }
+  await h.pressKey("x", strikeMod);
+}
+
 const mod =
   typeof navigator !== "undefined" &&
   typeof navigator.platform === "string" &&
@@ -101,6 +116,31 @@ describe("Cake formatting parity (browser)", () => {
     h.destroy();
   });
 
+  it("Cmd+B then Cmd+I then Cmd+I off after combined typing keeps bold active", async () => {
+    const h = createTestHarness("");
+
+    await h.focus();
+    await h.pressKey("b", mod);
+    await h.pressKey("i", mod);
+    await h.typeText("hello");
+    await h.pressKey("i", mod);
+    await h.typeText("world");
+
+    expect(h.engine.getValue()).toBe("**_hello_world**");
+    const line = h.getLine(0);
+    expect(line.textContent ?? "").toBe("helloworld");
+    expect(line.textContent ?? "").not.toContain("*");
+
+    const strong = line.querySelector("strong");
+    expect(strong).not.toBeNull();
+    expect(strong?.textContent ?? "").toBe("helloworld");
+
+    const italic = strong?.querySelector("em");
+    expect(italic).not.toBeNull();
+    expect(italic?.textContent ?? "").toBe("hello");
+    h.destroy();
+  });
+
   it("Cmd+B then Cmd+I then Cmd+B off does not surface raw marker syntax", async () => {
     const h = createTestHarness("");
 
@@ -112,13 +152,77 @@ describe("Cake formatting parity (browser)", () => {
     await h.pressKey("b", mod);
     await h.typeText("plain");
 
-    expect(h.engine.getValue()).toBe("**bold*italics***plain");
+    expect(h.engine.getValue()).toBe("**bold*italics***_plain_");
     const line = h.getLine(0);
     expect((line.textContent ?? "").replace(/\u200B/g, "")).toBe(
       "bolditalicsplain",
     );
     expect(line.textContent ?? "").not.toContain("*");
     h.destroy();
+  });
+
+  it("Cmd+B then Cmd+I then Cmd+B off after combined typing keeps italic active", async () => {
+    const h = createTestHarness("");
+
+    await h.focus();
+    await h.pressKey("b", mod);
+    await h.pressKey("i", mod);
+    await h.typeText("hello");
+    await h.pressKey("b", mod);
+    await h.typeText("world");
+
+    expect(h.engine.getValue()).toBe("***hello***_world_");
+    const line = h.getLine(0);
+    expect(line.textContent ?? "").toBe("helloworld");
+    expect(line.textContent ?? "").not.toContain("*");
+
+    const italicRuns = Array.from(line.querySelectorAll("em"));
+    expect(italicRuns).toHaveLength(2);
+    expect(italicRuns[0]?.textContent ?? "").toBe("hello");
+    expect(italicRuns[1]?.textContent ?? "").toBe("world");
+
+    const strong = line.querySelector("strong");
+    expect(strong).not.toBeNull();
+    expect(strong?.textContent ?? "").toBe("hello");
+    h.destroy();
+  });
+
+  it("pairwise combined-mark toggles never leak markdown markers into visible text", async () => {
+    const cases: Array<{
+      start: Array<"bold" | "italic" | "strikethrough">;
+      stop: "bold" | "italic" | "strikethrough";
+    }> = [
+      { start: ["bold", "italic"], stop: "bold" },
+      { start: ["bold", "italic"], stop: "italic" },
+      { start: ["italic", "bold"], stop: "bold" },
+      { start: ["italic", "bold"], stop: "italic" },
+      { start: ["bold", "strikethrough"], stop: "bold" },
+      { start: ["bold", "strikethrough"], stop: "strikethrough" },
+      { start: ["strikethrough", "bold"], stop: "bold" },
+      { start: ["strikethrough", "bold"], stop: "strikethrough" },
+      { start: ["italic", "strikethrough"], stop: "italic" },
+      { start: ["italic", "strikethrough"], stop: "strikethrough" },
+      { start: ["strikethrough", "italic"], stop: "italic" },
+      { start: ["strikethrough", "italic"], stop: "strikethrough" },
+    ];
+
+    for (const testCase of cases) {
+      const h = createTestHarness("");
+      await h.focus();
+      for (const mark of testCase.start) {
+        await pressMarkToggle(h, mark);
+      }
+      await h.typeText("hello");
+      await pressMarkToggle(h, testCase.stop);
+      await h.typeText("world");
+
+      const line = h.getLine(0);
+      const visibleText = (line.textContent ?? "").replace(/\u200B/g, "");
+      expect(visibleText).toBe("helloworld");
+      expect(visibleText).not.toContain("*");
+      expect(visibleText).not.toContain("~");
+      h.destroy();
+    }
   });
 
   it("Cmd+B on selected link text wraps the label in bold", async () => {
@@ -401,6 +505,26 @@ describe("Cake formatting parity (browser)", () => {
     h.destroy();
   });
 
+  it("internal copy/paste preserves plain multiline blocks without adding spacing", async () => {
+    const source = createTestHarness("alpha\nbeta\ngamma");
+    source.engine.selectAll();
+    await tick();
+
+    const copyDt = new DataTransfer();
+    dispatchClipboardEvent(source.contentRoot, "copy", copyDt);
+
+    const destination = createTestHarness("");
+    const pasteDt = new DataTransfer();
+    pasteDt.setData("text/plain", copyDt.getData("text/plain"));
+    pasteDt.setData("text/html", copyDt.getData("text/html"));
+    dispatchClipboardEvent(destination.contentRoot, "paste", pasteDt);
+
+    expect(destination.engine.getValue()).toBe("alpha\nbeta\ngamma");
+
+    source.destroy();
+    destination.destroy();
+  });
+
   it("Cmd+A then Cmd+B on multiline selection renders bold without markers and keeps selection", async () => {
     const h = createTestHarness("");
 
@@ -469,26 +593,6 @@ describe("Cake formatting parity (browser)", () => {
     );
 
     h.destroy();
-  });
-
-  it("internal copy/paste preserves plain multiline blocks without adding spacing", async () => {
-    const source = createTestHarness("alpha\nbeta\ngamma");
-    source.engine.selectAll();
-    await tick();
-
-    const copyDt = new DataTransfer();
-    dispatchClipboardEvent(source.contentRoot, "copy", copyDt);
-
-    const destination = createTestHarness("");
-    const pasteDt = new DataTransfer();
-    pasteDt.setData("text/plain", copyDt.getData("text/plain"));
-    pasteDt.setData("text/html", copyDt.getData("text/html"));
-    dispatchClipboardEvent(destination.contentRoot, "paste", pasteDt);
-
-    expect(destination.engine.getValue()).toBe("alpha\nbeta\ngamma");
-
-    source.destroy();
-    destination.destroy();
   });
 
   it("Cmd+B then Cmd+I then typing produces combined emphasis", async () => {

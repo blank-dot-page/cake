@@ -246,13 +246,6 @@ body {
   min-height: 1em;
 }
 
-.main .cake-line.is-list {
-  padding-left: calc(
-    var(--cake-list-indent, 0ch) + var(--cake-list-marker, 0ch)
-  );
-  text-indent: calc(var(--cake-list-marker, 0ch) * -1);
-}
-
 .main .cake-line.is-heading {
   font-weight: 600;
   line-height: 1.4;

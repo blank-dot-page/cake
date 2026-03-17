@@ -1,14 +1,76 @@
 import {
   type CakeExtension,
+  type SerializeBlockResult,
   type EditCommand,
   type ParseInlineResult,
   type SerializeInlineResult,
 } from "../../core/runtime";
-import type { Inline } from "../../core/types";
+import type { Block, Inline } from "../../core/types";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
 import { hasInlineMarkerBoundaryBefore } from "../shared/inline-marker-boundary";
 
 const ITALIC_KIND = "italic";
+
+function buildItalicSerialization(
+  childResults: SerializeInlineResult[],
+  marker: "*" | "_",
+): SerializeInlineResult {
+  const builder = new CursorSourceBuilder();
+  builder.appendSourceOnly(marker);
+  for (const child of childResults) {
+    builder.appendSerialized(child);
+  }
+  builder.appendSourceOnly(marker);
+  return builder.build();
+}
+
+function canParseSerializedUnderscoreRun(
+  source: string,
+  start: number,
+  close: number,
+): boolean {
+  return (
+    source[start + 1] === "*" ||
+    source[close - 1] === "*" ||
+    source[close + 1] === "*"
+  );
+}
+
+export function serializeItalicInlineWithMarker(
+  inline: Inline & { type: "inline-wrapper" },
+  context: {
+    serializeInline: (inline: Inline) => SerializeInlineResult;
+  },
+  marker: "*" | "_",
+): SerializeInlineResult {
+  const childResults = inline.children.map((child) => context.serializeInline(child));
+  return buildItalicSerialization(childResults, marker);
+}
+
+function serializeInlineSequenceWithSafeItalic(
+  inlines: Inline[],
+  context: {
+    serializeInline: (inline: Inline) => SerializeInlineResult;
+  },
+): SerializeBlockResult {
+  const builder = new CursorSourceBuilder();
+  const defaultResults = inlines.map((inline) => context.serializeInline(inline));
+  let previousSource = "";
+
+  inlines.forEach((inline, index) => {
+    const nextSource = defaultResults[index + 1]?.source ?? "";
+    const serialized =
+      inline.type === "inline-wrapper" &&
+      inline.kind === ITALIC_KIND &&
+      (previousSource.endsWith("*") || nextSource.startsWith("*"))
+        ? serializeItalicInlineWithMarker(inline, context, "_")
+        : (defaultResults[index] ?? context.serializeInline(inline));
+    builder.appendSerialized(serialized);
+    previousSource = serialized.source;
+  });
+
+  return builder.build();
+}
 
 function findItalicClose(
   source: string,
@@ -20,23 +82,63 @@ function findItalicClose(
     return source.indexOf("_", start + 1);
   }
 
-  let fallback = -1;
   for (let i = start + 1; i < end; i += 1) {
     if (source[i] !== "*") {
       continue;
     }
 
-    const prevIsStar = source[i - 1] === "*";
-    const nextIsStar = source[i + 1] === "*";
-    if (!prevIsStar && !nextIsStar) {
+    let runStart = i;
+    while (runStart > start + 1 && source[runStart - 1] === "*") {
+      runStart -= 1;
+    }
+    let runEnd = i;
+    while (runEnd + 1 < end && source[runEnd + 1] === "*") {
+      runEnd += 1;
+    }
+
+    const runLength = runEnd - runStart + 1;
+    if (runLength === 1) {
+      if (hasUnmatchedBoldRun(source, start + 1, i)) {
+        continue;
+      }
       return i;
     }
-    if (fallback === -1) {
-      fallback = i;
-    }
-  }
 
-  return fallback;
+    const hasUnmatchedBold = hasUnmatchedBoldRun(source, start + 1, runStart);
+    const hasBoldCloserAhead = source.indexOf("**", runEnd + 1) !== -1;
+    if (!hasBoldCloserAhead) {
+      if (runLength === 2 && hasUnmatchedBold) {
+        i = runEnd;
+        continue;
+      }
+      if (runLength >= 3 && hasUnmatchedBold) {
+        return runEnd;
+      }
+      return runStart;
+    }
+
+    i = runEnd;
+  }
+  return -1;
+}
+
+function hasUnmatchedBoldRun(
+  source: string,
+  start: number,
+  end: number,
+): boolean {
+  let parity = 0;
+  for (let i = start; i < end; i += 1) {
+    if (source[i] !== "*" || source[i + 1] !== "*") {
+      continue;
+    }
+    if (source[i - 1] === "*" || source[i + 2] === "*") {
+      continue;
+    }
+    parity ^= 1;
+    i += 1;
+  }
+  return parity === 1;
 }
 
 /** Semantic command to toggle italic formatting */
@@ -77,9 +179,6 @@ export const italicExtension: CakeExtension = (editor) => {
         if (char !== "_" && char !== "*") {
           return null;
         }
-        if (char === "_" && !hasInlineMarkerBoundaryBefore(source, start)) {
-          return null;
-        }
         // Don't match ** (that's bold)
         if (char === "*" && source[start + 1] === "*") {
           return null;
@@ -100,6 +199,13 @@ export const italicExtension: CakeExtension = (editor) => {
         if (close === -1 || close >= end) {
           return null;
         }
+        if (
+          char === "_" &&
+          !hasInlineMarkerBoundaryBefore(source, start) &&
+          !canParseSerializedUnderscoreRun(source, start, close)
+        ) {
+          return null;
+        }
         // Don't match empty delimiters like ** that could be start of bold
         if (close === start + 1 && close + 1 < end) {
           return null;
@@ -118,23 +224,39 @@ export const italicExtension: CakeExtension = (editor) => {
     ),
   );
   disposers.push(
+    editor.registerSerializeBlock(
+      (block, context): SerializeBlockResult | null => {
+        if (block.type !== "paragraph") {
+          return null;
+        }
+
+        return serializeInlineSequenceWithSafeItalic(
+          (block as Block & { type: "paragraph" }).content,
+          context,
+        );
+      },
+    ),
+  );
+  disposers.push(
     editor.registerSerializeInline(
       (inline, context): SerializeInlineResult | null => {
         if (inline.type !== "inline-wrapper" || inline.kind !== ITALIC_KIND) {
           return null;
         }
 
-        const builder = new CursorSourceBuilder();
-        // Use asterisk for serialization to match v1 behavior
-        // This prevents issues when typing **bold** where intermediate state
-        // *world* would get serialized as _world_ causing marker conversion
-        builder.appendSourceOnly("*");
-        for (const child of inline.children) {
-          const serialized = context.serializeInline(child);
-          builder.appendSerialized(serialized);
-        }
-        builder.appendSourceOnly("*");
-        return builder.build();
+        const childResults = inline.children.map((child) =>
+          context.serializeInline(child),
+        );
+        const firstChildSource = childResults[0]?.source ?? "";
+        const lastChildSource = childResults[childResults.length - 1]?.source ?? "";
+        const useUnderscore =
+          childResults.length > 1 &&
+          (firstChildSource.startsWith("*") || lastChildSource.endsWith("*"));
+
+        return buildItalicSerialization(
+          childResults,
+          useUnderscore ? "_" : "*",
+        );
       },
     ),
   );

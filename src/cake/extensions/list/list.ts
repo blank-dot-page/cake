@@ -195,6 +195,51 @@ function getListActiveMarks(state: RuntimeState): string[] {
   return listType ? [listType] : [];
 }
 
+function getNormalizedListPasteText(
+  text: string,
+  state: RuntimeState,
+): string | null {
+  const normalizedText = text.replace(/\r\n/g, "\n");
+  const singleLineText = normalizedText.replace(/^\n+|\n+$/g, "");
+  if (singleLineText.includes("\n")) {
+    return null;
+  }
+
+  const selection = state.selection;
+  if (selection.start !== selection.end) {
+    return null;
+  }
+
+  const pastedHeading = /^(#{1,6})\s+(.+)$/.exec(singleLineText);
+  const pastedItem = parseListItem(singleLineText);
+  if (!pastedItem && !pastedHeading) {
+    return null;
+  }
+
+  const candidateOffsets = new Set<number>([
+    state.map.cursorToSource(selection.start, "backward"),
+    state.map.cursorToSource(selection.start, "forward"),
+  ]);
+
+  for (const offset of candidateOffsets) {
+    const lineInfo = getLineInfo(state.source, offset);
+    const currentItem = parseListItem(lineInfo.line);
+    if (!currentItem || currentItem.content.trim() !== "") {
+      continue;
+    }
+
+    if (pastedHeading) {
+      return pastedHeading[2];
+    }
+
+    if (pastedItem && currentItem.markerType === pastedItem.markerType) {
+      return pastedItem.content;
+    }
+  }
+
+  return null;
+}
+
 function handleInsertLineBreak(state: RuntimeState): EditResult | null {
   const { source, selection, map, runtime } = state;
 
@@ -1273,6 +1318,12 @@ export const plainTextListExtension: CakeExtension = (editor) => {
   );
 
   disposers.push(
+    editor.registerNormalizePasteText((text, state) => {
+      return getNormalizedListPasteText(text, state);
+    }),
+  );
+
+  disposers.push(
     editor.registerSerializeSelectionLineToHtml((context) => {
       const { wrapperBlock, lineText, startInLine, endInLine, lineCursorLength } =
         context;
@@ -1309,26 +1360,23 @@ export const plainTextListExtension: CakeExtension = (editor) => {
       }
 
       const contentStart = Math.min(prefixLength, lineCursorLength);
-      const selectedContent = lineText.slice(listMatch.prefix.length);
       const contentHtml =
         startInLine <= contentStart && endInLine >= lineCursorLength
-          ? context.state.runtime.serializeSelectionToHtml(
-              context.state,
-              {
+          ? context.state.runtime
+              .serializeSelectionToHtml(context.state, {
                 start:
                   context.line.lineStartOffset +
                   Math.min(contentStart, context.lineCursorLength),
                 end: context.line.lineStartOffset + lineCursorLength,
                 affinity: "forward",
-              },
-            )
+              })
               .replace(/^<div><div>/, "")
               .replace(/<\/div><\/div>$/, "")
           : context.selectedHtml;
       const type = listMatch.number === null ? "ul" : "ol";
       const indent = Math.floor(listMatch.indent.length / 2);
       return {
-        html: `<li>${contentHtml || selectedContent}</li>`,
+        html: `<li>${contentHtml}</li>`,
         group: {
           key: `${type}:${indent}`,
           open: `<${type}>`,
@@ -1369,6 +1417,7 @@ export const plainTextListExtension: CakeExtension = (editor) => {
         }
 
         const markerPrefix = `${listMatch.marker}${listMatch.space}`;
+        element.dataset.cakeListPrefixLength = String(listMatch.prefix.length);
         element.style.setProperty(
           "--cake-list-marker",
           `${markerPrefix.length}ch`,

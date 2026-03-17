@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
+import { INTERNAL_MARKDOWN_CLIPBOARD_MIME } from "../clipboard";
 import { CakeEditor } from "./cake-editor";
 import { createTestHarness, type TestHarness } from "../test/harness";
 import { linkExtension } from "../extensions/link/link";
@@ -48,6 +49,14 @@ function setDomSelection(node: Node, start: number, end: number) {
   selection.removeAllRanges();
   selection.addRange(range);
   dispatchSelectionChange();
+}
+
+function getCollapsedRangeRect(node: Node, offset: number): DOMRect {
+  const range = document.createRange();
+  range.setStart(node, offset);
+  range.setEnd(node, offset);
+  const rects = range.getClientRects();
+  return rects.length > 0 ? rects[rects.length - 1]! : range.getBoundingClientRect();
 }
 
 function createSelection(start: number, end: number): EngineSelection {
@@ -216,6 +225,115 @@ describe("CakeEditor (browser)", () => {
 
     await h.typeText("world");
     expect(h.engine.getValue()).toBe("hello **world**");
+
+    h.destroy();
+  });
+
+  it("Cmd+B then Backspace deletes through the bold run and leaves bold armed after the last character", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+
+    const visibleText = () =>
+      (h.container.textContent ?? "").replace(/\u200B/g, "");
+
+    await h.typeText("hello");
+    await h.pressKey("b", cmdModifier);
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("bold");
+    expect(h.engine.getValue()).toBe("hello**bold**");
+    expect(visibleText()).toBe("hellobold");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hello**bol**");
+    expect(visibleText()).toBe("hellobol");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hello**bo**");
+    expect(visibleText()).toBe("hellobo");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hello**b**");
+    expect(visibleText()).toBe("hellob");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hello**\u200B**");
+    expect(visibleText()).toBe("hello");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("x");
+    expect(h.engine.getValue()).toBe("hello**x**");
+    expect(visibleText()).toBe("hellox");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    h.destroy();
+  });
+
+  it("backspacing across a placeholder-backed bold boundary clears the armed mark", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+
+    const visibleText = () =>
+      (h.container.textContent ?? "").replace(/\u200B/g, "");
+
+    await h.typeText("hello");
+    await h.pressKey("b", cmdModifier);
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("bold");
+    expect(h.engine.getValue()).toBe("hello**bold**");
+    expect(visibleText()).toBe("hellobold");
+
+    await h.pressBackspace();
+    await h.pressBackspace();
+    await h.pressBackspace();
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hello**\u200B**");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("something");
+    expect(h.engine.getValue()).toBe("hello**something**");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    for (let i = 0; i < "something".length; i += 1) {
+      await h.pressBackspace();
+    }
+    expect(h.engine.getValue()).toBe("hello**\u200B**");
+    expect(visibleText()).toBe("hello");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hell");
+    expect(visibleText()).toBe("hell");
+    expect(h.engine.getActiveMarks()).toEqual([]);
+
+    await h.typeText("bold");
+    expect(h.engine.getValue()).toBe("hellbold");
+    expect(visibleText()).toBe("hellbold");
+    expect(h.engine.getActiveMarks()).toEqual([]);
+
+    for (let i = 0; i < "bold".length; i += 1) {
+      await h.pressBackspace();
+    }
+    expect(h.engine.getValue()).toBe("hell");
+    expect(visibleText()).toBe("hell");
+    expect(h.engine.getActiveMarks()).toEqual([]);
+
+    for (let i = 0; i < "hell".length; i += 1) {
+      await h.pressBackspace();
+    }
+    expect(h.engine.getValue()).toBe("");
+    expect(visibleText()).toBe("");
+    expect(h.engine.getActiveMarks()).toEqual([]);
+
+    await h.typeText("something");
+    expect(h.engine.getValue()).toBe("something");
+    expect(visibleText()).toBe("something");
+    expect(h.engine.getActiveMarks()).toEqual([]);
 
     h.destroy();
   });
@@ -1076,6 +1194,105 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("prefers the internal markdown clipboard flavor over html when both are present", () => {
+    const container = createContainer();
+    let lastValue = "";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(
+      INTERNAL_MARKDOWN_CLIPBOARD_MIME,
+      "one\n\n\n\n\ntwo",
+    );
+    dataTransfer.setData("text/html", "<div><div>one</div><div>two</div></div>");
+    dataTransfer.setData("text/plain", "one\n\ntwo");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("one\n\n\n\n\ntwo");
+    engine.destroy();
+  });
+
+  it("copies and pastes repeated blank lines exactly with the internal markdown clipboard flavor", () => {
+    const sourceContainer = createContainer();
+    const sourceEngine = new CakeEditor({
+      container: sourceContainer,
+      value: "one\n\n\n\n\ntwo",
+    });
+    sourceEngine.selectAll();
+
+    const sourceContentRoot = sourceContainer.querySelector(".cake-content");
+    if (!sourceContentRoot) {
+      throw new Error("Missing source content root");
+    }
+
+    const copyData = new DataTransfer();
+    const copyEvent = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: copyData,
+    });
+    sourceContentRoot.dispatchEvent(copyEvent);
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(copyData.getData(INTERNAL_MARKDOWN_CLIPBOARD_MIME)).toBe(
+      "one\n\n\n\n\ntwo",
+    );
+
+    const destinationContainer = createContainer();
+    let lastValue = "";
+    const destinationEngine = new CakeEditor({
+      container: destinationContainer,
+      value: lastValue,
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    const destinationContentRoot =
+      destinationContainer.querySelector(".cake-content");
+    if (!destinationContentRoot) {
+      throw new Error("Missing destination content root");
+    }
+
+    const pasteData = new DataTransfer();
+    pasteData.setData(
+      INTERNAL_MARKDOWN_CLIPBOARD_MIME,
+      copyData.getData(INTERNAL_MARKDOWN_CLIPBOARD_MIME),
+    );
+    pasteData.setData("text/plain", copyData.getData("text/plain"));
+    pasteData.setData("text/html", copyData.getData("text/html"));
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: pasteData,
+    });
+    destinationContentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("one\n\n\n\n\ntwo");
+
+    sourceEngine.destroy();
+    destinationEngine.destroy();
+  });
+
   it("copying a partial selection inside a list item copies only the selected text", async () => {
     const container = createContainer();
     let lastValue = "- alpha beta\ndestination";
@@ -1156,6 +1373,386 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("pasting a copied bullet list item into a new bullet list item does not duplicate the marker", () => {
+    const container = createContainer();
+    let lastValue = "- item\n- ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    engine.setSelection({ start: 0, end: 6, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    const copyEvent = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(copyEvent);
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(dataTransfer.getData("text/plain")).toBe("- item");
+
+    engine.setSelection({ start: 9, end: 9, affinity: "forward" });
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("- item\n- item");
+    engine.destroy();
+  });
+
+  it("pasting heading html into an empty bullet list item strips the heading marker", () => {
+    const container = createContainer();
+    let lastValue = "- ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    engine.setSelection({ start: 2, end: 2, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Title");
+    dataTransfer.setData("text/html", "<h1>Title</h1>");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("- Title");
+    engine.destroy();
+  });
+
+  it("pasting markdown heading into an empty bullet list item strips the heading marker", () => {
+    const container = createContainer();
+    let lastValue = "- ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    engine.setSelection({ start: 2, end: 2, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# Title");
+    dataTransfer.setData("text/plain", "Title");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("- Title");
+    engine.destroy();
+  });
+
+  it("pasting heading html into an empty numbered list item strips the heading marker", () => {
+    const container = createContainer();
+    let lastValue = "1. ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    engine.setSelection({ start: 3, end: 3, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Title");
+    dataTransfer.setData("text/html", "<h2>Title</h2>");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("1. Title");
+    engine.destroy();
+  });
+
+  it("pasting nested heading html into an empty bullet list item collapses then strips the heading marker", () => {
+    const container = createContainer();
+    let lastValue = "- ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    engine.setSelection({ start: 2, end: 2, affinity: "forward" });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Insurance and cybersecurity");
+    dataTransfer.setData(
+      "text/html",
+      '<h1 class="styles_title__FH2l0"><div class="styles_container_overflow__aK3UX"><div class="styles_text__N0ARI"><span class="styles_blue__3zs0C">Insurance </span>and</div><div class="styles_line__TIYaU"></div></div><div class="styles_container_overflow__aK3UX"><div class="styles_text__N0ARI"><span class="styles_pink__M351a">cybersecurity</span></div></div></h1>',
+    );
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("- Insurance and cybersecurity");
+    engine.destroy();
+  });
+
+  it("pasting markdown heading outside an empty list item preserves the heading marker", () => {
+    const container = createContainer();
+    let lastValue = "";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# Title");
+    dataTransfer.setData("text/plain", "Title");
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("# Title");
+    engine.destroy();
+  });
+
+  it("pasting a heading clipboard payload into an empty heading placeholder inserts the heading text", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+    await h.typeText("# ");
+
+    expect(h.engine.getValue()).toBe("# ");
+    expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# title");
+    dataTransfer.setData(
+      "text/html",
+      '<div><h1 style="margin:0">title</h1></div>',
+    );
+    dataTransfer.setData("text/plain", "# title");
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(h.engine.getValue()).toBe("# title");
+    expect(h.engine.getSelection()).toEqual({
+      start: 5,
+      end: 5,
+      affinity: "forward",
+    });
+    h.destroy();
+  });
+
+  it("pasting a heading clipboard payload after literal heading content inside a heading keeps that content and moves the caret to the end", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+    await h.typeText("# # ");
+
+    expect(h.engine.getValue()).toBe("# # ");
+    expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# title");
+    dataTransfer.setData(
+      "text/html",
+      '<div><h1 style="margin:0">title</h1></div>',
+    );
+    dataTransfer.setData("text/plain", "# title");
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(h.engine.getValue()).toBe("# # title");
+    expect(h.engine.getSelection()).toEqual({
+      start: 7,
+      end: 7,
+      affinity: "forward",
+    });
+    h.destroy();
+  });
+
+  it("pasting a heading clipboard payload after literal heading content inside a heading does not jump the caret into later paragraphs", async () => {
+    const h = createTestHarness("# # \n\nsome text here");
+    h.engine.setSelection({
+      start: 2,
+      end: 2,
+      affinity: "forward",
+    });
+    await h.focus();
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# title");
+    dataTransfer.setData(
+      "text/html",
+      '<div><h1 style="margin:0">title</h1></div>',
+    );
+    dataTransfer.setData("text/plain", "# title");
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(h.engine.getValue()).toBe("# # title\n\nsome text here");
+    expect(h.engine.getSelection()).toMatchObject({
+      start: 7,
+      end: 7,
+    });
+    h.destroy();
+  });
+
+  it("pasting a manually selected numbered list line into an empty numbered item preserves numbering", async () => {
+    const container = createContainer();
+    let lastValue = "1. one\n2. two\n3. three\n4. ";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      extensions: [plainTextListExtension],
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const contentRoot = container.querySelector(".cake-content");
+    const line = container.querySelector('[data-line-index="1"]');
+    if (!contentRoot || !line) {
+      throw new Error("Missing rendered numbered list line");
+    }
+
+    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+    let lineTextNode: Text | null = null;
+    let currentNode = walker.nextNode();
+    while (currentNode) {
+      if (currentNode instanceof Text && currentNode.data.includes("2. two")) {
+        lineTextNode = currentNode;
+        break;
+      }
+      currentNode = walker.nextNode();
+    }
+    if (!lineTextNode) {
+      throw new Error("Missing numbered list line text node");
+    }
+
+    setDomSelection(lineTextNode, 0, "2. two".length);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const dataTransfer = new DataTransfer();
+    const copyEvent = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(copyEvent);
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(dataTransfer.getData("text/plain")).toBe("2. two");
+
+    engine.setSelection({
+      start: lastValue.length,
+      end: lastValue.length,
+      affinity: "forward",
+    });
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("1. one\n2. two\n3. three\n4. two");
+    engine.destroy();
+  });
+
   it("pasting simple web html leaves the caret at the end of the inserted text", () => {
     const container = createContainer();
     const engine = new CakeEditor({
@@ -1184,6 +1781,163 @@ describe("CakeEditor (browser)", () => {
     expect(engine.getSelection()).toEqual({
       start: 7,
       end: 7,
+      affinity: "forward",
+    });
+    engine.destroy();
+  });
+
+  it("pasting heading html leaves the caret after the trailing punctuation", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "",
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(
+      "text/plain",
+      "An active approach for a perfect management of risk.",
+    );
+    dataTransfer.setData(
+      "text/html",
+      "<h2>An active approach for a <strong>perfect</strong> management of risk.</h2>",
+    );
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe(
+      "## An active approach for a **perfect** management of risk.",
+    );
+    expect(engine.getText()).toBe(
+      "An active approach for a perfect management of risk.",
+    );
+    expect(engine.getSelection()).toEqual({
+      start: 52,
+      end: 52,
+      affinity: "forward",
+    });
+    engine.destroy();
+  });
+
+  it("pasting a simple heading html payload into an empty doc does not insert a leading blank line", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "",
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Summary");
+    dataTransfer.setData("text/html", '<h2 dir="auto">Summary</h2>');
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe("## Summary");
+    expect(engine.getSelection()).toEqual({
+      start: 7,
+      end: 7,
+      affinity: "forward",
+    });
+    engine.destroy();
+  });
+
+  it("pasting a simple heading html payload into an empty line after a heading inserts the next heading on that line", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "## Summary\n",
+      selection: {
+        start: 10,
+        end: 10,
+        affinity: "forward",
+      },
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Summary");
+    dataTransfer.setData("text/html", '<h2 dir="auto">Summary</h2>');
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe("## Summary\n## Summary");
+    expect(engine.getSelection()).toEqual({
+      start: 15,
+      end: 15,
+      affinity: "forward",
+    });
+    engine.destroy();
+  });
+
+  it("pasting nested heading html at the caret keeps existing text before the heading", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "hello",
+      selection: {
+        start: 5,
+        end: 5,
+        affinity: "forward",
+      },
+    });
+
+    const contentRoot = container.querySelector(".cake-content");
+    if (!contentRoot) {
+      throw new Error("Missing content root");
+    }
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "Insurance and cybersecurity");
+    dataTransfer.setData(
+      "text/html",
+      '<h1 class="styles_title__FH2l0"><div class="styles_container_overflow__aK3UX"><div class="styles_text__N0ARI"><span class="styles_blue__3zs0C">Insurance </span>and</div><div class="styles_line__TIYaU"></div></div><div class="styles_container_overflow__aK3UX"><div class="styles_text__N0ARI"><span class="styles_pink__M351a">cybersecurity</span></div></div></h1>',
+    );
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+
+    contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(engine.getValue()).toBe("hello\n# Insurance and cybersecurity");
+    expect(engine.getText()).toBe("hello\nInsurance and cybersecurity");
+    expect(engine.getSelection()).toEqual({
+      start: 33,
+      end: 33,
       affinity: "forward",
     });
     engine.destroy();
@@ -1454,6 +2208,120 @@ describe("CakeEditor (browser)", () => {
     );
 
     applyCompositionText("```");
+    expect(engine.getValue()).toBe("```");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 3, end: 3 }),
+    );
+
+    engine.destroy();
+  });
+
+  it("keeps the custom caret overlay aligned with the live DOM caret during dead-key composition", async () => {
+    const harness = createTestHarness("");
+    const { container, engine, contentRoot } = harness;
+
+    contentRoot.focus();
+    dispatchSelectionChange();
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+    const caret = container.querySelector(".cake-caret") as HTMLElement | null;
+    expect(caret).not.toBeNull();
+
+    contentRoot.dispatchEvent(
+      new CompositionEvent("compositionstart", { bubbles: true }),
+    );
+
+    const textNode = getFirstTextNode(container);
+    const assertCaretTracksDom = async (text: string) => {
+      textNode.data = text;
+      setDomSelection(textNode, text.length, text.length);
+
+      contentRoot.dispatchEvent(
+        new CompositionEvent("compositionupdate", {
+          bubbles: true,
+          data: text,
+        }),
+      );
+      contentRoot.dispatchEvent(
+        new InputEvent("beforeinput", {
+          bubbles: true,
+          inputType: "insertCompositionText",
+          data: text,
+          isComposing: true,
+        }),
+      );
+      contentRoot.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          inputType: "insertCompositionText",
+          data: text,
+          isComposing: true,
+        }),
+      );
+
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+      const expectedRect = getCollapsedRangeRect(textNode, text.length);
+      const actualRect = caret?.getBoundingClientRect();
+      expect(actualRect).not.toBeUndefined();
+      expect(actualRect?.left ?? 0).toBeCloseTo(expectedRect.left, 1);
+      expect(actualRect?.top ?? 0).toBeCloseTo(expectedRect.top, 1);
+      expect(caret?.style.display).not.toBe("none");
+    };
+
+    await assertCaretTracksDom("`");
+    await assertCaretTracksDom("``");
+    await assertCaretTracksDom("```");
+
+    harness.destroy();
+  });
+
+  it("keeps the logical caret at the end when a dead-key backtick commit re-arms composition on the left", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "",
+    });
+
+    const applySpanishBacktickCommit = (text: string) => {
+      container.dispatchEvent(
+        new CompositionEvent("compositionstart", { bubbles: true }),
+      );
+
+      const textNode = getFirstTextNode(container);
+      textNode.data = text;
+      setDomSelection(textNode, text.length, text.length);
+
+      container.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true }),
+      );
+
+      // Model a dead-key layout that immediately arms the next accent
+      // composition on the left edge of the committed literal, then emits the
+      // trailing insertText/input bookkeeping event without changing text.
+      setDomSelection(textNode, 0, 0);
+      container.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          inputType: "insertText",
+          data: "`",
+        }),
+      );
+    };
+
+    applySpanishBacktickCommit("`");
+    expect(engine.getValue()).toBe("`");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 1, end: 1 }),
+    );
+
+    applySpanishBacktickCommit("``");
+    expect(engine.getValue()).toBe("``");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 2, end: 2 }),
+    );
+
+    applySpanishBacktickCommit("```");
     expect(engine.getValue()).toBe("```");
     expect(engine.getSelection()).toEqual(
       expect.objectContaining({ start: 3, end: 3 }),
@@ -2304,6 +3172,20 @@ describe("CakeEditor Cmd+Backspace then backspace", () => {
     expect(harness.engine.getValue()).toBe("line one");
     expect(harness.selection.start).toBe(8);
     expect(harness.selection.end).toBe(8);
+  });
+
+  it("Option+Backspace at the start of a line deletes the previous word", async () => {
+    harness = createTestHarness("alpha beta\ngamma");
+
+    await harness.focus();
+
+    harness.engine.setSelection({ start: 11, end: 11, affinity: "forward" });
+
+    await harness.pressKey("Backspace", { alt: true });
+
+    expect(harness.engine.getValue()).toBe("alpha gamma");
+    expect(harness.selection.start).toBe(6);
+    expect(harness.selection.end).toBe(6);
   });
 
   it("typing after emoji inserts text correctly", async () => {

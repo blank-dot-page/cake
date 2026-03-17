@@ -723,4 +723,57 @@ describe("heading trigger (autoformat)", () => {
     expect(h.engine.getValue()).toBe("# Hello");
     expect(h.getLine(0).textContent).toBe("Hello");
   });
+
+  test("typing '## ' at start of bold line converts to heading", async () => {
+    const mod =
+      typeof navigator !== "undefined" &&
+      navigator.platform?.toLowerCase().includes("mac")
+        ? { meta: true }
+        : { ctrl: true };
+
+    h = createTestHarness("");
+    await h.focus();
+    await h.pressKey("b", mod);
+    await h.typeText("hello");
+
+    expect(h.engine.getValue()).toBe("**hello**");
+
+    // Move to start of visible text and type ## (space)
+    await h.clickLeftOf(0, 0);
+    await h.typeText("#");
+    const afterFirst = h.engine.getValue();
+    await h.typeText("#");
+    const afterSecond = h.engine.getValue();
+    await h.typeText(" ");
+    const afterSpace = h.engine.getValue();
+
+    expect(afterFirst).toBe("**#hello**");
+    expect(afterSecond).toBe("**##hello**");
+    expect(afterSpace).toBe("## **hello**");
+    expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
+    expect(h.getLine(0).classList.contains("is-heading-2")).toBe(true);
+  });
+
+  test("typing '# ' at start of italic line converts to heading", async () => {
+    const mod =
+      typeof navigator !== "undefined" &&
+      navigator.platform?.toLowerCase().includes("mac")
+        ? { meta: true }
+        : { ctrl: true };
+
+    h = createTestHarness("");
+    await h.focus();
+    await h.pressKey("i", mod);
+    await h.typeText("hello");
+
+    expect(h.engine.getValue()).toBe("*hello*");
+
+    await h.clickLeftOf(0, 0);
+    await h.typeText("#");
+    await h.typeText(" ");
+
+    expect(h.engine.getValue()).toBe("# *hello*");
+    expect(h.getLine(0).classList.contains("is-heading")).toBe(true);
+    expect(h.getLine(0).classList.contains("is-heading-1")).toBe(true);
+  });
 });

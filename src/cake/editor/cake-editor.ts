@@ -51,7 +51,10 @@ import {
   nextWordBreak,
   prevWordBreak,
 } from "../shared/word-break";
-import { htmlToMarkdownForPaste } from "../../cake/clipboard";
+import {
+  htmlToMarkdownForPaste,
+  INTERNAL_MARKDOWN_CLIPBOARD_MIME,
+} from "../../cake/clipboard";
 
 type EngineOptions = {
   container: HTMLElement;
@@ -221,6 +224,9 @@ export class CakeEditor {
   private structuralReparsePolicies: StructuralReparsePolicy[] = [];
   private keybindings: KeyBinding[] = [];
   private keyDownInterceptors: Array<(event: KeyboardEvent) => boolean> = [];
+  private normalizePasteTextFns: Array<
+    (text: string, state: RuntimeState) => string | null
+  > = [];
   private onPasteTextHandlers: Array<
     (text: string, state: RuntimeState) => EditCommand | null
   > = [];
@@ -340,6 +346,7 @@ export class CakeEditor {
   private handleBeforeInputBound = this.handleBeforeInput.bind(this);
   private handleInputBound = this.handleInput.bind(this);
   private handleCompositionStartBound = this.handleCompositionStart.bind(this);
+  private handleCompositionUpdateBound = this.handleCompositionUpdate.bind(this);
   private handleCompositionEndBound = this.handleCompositionEnd.bind(this);
   private handleSelectionChangeBound = this.handleSelectionChange.bind(this);
   private handleFocusInBound = this.handleFocusIn.bind(this);
@@ -570,6 +577,13 @@ export class CakeEditor {
   ) {
     this.onPasteTextHandlers.push(fn);
     return () => removeFromArray(this.onPasteTextHandlers, fn);
+  }
+
+  registerNormalizePasteText(
+    fn: (text: string, state: RuntimeState) => string | null,
+  ) {
+    this.normalizePasteTextFns.push(fn);
+    return () => removeFromArray(this.normalizePasteTextFns, fn);
   }
 
   registerActiveMarksResolver(fn: ActiveMarksResolver) {
@@ -1565,6 +1579,10 @@ export class CakeEditor {
       this.handleCompositionStartBound,
     );
     this.container.addEventListener(
+      "compositionupdate",
+      this.handleCompositionUpdateBound,
+    );
+    this.container.addEventListener(
       "compositionend",
       this.handleCompositionEndBound,
     );
@@ -1629,6 +1647,10 @@ export class CakeEditor {
     this.container.removeEventListener(
       "compositionstart",
       this.handleCompositionStartBound,
+    );
+    this.container.removeEventListener(
+      "compositionupdate",
+      this.handleCompositionUpdateBound,
     );
     this.container.removeEventListener(
       "compositionend",
@@ -1708,6 +1730,7 @@ export class CakeEditor {
     // Placeholder positioning is independent of overlay visibility; the helper
     // is already a no-op when no placeholder root exists.
     this.syncPlaceholderPosition();
+    this.syncMeasuredListIndent();
 
     // Avoid scheduling expensive selection geometry work when there's nothing
     // visible that would change (e.g. blurred + collapsed selection).
@@ -1890,6 +1913,7 @@ export class CakeEditor {
       map: this.state.map,
     };
     this.lastRenderedInvalidationVersion = this.renderInvalidationVersion;
+    this.syncMeasuredListIndent();
     if (perfEnabled) {
       renderAndMapMs = performance.now() - renderStart;
     }
@@ -1990,6 +2014,30 @@ export class CakeEditor {
     this.contentRoot.spellcheck = this.spellCheckEnabled;
   }
 
+  private syncMeasuredListIndent() {
+    if (!this.contentRoot) {
+      return;
+    }
+
+    const lines = this.contentRoot.querySelectorAll<HTMLElement>(".cake-line.is-list");
+    for (const line of lines) {
+      const prefixLength = getListPrefixLengthFromText(line.textContent ?? "");
+      if (prefixLength === null || prefixLength <= 0) {
+        continue;
+      }
+
+      const prefixWidth = measureLinePrefixWidth(line, prefixLength);
+      if (prefixWidth === null) {
+        continue;
+      }
+
+      const pixelWidth = `${prefixWidth}px`;
+      line.style.setProperty("--cake-list-prefix-width", pixelWidth);
+      line.style.paddingInlineStart = pixelWidth;
+      line.style.textIndent = `${-prefixWidth}px`;
+    }
+  }
+
   private applySelection(selection: Selection) {
     if (!this.contentRoot) {
       return;
@@ -2027,7 +2075,8 @@ export class CakeEditor {
     });
 
     if (this.isComposing) {
-      this.debugLog("selectionchange", "skip: isComposing");
+      this.debugLog("selectionchange", "skip model sync: isComposing");
+      this.scheduleOverlayUpdate();
       return;
     }
     if (
@@ -2561,6 +2610,16 @@ export class CakeEditor {
       return;
     }
 
+    if (isWordModifier && event.key === "Backspace") {
+      event.preventDefault();
+      this.keydownHandledBeforeInput = true;
+      this.deleteByWord("backward");
+      queueMicrotask(() => {
+        this.keydownHandledBeforeInput = false;
+      });
+      return;
+    }
+
     if (event.key === "ArrowLeft") {
       this.verticalNavGoalX = null;
       if (isLineModifier) {
@@ -2812,6 +2871,7 @@ export class CakeEditor {
 
     event.preventDefault();
     clipboardData.setData("text/plain", text);
+    clipboardData.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, text);
 
     const html = this.runtime.serializeSelectionToHtml(
       this.state,
@@ -2844,25 +2904,50 @@ export class CakeEditor {
       return;
     }
 
+    // Real browser paste can arrive before selectionchange updates engine state.
+    // Sync from the live DOM caret so paste handlers act on the actual target line.
+    this.syncSelectionFromDom();
+
     const clipboardData = event.clipboardData;
+    const internalMarkdown =
+      clipboardData?.getData(INTERNAL_MARKDOWN_CLIPBOARD_MIME) ?? "";
+    if (internalMarkdown) {
+      this.pasteText(internalMarkdown, event);
+      return;
+    }
+
     const html = clipboardData?.getData("text/html") ?? "";
     if (html) {
       const markdown = htmlToMarkdownForPaste(html);
       if (markdown) {
-        event.preventDefault();
-        this.applyEdit({ type: "insert", text: markdown });
+        this.pasteText(markdown, event);
         return;
       }
     }
 
-    event.preventDefault();
     const text = clipboardData?.getData("text/plain") ?? "";
+    this.pasteText(text, event);
+  }
+
+  private pasteText(text: string, event: ClipboardEvent) {
+    event.preventDefault();
     if (!text) {
       return;
     }
 
+    let normalizedText = text;
+    for (const normalize of this.normalizePasteTextFns) {
+      const nextText = normalize(normalizedText, this.state);
+      if (nextText !== null) {
+        normalizedText = nextText;
+      }
+    }
+    if (!normalizedText) {
+      return;
+    }
+
     for (const handler of this.onPasteTextHandlers) {
-      const command = handler(text, this.state);
+      const command = handler(normalizedText, this.state);
       if (!command) {
         continue;
       }
@@ -2874,7 +2959,7 @@ export class CakeEditor {
       return;
     }
 
-    this.applyEdit({ type: "insert", text });
+    this.applyEdit({ type: "insert", text: normalizedText });
   }
 
   private handleBeforeInput(event: InputEvent) {
@@ -2959,6 +3044,10 @@ export class CakeEditor {
           const domSelection = readDomSelection(this.domMap);
           if (
             domSelection &&
+            shouldAdoptPostCompositionSelection({
+              domSelection,
+              modelSelection: this.state.selection,
+            }) &&
             !selectionsEqual(domSelection, this.state.selection)
           ) {
             this.setSelection(domSelection);
@@ -3011,6 +3100,15 @@ export class CakeEditor {
     }
     this.isComposing = true;
     this.clearCompositionCommit();
+    this.scheduleOverlayUpdate();
+  }
+
+  private handleCompositionUpdate(event: CompositionEvent) {
+    if (!this.isEventTargetInContentRoot(event.target)) {
+      return;
+    }
+    this.isComposing = true;
+    this.scheduleOverlayUpdate();
   }
 
   private handleCompositionEnd(event: CompositionEvent) {
@@ -3027,6 +3125,7 @@ export class CakeEditor {
     if (!changed) {
       this.setSelection(selection);
     }
+    this.suppressSelectionChangeForTick();
     this.markCompositionCommit();
     this.scheduleOverlayUpdate();
   }
@@ -3927,6 +4026,35 @@ export class CakeEditor {
     this.applyEdit({ type: "delete-backward" });
   }
 
+  private deleteByWord(direction: Affinity) {
+    const maxLength = this.state.map.cursorLength;
+    const normalized = normalizeSelection(this.state.selection, maxLength);
+    if (normalized.start !== normalized.end) {
+      this.applyEdit(
+        direction === "backward"
+          ? { type: "delete-backward" }
+          : { type: "delete-forward" },
+      );
+      return;
+    }
+
+    const nextOffset = this.moveOffsetByWord(normalized.start, direction);
+    if (nextOffset === normalized.start) {
+      return;
+    }
+
+    const deleteSelection: Selection =
+      direction === "backward"
+        ? { start: nextOffset, end: normalized.end, affinity: "forward" }
+        : { start: normalized.start, end: nextOffset, affinity: "forward" };
+    this.state = { ...this.state, selection: deleteSelection };
+    this.applyEdit(
+      direction === "backward"
+        ? { type: "delete-backward" }
+        : { type: "delete-forward" },
+    );
+  }
+
   private handleIndent() {
     const selection = this.state.selection;
     const lines = this.textModel.getLines();
@@ -4429,9 +4557,6 @@ export class CakeEditor {
   }
 
   private scheduleOverlayUpdate() {
-    if (this.isComposing) {
-      return;
-    }
     if (this.overlayUpdateId !== null) {
       return;
     }
@@ -4442,9 +4567,6 @@ export class CakeEditor {
   }
 
   private flushOverlayUpdate() {
-    if (this.isComposing) {
-      return;
-    }
     if (this.overlayUpdateId !== null) {
       window.cancelAnimationFrame(this.overlayUpdateId);
       this.overlayUpdateId = null;
@@ -4530,9 +4652,6 @@ export class CakeEditor {
   }
 
   private updateSelectionOverlay() {
-    if (this.isComposing) {
-      return;
-    }
     if (!this.overlayRoot || !this.contentRoot) {
       return;
     }
@@ -4577,6 +4696,24 @@ export class CakeEditor {
       return;
     }
     this.contentRoot.classList.remove("cake-touch-mode");
+
+    if (this.isComposing) {
+      const domCaret = this.readLiveDomCaretOverlayPosition();
+      this.syncSelectionRects([]);
+      if (domCaret) {
+        this.lastFocusRect = {
+          top: domCaret.top,
+          left: domCaret.left,
+          height: domCaret.height,
+          width: 0,
+        };
+        this.updateCaret(domCaret);
+        this.markCaretActive();
+      } else {
+        this.updateCaret(null);
+      }
+      return;
+    }
 
     const lines = this.textModel.getLines();
     const geometry = getSelectionGeometry({
@@ -4652,6 +4789,65 @@ export class CakeEditor {
     this.caretElement.style.top = `${position.top}px`;
     this.caretElement.style.left = `${position.left}px`;
     this.caretElement.style.height = `${position.height}px`;
+  }
+
+  private readLiveDomCaretOverlayPosition(): {
+    top: number;
+    left: number;
+    height: number;
+  } | null {
+    if (!this.contentRoot) {
+      return null;
+    }
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) {
+      return null;
+    }
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    if (
+      !anchorNode ||
+      !focusNode ||
+      (!this.contentRoot.contains(anchorNode) &&
+        !this.contentRoot.contains(focusNode))
+    ) {
+      return null;
+    }
+
+    const range = selection.getRangeAt(0).cloneRange();
+    const rects = range.getClientRects();
+    const rect =
+      rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
+
+    let height = rect.height;
+    if (height === 0) {
+      const lineElement = this.getLineElementForDomNode(focusNode);
+      height = lineElement?.getBoundingClientRect().height ?? 0;
+    }
+    if (height === 0) {
+      return null;
+    }
+
+    const containerRect = this.container.getBoundingClientRect();
+    return {
+      top: rect.top - containerRect.top + this.container.scrollTop,
+      left: rect.left - containerRect.left + this.container.scrollLeft,
+      height,
+    };
+  }
+
+  private getLineElementForDomNode(node: Node): HTMLElement | null {
+    let current: Node | null = node;
+    while (current && current !== this.contentRoot) {
+      if (
+        current instanceof HTMLElement &&
+        current.hasAttribute("data-line-index")
+      ) {
+        return current;
+      }
+      current = current.parentNode;
+    }
+    return null;
   }
 
   private markCaretActive() {
@@ -5707,6 +5903,22 @@ function selectionsEqual(a: Selection, b: Selection): boolean {
   return a.start === b.start && a.end === b.end && a.affinity === b.affinity;
 }
 
+function shouldAdoptPostCompositionSelection({
+  domSelection,
+  modelSelection,
+}: {
+  domSelection: Selection;
+  modelSelection: Selection;
+}): boolean {
+  if (domSelection.start !== domSelection.end) {
+    return true;
+  }
+  if (modelSelection.start !== modelSelection.end) {
+    return true;
+  }
+  return domSelection.start >= modelSelection.start;
+}
+
 function isCompositionInputType(inputType: string): boolean {
   return (
     inputType === "insertCompositionText" || inputType === "compositionend"
@@ -5848,6 +6060,58 @@ function findRowIndexForOffset(
   }
 
   return rows.length - 1;
+}
+
+function resolveLineDomPosition(
+  lineElement: HTMLElement,
+  offset: number,
+): { node: Node; offset: number } {
+  const walker = document.createTreeWalker(lineElement, NodeFilter.SHOW_TEXT);
+  let remaining = offset;
+  let current = walker.nextNode();
+
+  while (current) {
+    if (current instanceof Text) {
+      if (remaining <= current.data.length) {
+        return { node: current, offset: remaining };
+      }
+      remaining -= current.data.length;
+    }
+    current = walker.nextNode();
+  }
+
+  return { node: lineElement, offset: lineElement.childNodes.length };
+}
+
+function measureLinePrefixWidth(
+  lineElement: HTMLElement,
+  prefixLength: number,
+): number | null {
+  const range = document.createRange();
+  const start = resolveLineDomPosition(lineElement, 0);
+  const end = resolveLineDomPosition(lineElement, prefixLength);
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+
+  const rects = Array.from(range.getClientRects()).filter(
+    (rect) => rect.width > 0 && rect.height > 0,
+  );
+  if (rects.length > 0) {
+    const left = Math.min(...rects.map((rect) => rect.left));
+    const right = Math.max(...rects.map((rect) => rect.right));
+    return right - left;
+  }
+
+  const rect = range.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) {
+    return null;
+  }
+  return rect.width;
+}
+
+function getListPrefixLengthFromText(lineText: string): number | null {
+  const match = /^(\s*)([-*+]|\d+\.)( )/.exec(lineText);
+  return match ? match[0].length : null;
 }
 
 function resolveSelectionAffinity(selection: Selection): Affinity {

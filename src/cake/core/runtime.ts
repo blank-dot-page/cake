@@ -210,6 +210,7 @@ export type Runtime = {
 };
 
 const defaultSelection: Selection = { start: 0, end: 0, affinity: "forward" };
+const WORD_CHARACTER_PATTERN = /[\p{L}\p{N}_]/u;
 
 function removeFromArray<T>(arr: T[], value: T) {
   const index = arr.indexOf(value);
@@ -360,6 +361,9 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
       return () => removeFromArray(structuralReparsePolicies, fn);
     },
     registerOnPasteText: () => {
+      return () => {};
+    },
+    registerNormalizePasteText: () => {
       return () => {};
     },
     registerActiveMarksResolver: () => {
@@ -731,13 +735,17 @@ export function createRuntimeFromRegistry(registry: {
         }
         content.push(normalizedInline);
       }
+      const mergedContent = mergeAdjacentInlines(content);
+      if (mergedContent !== content) {
+        changed = true;
+      }
       if (!changed) {
         normalizedBlockCache.set(block, next);
         return next;
       }
       const normalized: Block = {
         ...next,
-        content,
+        content: mergedContent,
       };
       normalizedBlockCache.set(block, normalized);
       return normalized;
@@ -799,17 +807,60 @@ export function createRuntimeFromRegistry(registry: {
 
     let next = pre;
     if (next.type === "inline-wrapper") {
-      next = {
-        ...next,
-        children: next.children
+      const children = mergeAdjacentInlines(
+        next.children
           .map((child) => normalizeInline(child))
           .filter((child): child is Inline => child !== null),
+      );
+      next = {
+        ...next,
+        children,
       };
     }
 
     const normalized = applyInlineNormalizers(next);
     normalizedInlineCache.set(inline, normalized ?? removedInlineSentinel);
     return normalized;
+  }
+
+  function mergeAdjacentInlines(inlines: Inline[]): Inline[] {
+    if (inlines.length < 2) {
+      return inlines;
+    }
+
+    const merged: Inline[] = [];
+    let changed = false;
+
+    for (const inline of inlines) {
+      const previous = merged[merged.length - 1];
+      if (previous?.type === "text" && inline.type === "text") {
+        merged[merged.length - 1] = {
+          ...previous,
+          text: previous.text + inline.text,
+        };
+        changed = true;
+        continue;
+      }
+      if (
+        previous?.type === "inline-wrapper" &&
+        inline.type === "inline-wrapper" &&
+        previous.kind === inline.kind &&
+        stableStringify(previous.data) === stableStringify(inline.data)
+      ) {
+        merged[merged.length - 1] = {
+          ...previous,
+          children: mergeAdjacentInlines([
+            ...previous.children,
+            ...inline.children,
+          ]),
+        };
+        changed = true;
+        continue;
+      }
+      merged.push(inline);
+    }
+
+    return changed ? merged : inlines;
   }
 
   function createTopLevelBlockSegment(block: Block): TopLevelBlockSegment {
@@ -1035,10 +1086,16 @@ export function createRuntimeFromRegistry(registry: {
         ? previousSegmented
         : undefined;
     const segmented = buildSegmentedDocState(normalized, reusablePrevious);
+    const cursorLength = segmented.map.cursorLength;
+    const clampedSelection = {
+      ...selection,
+      start: Math.max(0, Math.min(cursorLength, selection.start)),
+      end: Math.max(0, Math.min(cursorLength, selection.end)),
+    };
 
     return {
       source: segmented.source,
-      selection,
+      selection: normalizeSelection(clampedSelection),
       map: segmented.map,
       doc: normalized,
       runtime: runtime,
@@ -1243,13 +1300,24 @@ export function createRuntimeFromRegistry(registry: {
       const shouldReparse = shouldReparseAfterStructuralEdit(command);
       const useIncrementalSegmentedDerivation =
         !shouldReparse && isIncrementalDerivationCandidate(command, selection);
+      const pendingMarksAfterCollapsedDelete =
+        (command.type === "delete-backward" ||
+          command.type === "delete-forward") &&
+        selection.start === selection.end
+          ? marksDeletedByCollapsedSelection(state.doc, selection, command.type)
+              .filter((mark) => isInclusiveAtEnd(mark.kind))
+          : [];
       const interim = createStateFromDoc(structural.doc, defaultSelection, {
         mode: useIncrementalSegmentedDerivation ? "incremental" : "full",
         previousState: useIncrementalSegmentedDerivation ? state : undefined,
       });
       const interimAffinity = structural.nextAffinity ?? "forward";
+      const interimCursor = Math.max(
+        0,
+        Math.min(interim.map.cursorLength, structural.nextCursor),
+      );
       const caretSource = interim.map.cursorToSource(
-        structural.nextCursor,
+        interimCursor,
         interimAffinity,
       );
 
@@ -1258,7 +1326,7 @@ export function createRuntimeFromRegistry(registry: {
           caretSource,
           interimAffinity,
         );
-        return {
+        const nextState = {
           ...interim,
           selection: {
             start: caretCursor.cursorOffset,
@@ -1266,12 +1334,56 @@ export function createRuntimeFromRegistry(registry: {
             affinity: caretCursor.affinity,
           },
         };
+        if (pendingMarksAfterCollapsedDelete.length === 0) {
+          const pendingPlaceholderMarks = getPendingPlaceholderMarksAtCursor(
+            nextState,
+            nextState.selection.start,
+          );
+          if (pendingPlaceholderMarks) {
+            const withoutPending = removePendingPlaceholderAtCursor(
+              nextState,
+              nextState.selection.start,
+            );
+            if (withoutPending) {
+              return withoutPending;
+            }
+          }
+        }
+        if (pendingMarksAfterCollapsedDelete.length > 0) {
+          const around = marksAroundCursor(
+            nextState.doc,
+            nextState.selection.start,
+          );
+          const inclusiveAround = {
+            left: around.left.filter((mark) => isInclusiveAtEnd(mark.kind)),
+            right: around.right.filter((mark) => isInclusiveAtEnd(mark.kind)),
+          };
+          const preservesActiveMarks =
+            isMarksPrefix(
+              pendingMarksAfterCollapsedDelete,
+              inclusiveAround.left,
+            ) ||
+            isMarksPrefix(
+              pendingMarksAfterCollapsedDelete,
+              inclusiveAround.right,
+            );
+          if (!preservesActiveMarks) {
+            const pending = createPendingPlaceholderStateAtCursor(
+              nextState,
+              nextState.selection.start,
+              pendingMarksAfterCollapsedDelete,
+            );
+            if (pending) {
+              return pending;
+            }
+          }
+        }
+        return nextState;
       }
 
       const next = createState(interim.source);
       const caretCursor = next.map.sourceToCursor(caretSource, interimAffinity);
-
-      return {
+      const nextState = {
         ...next,
         selection: {
           start: caretCursor.cursorOffset,
@@ -1279,6 +1391,45 @@ export function createRuntimeFromRegistry(registry: {
           affinity: caretCursor.affinity,
         },
       };
+      if (pendingMarksAfterCollapsedDelete.length === 0) {
+        const pendingPlaceholderMarks = getPendingPlaceholderMarksAtCursor(
+          nextState,
+          nextState.selection.start,
+        );
+        if (pendingPlaceholderMarks) {
+          const withoutPending = removePendingPlaceholderAtCursor(
+            nextState,
+            nextState.selection.start,
+          );
+          if (withoutPending) {
+            return withoutPending;
+          }
+        }
+      }
+      if (pendingMarksAfterCollapsedDelete.length > 0) {
+        const around = marksAroundCursor(nextState.doc, nextState.selection.start);
+        const inclusiveAround = {
+          left: around.left.filter((mark) => isInclusiveAtEnd(mark.kind)),
+          right: around.right.filter((mark) => isInclusiveAtEnd(mark.kind)),
+        };
+        const preservesActiveMarks =
+          isMarksPrefix(pendingMarksAfterCollapsedDelete, inclusiveAround.left) ||
+          isMarksPrefix(
+            pendingMarksAfterCollapsedDelete,
+            inclusiveAround.right,
+          );
+        if (!preservesActiveMarks) {
+          const pending = createPendingPlaceholderStateAtCursor(
+            nextState,
+            nextState.selection.start,
+            pendingMarksAfterCollapsedDelete,
+          );
+          if (pending) {
+            return pending;
+          }
+        }
+      }
+      return nextState;
     }
 
     // Indent and outdent are handled by extensions
@@ -1395,6 +1546,38 @@ export function createRuntimeFromRegistry(registry: {
       replaceText.length > 0 &&
       range.start === range.end &&
       textModel.getGraphemeAtCursor(range.start) === "\u200B";
+    if (command.type === "insert" && shouldReplacePlaceholder) {
+      const leadingWhitespace = replaceText.match(/^\s+/)?.[0] ?? "";
+      const around = marksAroundCursor(doc, range.start);
+      if (leadingWhitespace.length > 0) {
+        if (
+          isMarksPrefix(around.left, around.right) &&
+          around.right.length > around.left.length
+        ) {
+          const whitespaceInsert = insertTextBeforePendingPlaceholderInDoc(
+            doc,
+            range.start,
+            leadingWhitespace,
+            around.left,
+          );
+          if (whitespaceInsert) {
+            const trailingText = replaceText.slice(leadingWhitespace.length);
+            if (trailingText.length === 0) {
+              return whitespaceInsert;
+            }
+            return applyStructuralEdit(
+              { type: "insert", text: trailingText },
+              whitespaceInsert.doc,
+              {
+                start: whitespaceInsert.nextCursor,
+                end: whitespaceInsert.nextCursor,
+                affinity: whitespaceInsert.nextAffinity,
+              },
+            );
+          }
+        }
+      }
+    }
     const effectiveRange = shouldReplacePlaceholder
       ? { start: range.start, end: Math.min(docCursorLength, range.start + 1) }
       : range;
@@ -1737,9 +1920,21 @@ export function createRuntimeFromRegistry(registry: {
 
     const nextModel = getEditorTextModelForDoc(nextDoc);
     const nextDocCursorLength = nextModel.getCursorLength();
+    const hasParagraphInsert = insertBlocks.some((block) => block.type === "paragraph");
+    const replacementCursorLength = hasParagraphInsert
+      ? insertCursorLength
+      : getEditorTextModelForDoc({
+          type: "doc",
+          blocks: replacementBlocks,
+        }).getCursorLength() -
+        getRunsCursorLength(beforeRuns) -
+        getRunsCursorLength(afterRuns);
     const nextCursor = Math.max(
       0,
-      Math.min(nextDocCursorLength, effectiveRange.start + insertCursorLength),
+      Math.min(
+        nextDocCursorLength,
+        effectiveRange.start + replacementCursorLength,
+      ),
     );
     const nextLines = nextModel.getStructuralLines();
     const around = marksAroundCursor(nextDoc, nextCursor);
@@ -1875,6 +2070,30 @@ export function createRuntimeFromRegistry(registry: {
     return true;
   }
 
+  function removeMarkByKind(marks: Mark[], kind: string): Mark[] {
+    let removed = false;
+    return marks.filter((mark) => {
+      if (!removed && mark.kind === kind) {
+        removed = true;
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function mergeMarksPreservingOrder(...groups: Mark[][]): Mark[] {
+    const next: Mark[] = [];
+    for (const group of groups) {
+      for (const mark of group) {
+        if (next.some((existing) => existing.key === mark.key)) {
+          continue;
+        }
+        next.push(mark);
+      }
+    }
+    return next;
+  }
+
   function sliceRuns(
     runs: Run[],
     startCursor: number,
@@ -1929,6 +2148,15 @@ export function createRuntimeFromRegistry(registry: {
       return [left, right];
     }
     return [left, right];
+  }
+
+  function getRunsCursorLength(runs: Run[]): number {
+    return runs.reduce(
+      (total, run) =>
+        total +
+        (run.type === "text" ? Array.from(graphemeSegments(run.text)).length : 1),
+      0,
+    );
   }
 
   function commonMarksPrefix(runs: Run[]): Mark[] {
@@ -2005,6 +2233,345 @@ export function createRuntimeFromRegistry(registry: {
         : null;
     const right = marksAtGraphemeIndex(runs, loc.offsetInLine);
     return { left: left ?? [], right: right ?? [] };
+  }
+
+  function marksDeletedByCollapsedSelection(
+    doc: Doc,
+    selection: Selection,
+    command: "delete-backward" | "delete-forward",
+  ): Mark[] {
+    const cursorOffset = Math.max(0, Math.min(selection.start, selection.end));
+    const around = marksAroundCursor(doc, cursorOffset);
+    return command === "delete-backward" ? around.left : around.right;
+  }
+
+  function createPendingPlaceholderStateAtCursor(
+    state: RuntimeState,
+    cursorOffset: number,
+    marks: Mark[],
+  ): RuntimeState | null {
+    const textModel = getEditorTextModelForDoc(state.doc);
+    const lines = textModel.getStructuralLines();
+    const loc = textModel.resolveOffsetToLine(cursorOffset);
+    const line = lines[loc.lineIndex];
+    if (!line) {
+      return null;
+    }
+
+    const block = getBlockAtPath(state.doc.blocks, line.path);
+    if (!block || block.type !== "paragraph") {
+      return null;
+    }
+
+    const placeholder = "\u200B";
+    const runs = paragraphToRuns(block);
+    const { before, after } = sliceRuns(runs, loc.offsetInLine, loc.offsetInLine);
+    const mergedRuns = normalizeRuns([
+      ...before,
+      { type: "text", text: placeholder, marks },
+      ...after,
+    ]);
+    const nextBlock: Block = {
+      ...block,
+      content: runsToInlines(mergedRuns),
+    };
+
+    const parentPath = line.path.slice(0, -1);
+    const indexInParent = line.path[line.path.length - 1] ?? 0;
+    const nextDoc: Doc = {
+      ...state.doc,
+      blocks: updateBlocksAtPath(state.doc.blocks, parentPath, (blocks) =>
+        blocks.map((child, index) =>
+          index === indexInParent ? nextBlock : child,
+        ),
+      ),
+    };
+    const next = createStateFromDoc(nextDoc);
+
+    const sourceHint = state.map.cursorToSource(cursorOffset, "backward");
+    const searchStart = Math.max(0, sourceHint - 4);
+    const placeholderStart =
+      next.source.indexOf(placeholder, searchStart) ?? -1;
+    const resolvedPlaceholderStart =
+      placeholderStart !== -1 ? placeholderStart : next.source.indexOf(placeholder);
+    if (resolvedPlaceholderStart === -1) {
+      return null;
+    }
+
+    const startCursor = next.map.sourceToCursor(
+      resolvedPlaceholderStart,
+      "forward",
+    );
+    return {
+      ...next,
+      selection: {
+        start: startCursor.cursorOffset,
+        end: startCursor.cursorOffset,
+        affinity: "forward",
+      },
+    };
+  }
+
+  function rewritePendingPlaceholderAtCursor(
+    state: RuntimeState,
+    cursorOffset: number,
+    marks: Mark[] | null,
+  ): RuntimeState | null {
+    const textModel = getEditorTextModelForDoc(state.doc);
+    const lines = textModel.getStructuralLines();
+    const loc = textModel.resolveOffsetToLine(cursorOffset);
+    const line = lines[loc.lineIndex];
+    if (!line) {
+      return null;
+    }
+
+    const block = getBlockAtPath(state.doc.blocks, line.path);
+    if (!block || block.type !== "paragraph") {
+      return null;
+    }
+
+    const placeholder = "\u200B";
+    const runs = paragraphToRuns(block);
+    const { before, after } = sliceRuns(runs, loc.offsetInLine, loc.offsetInLine);
+    const replacement: Run[] = [];
+
+    const firstAfter = after[0];
+    if (firstAfter?.type === "text" && firstAfter.text.startsWith(placeholder)) {
+      if (marks && marks.length > 0) {
+        replacement.push({ type: "text", text: placeholder, marks });
+      }
+      if (firstAfter.text.length > placeholder.length) {
+        replacement.push({
+          ...firstAfter,
+          text: firstAfter.text.slice(placeholder.length),
+        });
+      }
+      replacement.push(...after.slice(1));
+    } else {
+      const lastBefore = before[before.length - 1];
+      if (
+        lastBefore?.type !== "text" ||
+        !lastBefore.text.endsWith(placeholder)
+      ) {
+        return null;
+      }
+
+      const prefix = lastBefore.text.slice(0, -placeholder.length);
+      if (prefix) {
+        replacement.push({ ...lastBefore, text: prefix });
+      }
+      if (marks && marks.length > 0) {
+        replacement.push({ type: "text", text: placeholder, marks });
+      }
+      replacement.push(...after);
+      before.pop();
+    }
+
+    const mergedRuns = normalizeRuns([...before, ...replacement]);
+    const nextBlock: Block = {
+      ...block,
+      content: runsToInlines(mergedRuns),
+    };
+
+    const parentPath = line.path.slice(0, -1);
+    const indexInParent = line.path[line.path.length - 1] ?? 0;
+    const nextDoc: Doc = {
+      ...state.doc,
+      blocks: updateBlocksAtPath(state.doc.blocks, parentPath, (blocks) =>
+        blocks.map((child, index) =>
+          index === indexInParent ? nextBlock : child,
+        ),
+      ),
+    };
+    const next = createStateFromDoc(nextDoc);
+
+    return {
+      ...next,
+      selection: {
+        start: cursorOffset,
+        end: cursorOffset,
+        affinity: marks && marks.length > 0 ? "forward" : "backward",
+      },
+    };
+  }
+
+  function updatePendingPlaceholderMarksAtCursor(
+    state: RuntimeState,
+    cursorOffset: number,
+    marks: Mark[],
+  ): RuntimeState | null {
+    return rewritePendingPlaceholderAtCursor(state, cursorOffset, marks);
+  }
+
+  function removePendingPlaceholderAtCursor(
+    state: RuntimeState,
+    cursorOffset: number,
+  ): RuntimeState | null {
+    return rewritePendingPlaceholderAtCursor(state, cursorOffset, null);
+  }
+
+  function getPendingPlaceholderMarksAtCursor(
+    state: RuntimeState,
+    cursorOffset: number,
+  ): Mark[] | null {
+    const textModel = getEditorTextModelForDoc(state.doc);
+    const lines = textModel.getStructuralLines();
+    const loc = textModel.resolveOffsetToLine(cursorOffset);
+    const line = lines[loc.lineIndex];
+    if (!line) {
+      return null;
+    }
+
+    const block = getBlockAtPath(state.doc.blocks, line.path);
+    if (!block || block.type !== "paragraph") {
+      return null;
+    }
+
+    const placeholder = "\u200B";
+    const runs = paragraphToRuns(block);
+    const { before, after } = sliceRuns(runs, loc.offsetInLine, loc.offsetInLine);
+    const firstAfter = after[0];
+    if (firstAfter?.type === "text" && firstAfter.text.startsWith(placeholder)) {
+      return firstAfter.marks;
+    }
+    const lastBefore = before[before.length - 1];
+    if (
+      lastBefore?.type === "text" &&
+      lastBefore.text.endsWith(placeholder)
+    ) {
+      return lastBefore.marks;
+    }
+    return null;
+  }
+
+  function insertTextBeforePendingPlaceholderInDoc(
+    doc: Doc,
+    cursorOffset: number,
+    text: string,
+    marks: Mark[],
+  ): { doc: Doc; nextCursor: number; nextAffinity: Affinity } | null {
+    const textModel = getEditorTextModelForDoc(doc);
+    const lines = textModel.getStructuralLines();
+    const loc = textModel.resolveOffsetToLine(cursorOffset);
+    const line = lines[loc.lineIndex];
+    if (!line) {
+      return null;
+    }
+
+    const block = getBlockAtPath(doc.blocks, line.path);
+    if (!block || block.type !== "paragraph") {
+      return null;
+    }
+
+    const placeholder = "\u200B";
+    const runs = paragraphToRuns(block);
+    const { before, after } = sliceRuns(runs, loc.offsetInLine, loc.offsetInLine);
+    const firstAfter = after[0];
+    if (
+      firstAfter?.type !== "text" ||
+      !firstAfter.text.startsWith(placeholder)
+    ) {
+      return null;
+    }
+
+    const mergedRuns = normalizeRuns([
+      ...before,
+      ...(text.length > 0 ? [{ type: "text", text, marks } satisfies Run] : []),
+      firstAfter,
+      ...after.slice(1),
+    ]);
+    const nextBlock: Block = {
+      ...block,
+      content: runsToInlines(mergedRuns),
+    };
+
+    const parentPath = line.path.slice(0, -1);
+    const indexInParent = line.path[line.path.length - 1] ?? 0;
+    const nextDoc: Doc = {
+      ...doc,
+      blocks: updateBlocksAtPath(doc.blocks, parentPath, (blocks) =>
+        blocks.map((child, index) =>
+          index === indexInParent ? nextBlock : child,
+        ),
+      ),
+    };
+
+    return {
+      doc: nextDoc,
+      nextCursor: cursorOffset + Array.from(graphemeSegments(text)).length,
+      nextAffinity: "forward",
+    };
+  }
+
+  function hasInlineMarkerBoundaryBefore(
+    source: string,
+    markerStart: number,
+  ): boolean {
+    if (markerStart <= 0) {
+      return true;
+    }
+
+    return !WORD_CHARACTER_PATTERN.test(source[markerStart - 1] ?? "");
+  }
+
+  function pickSafeCollapsedToggleMarkerSpec(params: {
+    defaultSpec: { kind: string; open: string; close: string };
+    source: string;
+    insertAt: number;
+    affinity: Affinity;
+  }): { kind: string; open: string; close: string } {
+    const { defaultSpec, source, insertAt, affinity } = params;
+    const candidates = Array.from(toggleMarkerToSpec.values()).filter(
+      (spec, index, all) =>
+        spec.kind === defaultSpec.kind &&
+        all.findIndex(
+          (candidate) =>
+            candidate.kind === spec.kind &&
+            candidate.open === spec.open &&
+            candidate.close === spec.close,
+        ) === index,
+    );
+    if (candidates.length <= 1) {
+      return defaultSpec;
+    }
+
+    const previousChar = source[insertAt - 1] ?? "";
+    const nextChar = source[insertAt] ?? "";
+    let bestSpec = defaultSpec;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (const spec of candidates) {
+      if (
+        spec.open === "_" &&
+        !hasInlineMarkerBoundaryBefore(source, insertAt)
+      ) {
+        continue;
+      }
+
+      let score = 0;
+      if (previousChar && spec.open[0] === previousChar) {
+        score += affinity === "forward" ? 8 : 3;
+      }
+      if (
+        nextChar &&
+        spec.close[spec.close.length - 1] === nextChar
+      ) {
+        score += affinity === "backward" ? 8 : 3;
+      }
+      if (
+        spec.open === defaultSpec.open &&
+        spec.close === defaultSpec.close
+      ) {
+        score -= 0.5;
+      }
+
+      if (score < bestScore) {
+        bestSpec = spec;
+        bestScore = score;
+      }
+    }
+
+    return bestSpec;
   }
 
   function preferredAffinityAtGap(
@@ -2160,6 +2727,9 @@ export function createRuntimeFromRegistry(registry: {
 
     if (firstParagraphIndex === -1 || lastParagraphIndex === -1) {
       const mergedRuns = normalizeRuns([...beforeRuns, ...afterRuns]);
+      if (mergedRuns.length === 0) {
+        return [...insertBlocks];
+      }
       return [
         { type: "paragraph", content: runsToInlines(mergedRuns) },
         ...insertBlocks,
@@ -2330,9 +2900,45 @@ export function createRuntimeFromRegistry(registry: {
     const openLen = openMarker.length;
     const closeLen = closeMarker.length;
     const placeholder = "\u200B";
+    const markerMark: Mark = {
+      kind: markerKind,
+      data: undefined,
+      key: markKey(markerKind, undefined),
+    };
 
     if (selection.start === selection.end) {
       const caret = selection.start;
+      const pendingPlaceholderMarks = getPendingPlaceholderMarksAtCursor(
+        state,
+        caret,
+      );
+      if (pendingPlaceholderMarks) {
+        const hasMarker = pendingPlaceholderMarks.some(
+          (mark) => mark.kind === markerKind,
+        );
+        const around = marksAroundCursor(state.doc, caret);
+        const nextMarks = hasMarker
+          ? removeMarkByKind(pendingPlaceholderMarks, markerKind)
+          : mergeMarksPreservingOrder(
+              around.left,
+              pendingPlaceholderMarks,
+              [markerMark],
+            );
+        const next =
+          nextMarks.length > 0
+            ? updatePendingPlaceholderMarksAtCursor(state, caret, nextMarks)
+            : removePendingPlaceholderAtCursor(state, caret);
+        if (next) {
+          return {
+            ...next,
+            selection: {
+              start: caret,
+              end: caret,
+              affinity: "forward",
+            },
+          };
+        }
+      }
 
       // When the caret is at the end boundary of an inline wrapper, toggling the
       // wrapper should "exit" it (so the next character types outside). This is
@@ -2341,52 +2947,20 @@ export function createRuntimeFromRegistry(registry: {
       const around = marksAroundCursor(state.doc, caret);
       if (
         isMarksPrefix(around.right, around.left) &&
-        around.left.length > around.right.length
+        around.left.length > around.right.length &&
+        (selection.affinity ?? "forward") === "backward"
       ) {
         const exiting = around.left.slice(around.right.length);
         if (exiting.some((mark) => mark.kind === markerKind)) {
-          const toggledExitingIndex = exiting.findIndex(
-            (mark) => mark.kind === markerKind,
-          );
-          if (
-            exiting.length > 1 &&
-            toggledExitingIndex !== -1 &&
-            toggledExitingIndex < exiting.length - 1
-          ) {
-            return {
-              ...state,
-              selection: {
-                start: caret,
-                end: caret,
-                affinity: "forward",
-              },
-            };
-          }
-          if (exiting.length > 1) {
-            const insertAtForward = map.cursorToSource(caret, "forward");
-            const insertAtBackward = map.cursorToSource(caret, "backward");
-            const between = source.slice(insertAtBackward, insertAtForward);
-            const markerIndex = between.indexOf(closeMarker);
-            if (markerIndex !== -1) {
-              const insertAt = insertAtBackward + markerIndex + closeLen;
-              const nextSource =
-                source.slice(0, insertAt) +
-                placeholder +
-                source.slice(insertAt);
-              const next = createState(nextSource);
-              const placeholderStart = insertAt;
-              const startCursor = next.map.sourceToCursor(
-                placeholderStart,
-                "forward",
-              );
-              return {
-                ...next,
-                selection: {
-                  start: startCursor.cursorOffset,
-                  end: startCursor.cursorOffset,
-                  affinity: "forward",
-                },
-              };
+          const remainingMarks = removeMarkByKind(around.left, markerKind);
+          if (!marksEqual(remainingMarks, around.right)) {
+            const next = createPendingPlaceholderStateAtCursor(
+              state,
+              caret,
+              remainingMarks,
+            );
+            if (next) {
+              return next;
             }
           }
           return {
@@ -2409,6 +2983,26 @@ export function createRuntimeFromRegistry(registry: {
       ) {
         const entering = around.right.slice(around.left.length);
         if (entering.some((mark) => mark.kind === markerKind)) {
+          const remainingMarks = removeMarkByKind(around.right, markerKind);
+          const next =
+            remainingMarks.length > 0
+              ? updatePendingPlaceholderMarksAtCursor(
+                  state,
+                  caret,
+                  remainingMarks,
+                )
+              : removePendingPlaceholderAtCursor(state, caret);
+          if (next) {
+            return {
+              ...next,
+              selection: {
+                start: caret,
+                end: caret,
+                affinity: "backward",
+              },
+            };
+          }
+
           const insertAtBackward = map.cursorToSource(caret, "backward");
           const insertAtForward = map.cursorToSource(caret, "forward");
           const after = source.slice(insertAtBackward);
@@ -2481,6 +3075,21 @@ export function createRuntimeFromRegistry(registry: {
         }
       }
 
+      if (
+        isMarksPrefix(around.right, around.left) &&
+        around.left.length > around.right.length &&
+        (selection.affinity ?? "forward") === "backward" &&
+        !around.left.some((mark) => mark.kind === markerKind)
+      ) {
+        const next = createPendingPlaceholderStateAtCursor(state, caret, [
+          ...around.left,
+          markerMark,
+        ]);
+        if (next) {
+          return next;
+        }
+      }
+
       // Otherwise, insert an empty marker pair with a zero-width placeholder
       // selected so the next typed character replaces it.
       //
@@ -2502,40 +3111,81 @@ export function createRuntimeFromRegistry(registry: {
         return null;
       })();
       // When at a boundary between cursor positions (insertAtBackward !== insertAtForward),
-      // prefer insertAtBackward to keep new markers inside the current formatting context.
-      // However, only do this if the new marker length is <= the boundary marker length,
-      // otherwise we create ambiguous marker sequences (e.g., *italic**​*** doesn't parse).
+      // only prefer insertAtBackward if the caret is intentionally anchored inside the
+      // left formatting context. If the caret affinity is forward, the user explicitly
+      // exited that wrapper and new markers belong on the forward side of the gap.
+      // Still guard against inserting a longer marker into a shorter boundary run,
+      // which would create ambiguous source (e.g., *italic**​***).
       const betweenLen = insertAtForward - insertAtBackward;
       const preferBackward =
-        insertAtBackward !== insertAtForward && openLen <= betweenLen;
+        insertAtBackward !== insertAtForward &&
+        (selection.affinity ?? "forward") === "backward" &&
+        openLen <= betweenLen;
       const insertAt =
         placeholderPos ?? (preferBackward ? insertAtBackward : insertAtForward);
+      const insertMarkerSpec =
+        placeholderPos === null
+          ? pickSafeCollapsedToggleMarkerSpec({
+              defaultSpec: markerSpec,
+              source,
+              insertAt,
+              affinity: selection.affinity ?? "forward",
+            })
+          : markerSpec;
+      const insertOpenMarker = insertMarkerSpec.open;
+      const insertCloseMarker = insertMarkerSpec.close;
+      const insertOpenLen = insertOpenMarker.length;
+      const baseMarks =
+        (selection.affinity ?? "forward") === "backward"
+          ? around.left
+          : around.right;
+      const nextMarks = [
+        ...baseMarks.filter((mark) => mark.kind !== markerKind),
+        markerMark,
+      ];
+
+      if (placeholderPos !== null) {
+        const next = updatePendingPlaceholderMarksAtCursor(
+          state,
+          caret,
+          nextMarks,
+        );
+        if (next) {
+          return next;
+        }
+      }
+
+      const docInserted = createPendingPlaceholderStateAtCursor(
+        state,
+        caret,
+        nextMarks,
+      );
+      if (docInserted) {
+        return docInserted;
+      }
 
       const nextSource =
         placeholderPos !== null
           ? source.slice(0, insertAt) +
-            openMarker +
+            insertOpenMarker +
             placeholder +
-            closeMarker +
+            insertCloseMarker +
             source.slice(insertAt + placeholder.length)
           : source.slice(0, insertAt) +
-            openMarker +
+            insertOpenMarker +
             placeholder +
-            closeMarker +
+            insertCloseMarker +
             source.slice(insertAt);
       const next = createState(nextSource);
 
-      const placeholderStart = insertAt + openLen;
+      const placeholderStart = insertAt + insertOpenLen;
       const startCursor = next.map.sourceToCursor(placeholderStart, "forward");
 
-      return {
-        ...next,
-        selection: {
-          start: startCursor.cursorOffset,
-          end: startCursor.cursorOffset,
-          affinity: "forward",
-        },
-      };
+      return createStateFromDoc(next.doc, {
+        start: startCursor.cursorOffset,
+        end: startCursor.cursorOffset,
+        affinity: "forward",
+      });
     }
 
     const cursorStart = Math.min(selection.start, selection.end);
@@ -2614,12 +3264,6 @@ export function createRuntimeFromRegistry(registry: {
       visibleRunsForDecision.every((run) =>
         run.marks.some((mark) => mark.kind === markerKind),
       );
-    const markerMark: Mark = {
-      kind: markerKind,
-      data: undefined,
-      key: markKey(markerKind, undefined),
-    };
-
     const removeMark = (marks: Mark[]): Mark[] => {
       if (!marks.some((mark) => mark.kind === markerKind)) {
         return marks;

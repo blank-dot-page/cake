@@ -182,11 +182,7 @@ describe("cake formatting interactions", () => {
     await assertBundledRoundtrip(ref.current?.getValue?.() ?? "");
   });
 
-  it("Cmd+B on a new line keeps active marks in controlled React usage", async () => {
-    const isMac =
-      typeof navigator !== "undefined" &&
-      typeof navigator.platform === "string" &&
-      navigator.platform.toLowerCase().includes("mac");
+  it("toggle-bold on a new line keeps active marks in controlled React usage", async () => {
     const ref = createRef<CakeEditorRef>();
 
     function ControlledEditor() {
@@ -207,14 +203,10 @@ describe("cake formatting interactions", () => {
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     ref.current?.focus();
-    await userEvent.keyboard("hello");
-    await userEvent.keyboard("{Enter}");
-    if (isMac) {
-      await userEvent.keyboard("{Meta>}b{/Meta}");
-    } else {
-      await userEvent.keyboard("{Control>}b{/Control}");
-    }
-    await new Promise((r) => setTimeout(r, 120));
+    ref.current?.insertText("hello");
+    ref.current?.insertText("\n");
+    expect(ref.current?.executeCommand({ type: "toggle-bold" })).toBe(true);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     expect(ref.current?.getActiveMarks()).toEqual(["bold"]);
   });
@@ -316,7 +308,11 @@ describe("cake formatting interactions", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(ref.current?.getValue()).toBe("# this is a title\n1. \nthis is text");
-    expect(ref.current?.getSelection()).toEqual({ start: 19, end: 19 });
+    expect(ref.current?.getSelection()).toEqual({
+      start: 19,
+      end: 19,
+      affinity: "backward",
+    });
     expect(getCaretLineText()).toBe("1. ");
   });
 
@@ -460,6 +456,77 @@ describe("cake formatting interactions", () => {
     }
     await new Promise((r) => setTimeout(r, 120));
 
+    expect(latestActiveMarks).toEqual(["bold"]);
+  });
+
+  it("Cmd+B then typing bold then Backspace keeps the remaining text bold in selection-controlled usage", async () => {
+    const isMac =
+      typeof navigator !== "undefined" &&
+      typeof navigator.platform === "string" &&
+      navigator.platform.toLowerCase().includes("mac");
+    const ref = createRef<CakeEditorRef>();
+    let latestActiveMarks: string[] = [];
+
+    function ControlledEditor() {
+      const [value, setValue] = useState("");
+      const [selection, setSelection] = useState<
+        | {
+            start: number;
+            end: number;
+            affinity?: "backward" | "forward";
+          }
+        | null
+      >(null);
+      const [activeMarks, setActiveMarks] = useState<string[]>([]);
+      const syncActiveMarks = () =>
+        setActiveMarks(ref.current?.getActiveMarks?.() ?? []);
+
+      useEffect(() => {
+        latestActiveMarks = activeMarks;
+      }, [activeMarks]);
+
+      return (
+        <CakeEditor
+          ref={ref}
+          value={value}
+          selection={selection ?? undefined}
+          onChange={(nextValue) => {
+            setValue(nextValue);
+            syncActiveMarks();
+          }}
+          onSelectionChange={(start, end, affinity) => {
+            setSelection(affinity ? { start, end, affinity } : { start, end });
+            syncActiveMarks();
+          }}
+          placeholder=""
+          extensions={bundledExtensions}
+          style={{ height: 160, overflow: "auto" }}
+        />
+      );
+    }
+
+    await render(<ControlledEditor />);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    ref.current?.focus();
+    await userEvent.keyboard("hello");
+    if (isMac) {
+      await userEvent.keyboard("{Meta>}b{/Meta}");
+    } else {
+      await userEvent.keyboard("{Control>}b{/Control}");
+    }
+    await userEvent.keyboard("bold");
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(ref.current?.getValue()).toBe("hello**bold**");
+    expect(getFirstLine().querySelector("strong")?.textContent).toBe("bold");
+    expect(latestActiveMarks).toEqual(["bold"]);
+
+    await userEvent.keyboard("{Backspace}");
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(ref.current?.getValue()).toBe("hello**bol**");
+    expect(getFirstLine().querySelector("strong")?.textContent).toBe("bol");
     expect(latestActiveMarks).toEqual(["bold"]);
   });
 

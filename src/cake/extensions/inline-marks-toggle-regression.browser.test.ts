@@ -8,6 +8,32 @@ const mod =
     ? { meta: true }
     : { ctrl: true };
 
+function assertNoVisibleFormattingMarkers(text: string): void {
+  expect(text).not.toContain("*");
+  expect(text).not.toContain("_");
+  expect(text).not.toContain("~~");
+}
+
+function createRandom(seed: number) {
+  let value = seed >>> 0;
+  return {
+    next() {
+      value = (value * 1664525 + 1013904223) >>> 0;
+      return value / 0xffffffff;
+    },
+    int(max: number) {
+      return Math.floor(this.next() * max);
+    },
+  };
+}
+
+async function pressFormattingKey(
+  h: TestHarness,
+  key: "b" | "i",
+): Promise<void> {
+  await h.pressKey(key, mod);
+}
+
 describe("Inline mark toggling regression - asterisks leak into visible text", () => {
   let h: TestHarness;
 
@@ -50,7 +76,7 @@ describe("Inline mark toggling regression - asterisks leak into visible text", (
     // The visible text should be "bold" possibly followed by a ZWS placeholder
     // (which is expected when a formatting state is pending), but NEVER asterisks
     expect(visibleText.replace(/\u200B/g, "")).toBe("bold");
-    expect(visibleText).not.toContain("*");
+    assertNoVisibleFormattingMarkers(visibleText);
 
     // Also verify the source doesn't have malformed markdown
     const value = h.engine.getValue();
@@ -82,7 +108,7 @@ describe("Inline mark toggling regression - asterisks leak into visible text", (
     const visibleText = h.getLine(0).textContent ?? "";
     // Visible text should be "italic" possibly followed by a ZWS placeholder
     expect(visibleText.replace(/\u200B/g, "")).toBe("italic");
-    expect(visibleText).not.toContain("*");
+    assertNoVisibleFormattingMarkers(visibleText);
   });
 
   it("toggling same mark multiple times after typing should not corrupt document", async () => {
@@ -101,8 +127,10 @@ describe("Inline mark toggling regression - asterisks leak into visible text", (
     await h.pressKey("b", mod);
     await h.pressKey("b", mod);
 
-    // Visible text should just be 'test'
-    expect(h.getLine(0).textContent).toBe("test");
+    // Visible text should just be 'test' with at most a pending ZWS placeholder.
+    expect((h.getLine(0).textContent ?? "").replace(/\u200B/g, "")).toBe(
+      "test",
+    );
   });
 
   it("mixed bold/italic toggles without typing should return to clean state", async () => {
@@ -123,7 +151,7 @@ describe("Inline mark toggling regression - asterisks leak into visible text", (
     expect(value.replace(/\u200B/g, "")).toBe("");
     const visibleText = h.getLine(0).textContent ?? "";
     expect(visibleText.replace(/\u200B/g, "")).toBe("");
-    expect(visibleText).not.toContain("*");
+    assertNoVisibleFormattingMarkers(visibleText);
   });
 
   it("toggling italic at end of bold text should not corrupt", async () => {
@@ -143,7 +171,7 @@ describe("Inline mark toggling regression - asterisks leak into visible text", (
     // Visible text should be 'bold' (possibly with ZWS placeholder)
     const visibleText = h.getLine(0).textContent ?? "";
     expect(visibleText.replace(/\u200B/g, "")).toBe("bold");
-    expect(visibleText).not.toContain("*");
+    assertNoVisibleFormattingMarkers(visibleText);
   });
 
   it("consecutive mark toggles at cursor boundary should be idempotent", async () => {
@@ -190,7 +218,7 @@ describe("Edge cases for mark toggling", () => {
     // Visible text should be 'bold text' (possibly with ZWS placeholder)
     const visibleText = h.getLine(0).textContent ?? "";
     expect(visibleText.replace(/\u200B/g, "")).toBe("bold text");
-    expect(visibleText).not.toContain("*");
+    assertNoVisibleFormattingMarkers(visibleText);
   });
 
   it("toggling at end of formatted region", async () => {
@@ -208,7 +236,7 @@ describe("Edge cases for mark toggling", () => {
     // Should not corrupt visible text
     const visibleText = h.getLine(0).textContent ?? "";
     // Should not contain raw asterisks
-    expect(visibleText).not.toContain("*");
+    assertNoVisibleFormattingMarkers(visibleText);
   });
 
   it("toggling with mixed marks (italic inside bold)", async () => {
@@ -224,7 +252,7 @@ describe("Edge cases for mark toggling", () => {
 
     // Visible text should not have raw asterisks (ZWS is OK for pending format)
     const visibleText = h.getLine(0).textContent ?? "";
-    expect(visibleText).not.toContain("*");
+    assertNoVisibleFormattingMarkers(visibleText);
   });
 
   it("cursor at boundary between formatted and unformatted text", async () => {
@@ -265,7 +293,7 @@ describe("Fuzz-like testing for mark toggling", () => {
     for (let i = 0; i < 10; i++) {
       await h.pressKey("b", mod);
       const visibleText = h.getLine(0).textContent ?? "";
-      expect(visibleText).not.toContain("*");
+      assertNoVisibleFormattingMarkers(visibleText);
     }
   });
 
@@ -280,7 +308,7 @@ describe("Fuzz-like testing for mark toggling", () => {
     for (let i = 0; i < 10; i++) {
       await h.pressKey("i", mod);
       const visibleText = h.getLine(0).textContent ?? "";
-      expect(visibleText).not.toContain("*");
+      assertNoVisibleFormattingMarkers(visibleText);
     }
   });
 
@@ -293,7 +321,7 @@ describe("Fuzz-like testing for mark toggling", () => {
       const key = i % 2 === 0 ? "i" : "b";
       await h.pressKey(key, mod);
       const visibleText = h.getLine(0).textContent ?? "";
-      expect(visibleText).not.toContain("*");
+      assertNoVisibleFormattingMarkers(visibleText);
     }
   });
 
@@ -306,7 +334,7 @@ describe("Fuzz-like testing for mark toggling", () => {
       const key = i % 2 === 0 ? "b" : "i";
       await h.pressKey(key, mod);
       const visibleText = h.getLine(0).textContent ?? "";
-      expect(visibleText).not.toContain("*");
+      assertNoVisibleFormattingMarkers(visibleText);
     }
   });
 
@@ -338,7 +366,7 @@ describe("Fuzz-like testing for mark toggling", () => {
       const textWithoutZWS = visibleText.replace(/\u200B/g, "");
 
       // Core invariant: visible text should never contain raw asterisks
-      expect(visibleText).not.toContain("*");
+      assertNoVisibleFormattingMarkers(visibleText);
 
       // Secondary check: text content should match expected
       expect(textWithoutZWS).toBe(expected);
@@ -393,6 +421,127 @@ describe("Fuzz-like testing for mark toggling", () => {
         "",
       );
       expect(afterItalicToggle).toBe(initialVisible);
+    }
+  });
+
+  it("toggling bold off then italic on then bold on at a word boundary should not surface raw markers", async () => {
+    h = createTestHarness("");
+    await h.focus();
+
+    await h.pressKey("b", mod);
+    await h.typeText("dafaf");
+    await h.pressKey("b", mod);
+    await h.pressKey("i", mod);
+    await h.pressKey("b", mod);
+
+    const visibleText = (h.getLine(0).textContent ?? "").replace(/\u200B/g, "");
+    assertNoVisibleFormattingMarkers(visibleText);
+    expect(visibleText).toBe("dafaf");
+  });
+
+  it("italic boundary toggle churn plus later bold toggle should not leak stars", async () => {
+    h = createTestHarness("");
+    await h.focus();
+
+    await h.pressKey("i", mod);
+    await h.typeText("sassaddad fss");
+    await h.pressKey("i", mod);
+    await h.pressKey("i", mod);
+    await h.pressKey("b", mod);
+    await h.pressKey("b", mod);
+    await h.pressKey("b", mod);
+    await h.pressKey("b", mod);
+    await h.pressKey("i", mod);
+
+    await h.typeText("dsdff fsfd");
+    await h.pressKey("b", mod);
+    await h.typeText(" fasfa");
+
+    const visibleText = (h.getLine(0).textContent ?? "").replace(/\u200B/g, "");
+    assertNoVisibleFormattingMarkers(visibleText);
+    expect(visibleText).toBe("sassaddad fssdsdff fsfd fasfa");
+  });
+
+  it("post-text bold italic toggle churn should keep placeholder state coherent", async () => {
+    h = createTestHarness("");
+    await h.focus();
+
+    await h.pressKey("i", mod);
+    await h.pressKey("i", mod);
+    await h.typeText("adfs");
+    await h.pressKey("b", mod);
+    await h.typeText("ds ff");
+    await h.pressKey("i", mod);
+    await h.typeText("aaa");
+    await h.pressKey("i", mod);
+    await h.pressKey("b", mod);
+    await h.typeText("ddf d sd sffadd");
+    await h.pressKey("b", mod);
+    await h.typeText("dafaf");
+    await h.pressKey("b", mod);
+    await h.pressKey("i", mod);
+    await h.pressKey("b", mod);
+    await h.pressKey("i", mod);
+    await h.pressKey("b", mod);
+    const visibleText = (h.getLine(0).textContent ?? "").replace(/\u200B/g, "");
+    assertNoVisibleFormattingMarkers(visibleText);
+  });
+
+  it("seeded stress sequences over bold italic and plain typing never surface raw markers", async () => {
+    const alphabet = ["a", "d", "s", "f"];
+    const seeds = Array.from({ length: 40 }, (_, index) => index + 1);
+
+    for (const seed of seeds) {
+      h?.destroy();
+      h = createTestHarness("");
+      await h.focus();
+
+      const random = createRandom(seed);
+      let expectedVisible = "";
+      const operations: string[] = [];
+
+      for (let step = 0; step < 30; step += 1) {
+        const op = random.int(5);
+        if (op === 0) {
+          await pressFormattingKey(h, "b");
+          operations.push("b");
+        } else if (op === 1) {
+          await pressFormattingKey(h, "i");
+          operations.push("i");
+        } else {
+          const chunkLength = 1 + random.int(5);
+          let chunk = "";
+          for (let i = 0; i < chunkLength; i += 1) {
+            chunk += alphabet[random.int(alphabet.length)] ?? "a";
+          }
+          if (op === 4 && expectedVisible.length > 0) {
+            chunk = ` ${chunk}`;
+          }
+          await h.typeText(chunk);
+          expectedVisible += chunk;
+          operations.push(`type:${chunk}`);
+        }
+
+        const visibleText = (h.getLine(0).textContent ?? "").replace(
+          /\u200B/g,
+          "",
+        );
+        const source = h.engine.getValue();
+        if (
+          visibleText.includes("*") ||
+          visibleText.includes("_") ||
+          visibleText.includes("~~")
+        ) {
+          throw new Error(
+            `seed=${seed} step=${step} ops=${operations.join(",")} source=${source} visible=${visibleText}`,
+          );
+        }
+        if (visibleText !== expectedVisible) {
+          throw new Error(
+            `seed=${seed} step=${step} ops=${operations.join(",")} source=${h.engine.getValue()} expected=${expectedVisible} visible=${visibleText}`,
+          );
+        }
+      }
     }
   });
 

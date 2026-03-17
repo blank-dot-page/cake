@@ -100,7 +100,9 @@ export interface CakeEditorRef {
   ) => boolean;
   applyUpdate: (update: CakeEditorUpdate) => void;
   getValue: () => string;
-  getSelection: () => { start: number; end: number } | null;
+  getSelection: () =>
+    | { start: number; end: number; affinity?: "backward" | "forward" }
+    | null;
   getCursorLength: () => number;
   insertText: (text: string) => void;
   replaceText: (oldText: string, newText: string) => void;
@@ -334,7 +336,11 @@ export const CakeEditor = forwardRef<CakeEditorRef | null, CakeEditorProps>(
           if (!selection) {
             return null;
           }
-          return { start: selection.start, end: selection.end };
+          return {
+            start: selection.start,
+            end: selection.end,
+            affinity: selection.affinity,
+          };
         },
         getText: () => engineRef.current?.getText() ?? "",
         getTextSelection: () =>
