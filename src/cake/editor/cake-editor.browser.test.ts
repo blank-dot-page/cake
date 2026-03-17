@@ -2099,6 +2099,50 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("hides the custom caret overlay during dead-key composition updates", async () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "",
+    });
+
+    container.focus();
+    dispatchSelectionChange();
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+    const caret = container.querySelector(".cake-caret") as HTMLElement | null;
+    expect(caret).not.toBeNull();
+
+    container.dispatchEvent(
+      new CompositionEvent("compositionstart", { bubbles: true }),
+    );
+
+    const textNode = getFirstTextNode(container);
+    textNode.data = "`";
+    setDomSelection(textNode, 1, 1);
+
+    container.dispatchEvent(
+      new InputEvent("beforeinput", {
+        bubbles: true,
+        inputType: "insertCompositionText",
+        data: "`",
+        isComposing: true,
+      }),
+    );
+    container.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertCompositionText",
+        data: "`",
+        isComposing: true,
+      }),
+    );
+
+    expect(caret?.style.display).toBe("none");
+
+    engine.destroy();
+  });
+
   it("keeps the logical caret at the end when a dead-key backtick commit re-arms composition on the left", () => {
     const container = createContainer();
     const engine = new CakeEditor({

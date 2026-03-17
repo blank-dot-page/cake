@@ -3090,6 +3090,8 @@ export class CakeEditor {
     }
     this.isComposing = true;
     this.clearCompositionCommit();
+    this.updateCaret(null);
+    this.syncSelectionRects([]);
   }
 
   private handleCompositionEnd(event: CompositionEvent) {
