@@ -2099,6 +2099,60 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("keeps the logical caret at the end when a dead-key backtick commit re-arms composition on the left", () => {
+    const container = createContainer();
+    const engine = new CakeEditor({
+      container,
+      value: "",
+    });
+
+    const applySpanishBacktickCommit = (text: string) => {
+      container.dispatchEvent(
+        new CompositionEvent("compositionstart", { bubbles: true }),
+      );
+
+      const textNode = getFirstTextNode(container);
+      textNode.data = text;
+      setDomSelection(textNode, text.length, text.length);
+
+      container.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true }),
+      );
+
+      // Model a dead-key layout that immediately arms the next accent
+      // composition on the left edge of the committed literal, then emits the
+      // trailing insertText/input bookkeeping event without changing text.
+      setDomSelection(textNode, 0, 0);
+      container.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          inputType: "insertText",
+          data: "`",
+        }),
+      );
+    };
+
+    applySpanishBacktickCommit("`");
+    expect(engine.getValue()).toBe("`");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 1, end: 1 }),
+    );
+
+    applySpanishBacktickCommit("``");
+    expect(engine.getValue()).toBe("``");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 2, end: 2 }),
+    );
+
+    applySpanishBacktickCommit("```");
+    expect(engine.getValue()).toBe("```");
+    expect(engine.getSelection()).toEqual(
+      expect.objectContaining({ start: 3, end: 3 }),
+    );
+
+    engine.destroy();
+  });
+
   it("handles consecutive insertText events correctly", () => {
     const container = createContainer();
     let lastValue = "";

@@ -3034,6 +3034,10 @@ export class CakeEditor {
           const domSelection = readDomSelection(this.domMap);
           if (
             domSelection &&
+            shouldAdoptPostCompositionSelection({
+              domSelection,
+              modelSelection: this.state.selection,
+            }) &&
             !selectionsEqual(domSelection, this.state.selection)
           ) {
             this.setSelection(domSelection);
@@ -3102,6 +3106,7 @@ export class CakeEditor {
     if (!changed) {
       this.setSelection(selection);
     }
+    this.suppressSelectionChangeForTick();
     this.markCompositionCommit();
     this.scheduleOverlayUpdate();
   }
@@ -5809,6 +5814,22 @@ export class CakeEditor {
 
 function selectionsEqual(a: Selection, b: Selection): boolean {
   return a.start === b.start && a.end === b.end && a.affinity === b.affinity;
+}
+
+function shouldAdoptPostCompositionSelection({
+  domSelection,
+  modelSelection,
+}: {
+  domSelection: Selection;
+  modelSelection: Selection;
+}): boolean {
+  if (domSelection.start !== domSelection.end) {
+    return true;
+  }
+  if (modelSelection.start !== modelSelection.end) {
+    return true;
+  }
+  return domSelection.start >= modelSelection.start;
 }
 
 function isCompositionInputType(inputType: string): boolean {
