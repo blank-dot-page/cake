@@ -197,6 +197,11 @@ export default function App() {
     end: number;
     affinity: "forward" | "backward";
   } | null>(null);
+  const [activeMarks, setActiveMarks] = useState<string[]>([]);
+
+  const syncActiveMarks = () => {
+    setActiveMarks(editorRef.current?.getActiveMarks() ?? []);
+  };
 
   const extensions = useMemo(() => {
     const extensionsWithoutLink = bundledExtensionsWithoutImage.filter(
@@ -269,6 +274,7 @@ export default function App() {
   }, []);
 
   const hasSelection = selection && selection.start !== selection.end;
+  const isMarkActive = (mark: string) => activeMarks.includes(mark);
 
   return (
     <div className="app">
@@ -291,7 +297,7 @@ export default function App() {
           <div className="toolbar">
             <div className="toolbarGroup">
               <button
-                className="toolbarButton"
+                className={`toolbarButton ${isMarkActive("bold") ? "active" : ""}`}
                 onClick={() =>
                   editorRef.current?.executeCommand(
                     { type: "toggle-bold" },
@@ -299,12 +305,11 @@ export default function App() {
                   )
                 }
                 title="Bold (Cmd+B)"
-                disabled={!hasSelection}
               >
                 <strong>B</strong>
               </button>
               <button
-                className="toolbarButton"
+                className={`toolbarButton ${isMarkActive("italic") ? "active" : ""}`}
                 onClick={() =>
                   editorRef.current?.executeCommand(
                     { type: "toggle-italic" },
@@ -312,12 +317,11 @@ export default function App() {
                   )
                 }
                 title="Italic (Cmd+I)"
-                disabled={!hasSelection}
               >
                 <em>I</em>
               </button>
               <button
-                className="toolbarButton"
+                className={`toolbarButton ${isMarkActive("strikethrough") ? "active" : ""}`}
                 onClick={() =>
                   editorRef.current?.executeCommand(
                     { type: "toggle-strikethrough" },
@@ -325,12 +329,11 @@ export default function App() {
                   )
                 }
                 title="Strikethrough (Cmd+Shift+X)"
-                disabled={!hasSelection}
               >
                 <s>S</s>
               </button>
               <button
-                className="toolbarButton"
+                className={`toolbarButton ${isMarkActive("underline") ? "active" : ""}`}
                 onClick={() =>
                   editorRef.current?.executeCommand(
                     { type: "toggle-underline" },
@@ -338,7 +341,6 @@ export default function App() {
                   )
                 }
                 title="Underline (Cmd+U)"
-                disabled={!hasSelection}
               >
                 <u>U</u>
               </button>
@@ -459,13 +461,17 @@ export default function App() {
             ref={editorRef}
             className={`font-${fontStyle}`}
             value={value}
-            onChange={setValue}
+            onChange={(nextValue) => {
+              setValue(nextValue);
+              syncActiveMarks();
+            }}
             onSelectionChange={(start, end, affinity) => {
               setSelection({
                 start,
                 end,
                 affinity: affinity ?? "forward",
               });
+              syncActiveMarks();
             }}
             placeholder="Start typing..."
             spellCheck={spellCheck}

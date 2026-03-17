@@ -229,6 +229,115 @@ describe("CakeEditor (browser)", () => {
     h.destroy();
   });
 
+  it("Cmd+B then Backspace deletes through the bold run and leaves bold armed after the last character", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+
+    const visibleText = () =>
+      (h.container.textContent ?? "").replace(/\u200B/g, "");
+
+    await h.typeText("hello");
+    await h.pressKey("b", cmdModifier);
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("bold");
+    expect(h.engine.getValue()).toBe("hello**bold**");
+    expect(visibleText()).toBe("hellobold");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hello**bol**");
+    expect(visibleText()).toBe("hellobol");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hello**bo**");
+    expect(visibleText()).toBe("hellobo");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hello**b**");
+    expect(visibleText()).toBe("hellob");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hello**\u200B**");
+    expect(visibleText()).toBe("hello");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("x");
+    expect(h.engine.getValue()).toBe("hello**x**");
+    expect(visibleText()).toBe("hellox");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    h.destroy();
+  });
+
+  it("backspacing across a placeholder-backed bold boundary clears the armed mark", async () => {
+    const h = createTestHarness("");
+    await h.focus();
+
+    const visibleText = () =>
+      (h.container.textContent ?? "").replace(/\u200B/g, "");
+
+    await h.typeText("hello");
+    await h.pressKey("b", cmdModifier);
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("bold");
+    expect(h.engine.getValue()).toBe("hello**bold**");
+    expect(visibleText()).toBe("hellobold");
+
+    await h.pressBackspace();
+    await h.pressBackspace();
+    await h.pressBackspace();
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hello**\u200B**");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.typeText("something");
+    expect(h.engine.getValue()).toBe("hello**something**");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    for (let i = 0; i < "something".length; i += 1) {
+      await h.pressBackspace();
+    }
+    expect(h.engine.getValue()).toBe("hello**\u200B**");
+    expect(visibleText()).toBe("hello");
+    expect(h.engine.getActiveMarks()).toEqual(["bold"]);
+
+    await h.pressBackspace();
+    expect(h.engine.getValue()).toBe("hell");
+    expect(visibleText()).toBe("hell");
+    expect(h.engine.getActiveMarks()).toEqual([]);
+
+    await h.typeText("bold");
+    expect(h.engine.getValue()).toBe("hellbold");
+    expect(visibleText()).toBe("hellbold");
+    expect(h.engine.getActiveMarks()).toEqual([]);
+
+    for (let i = 0; i < "bold".length; i += 1) {
+      await h.pressBackspace();
+    }
+    expect(h.engine.getValue()).toBe("hell");
+    expect(visibleText()).toBe("hell");
+    expect(h.engine.getActiveMarks()).toEqual([]);
+
+    for (let i = 0; i < "hell".length; i += 1) {
+      await h.pressBackspace();
+    }
+    expect(h.engine.getValue()).toBe("");
+    expect(visibleText()).toBe("");
+    expect(h.engine.getActiveMarks()).toEqual([]);
+
+    await h.typeText("something");
+    expect(h.engine.getValue()).toBe("something");
+    expect(visibleText()).toBe("something");
+    expect(h.engine.getActiveMarks()).toEqual([]);
+
+    h.destroy();
+  });
+
   it("Cmd+B on a new line enables bold mode and new input is bold", async () => {
     const h = createTestHarness("");
     await h.focus();

@@ -279,6 +279,11 @@ describe("createRuntimeForTests([])", () => {
     expect(state.selection.start).toBe(1);
 
     state = runtime.applyEdit({ type: "delete-backward" }, state);
+    expect(state.source).toBe("*\u200B*");
+    expect(state.selection.start).toBe(0);
+    expect(state.selection.end).toBe(0);
+
+    state = runtime.applyEdit({ type: "delete-backward" }, state);
     expect(state.source).toBe("");
     expect(state.selection.start).toBe(0);
     expect(state.selection.end).toBe(0);

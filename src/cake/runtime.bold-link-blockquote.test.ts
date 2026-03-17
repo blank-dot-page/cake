@@ -194,7 +194,7 @@ describe("runtime with bold/link/blockquote", () => {
     expect(sourceWithSelection(state)).toBe("**bold**|");
   });
 
-  it("collapses bold when empty", () => {
+  it("keeps bold armed when the last bold character is deleted", () => {
     const source = "**a**";
     const base = runtime.createState(source);
     const selection = selectionFromSource(
@@ -204,7 +204,35 @@ describe("runtime with bold/link/blockquote", () => {
     );
     const state = setSelection(base, selection);
     const next = runtime.applyEdit({ type: "delete-backward" }, state);
+    expect(sourceWithSelection(next)).toBe("**|​**");
+  });
+
+  it("clears a pending bold placeholder when backspace deletes the plain text before it", () => {
+    const source = "a**\u200B**";
+    const base = runtime.createState(source);
+    const selection = selectionFromSource(base.map, 1, "forward");
+    const state = setSelection(base, selection);
+    const next = runtime.applyEdit({ type: "delete-backward" }, state);
     expect(sourceWithSelection(next)).toBe("|");
+  });
+
+  it("keeps bold armed at hello placeholder but clears it after crossing the boundary", () => {
+    const source = "hello**\u200B**";
+    const base = runtime.createState(source);
+
+    const typeBoundarySelection = selectionFromSource(base.map, 5, "forward");
+    const afterTypeBoundaryDelete = runtime.applyEdit(
+      { type: "insert", text: "bold" },
+      setSelection(base, typeBoundarySelection),
+    );
+    expect(sourceWithSelection(afterTypeBoundaryDelete)).toBe("hello**bold|**");
+
+    const deleteBoundarySelection = selectionFromSource(base.map, 5, "forward");
+    const afterDeleteBoundary = runtime.applyEdit(
+      { type: "delete-backward" },
+      setSelection(base, deleteBoundarySelection),
+    );
+    expect(sourceWithSelection(afterDeleteBoundary)).toBe("hell|");
   });
 
   it("selects last bold character", () => {

@@ -1300,6 +1300,13 @@ export function createRuntimeFromRegistry(registry: {
       const shouldReparse = shouldReparseAfterStructuralEdit(command);
       const useIncrementalSegmentedDerivation =
         !shouldReparse && isIncrementalDerivationCandidate(command, selection);
+      const pendingMarksAfterCollapsedDelete =
+        (command.type === "delete-backward" ||
+          command.type === "delete-forward") &&
+        selection.start === selection.end
+          ? marksDeletedByCollapsedSelection(state.doc, selection, command.type)
+              .filter((mark) => isInclusiveAtEnd(mark.kind))
+          : [];
       const interim = createStateFromDoc(structural.doc, defaultSelection, {
         mode: useIncrementalSegmentedDerivation ? "incremental" : "full",
         previousState: useIncrementalSegmentedDerivation ? state : undefined,
@@ -1319,7 +1326,7 @@ export function createRuntimeFromRegistry(registry: {
           caretSource,
           interimAffinity,
         );
-        return {
+        const nextState = {
           ...interim,
           selection: {
             start: caretCursor.cursorOffset,
@@ -1327,12 +1334,56 @@ export function createRuntimeFromRegistry(registry: {
             affinity: caretCursor.affinity,
           },
         };
+        if (pendingMarksAfterCollapsedDelete.length === 0) {
+          const pendingPlaceholderMarks = getPendingPlaceholderMarksAtCursor(
+            nextState,
+            nextState.selection.start,
+          );
+          if (pendingPlaceholderMarks) {
+            const withoutPending = removePendingPlaceholderAtCursor(
+              nextState,
+              nextState.selection.start,
+            );
+            if (withoutPending) {
+              return withoutPending;
+            }
+          }
+        }
+        if (pendingMarksAfterCollapsedDelete.length > 0) {
+          const around = marksAroundCursor(
+            nextState.doc,
+            nextState.selection.start,
+          );
+          const inclusiveAround = {
+            left: around.left.filter((mark) => isInclusiveAtEnd(mark.kind)),
+            right: around.right.filter((mark) => isInclusiveAtEnd(mark.kind)),
+          };
+          const preservesActiveMarks =
+            isMarksPrefix(
+              pendingMarksAfterCollapsedDelete,
+              inclusiveAround.left,
+            ) ||
+            isMarksPrefix(
+              pendingMarksAfterCollapsedDelete,
+              inclusiveAround.right,
+            );
+          if (!preservesActiveMarks) {
+            const pending = createPendingPlaceholderStateAtCursor(
+              nextState,
+              nextState.selection.start,
+              pendingMarksAfterCollapsedDelete,
+            );
+            if (pending) {
+              return pending;
+            }
+          }
+        }
+        return nextState;
       }
 
       const next = createState(interim.source);
       const caretCursor = next.map.sourceToCursor(caretSource, interimAffinity);
-
-      return {
+      const nextState = {
         ...next,
         selection: {
           start: caretCursor.cursorOffset,
@@ -1340,6 +1391,45 @@ export function createRuntimeFromRegistry(registry: {
           affinity: caretCursor.affinity,
         },
       };
+      if (pendingMarksAfterCollapsedDelete.length === 0) {
+        const pendingPlaceholderMarks = getPendingPlaceholderMarksAtCursor(
+          nextState,
+          nextState.selection.start,
+        );
+        if (pendingPlaceholderMarks) {
+          const withoutPending = removePendingPlaceholderAtCursor(
+            nextState,
+            nextState.selection.start,
+          );
+          if (withoutPending) {
+            return withoutPending;
+          }
+        }
+      }
+      if (pendingMarksAfterCollapsedDelete.length > 0) {
+        const around = marksAroundCursor(nextState.doc, nextState.selection.start);
+        const inclusiveAround = {
+          left: around.left.filter((mark) => isInclusiveAtEnd(mark.kind)),
+          right: around.right.filter((mark) => isInclusiveAtEnd(mark.kind)),
+        };
+        const preservesActiveMarks =
+          isMarksPrefix(pendingMarksAfterCollapsedDelete, inclusiveAround.left) ||
+          isMarksPrefix(
+            pendingMarksAfterCollapsedDelete,
+            inclusiveAround.right,
+          );
+        if (!preservesActiveMarks) {
+          const pending = createPendingPlaceholderStateAtCursor(
+            nextState,
+            nextState.selection.start,
+            pendingMarksAfterCollapsedDelete,
+          );
+          if (pending) {
+            return pending;
+          }
+        }
+      }
+      return nextState;
     }
 
     // Indent and outdent are handled by extensions
@@ -2143,6 +2233,16 @@ export function createRuntimeFromRegistry(registry: {
         : null;
     const right = marksAtGraphemeIndex(runs, loc.offsetInLine);
     return { left: left ?? [], right: right ?? [] };
+  }
+
+  function marksDeletedByCollapsedSelection(
+    doc: Doc,
+    selection: Selection,
+    command: "delete-backward" | "delete-forward",
+  ): Mark[] {
+    const cursorOffset = Math.max(0, Math.min(selection.start, selection.end));
+    const around = marksAroundCursor(doc, cursorOffset);
+    return command === "delete-backward" ? around.left : around.right;
   }
 
   function createPendingPlaceholderStateAtCursor(
