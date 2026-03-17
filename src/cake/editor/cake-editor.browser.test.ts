@@ -51,6 +51,14 @@ function setDomSelection(node: Node, start: number, end: number) {
   dispatchSelectionChange();
 }
 
+function getCollapsedRangeRect(node: Node, offset: number): DOMRect {
+  const range = document.createRange();
+  range.setStart(node, offset);
+  range.setEnd(node, offset);
+  const rects = range.getClientRects();
+  return rects.length > 0 ? rects[rects.length - 1]! : range.getBoundingClientRect();
+}
+
 function createSelection(start: number, end: number): EngineSelection {
   return { start, end, affinity: "forward" };
 }
@@ -2099,48 +2107,64 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
-  it("hides the custom caret overlay during dead-key composition updates", async () => {
-    const container = createContainer();
-    const engine = new CakeEditor({
-      container,
-      value: "",
-    });
+  it("keeps the custom caret overlay aligned with the live DOM caret during dead-key composition", async () => {
+    const harness = createTestHarness("");
+    const { container, engine, contentRoot } = harness;
 
-    container.focus();
+    contentRoot.focus();
     dispatchSelectionChange();
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
 
     const caret = container.querySelector(".cake-caret") as HTMLElement | null;
     expect(caret).not.toBeNull();
 
-    container.dispatchEvent(
+    contentRoot.dispatchEvent(
       new CompositionEvent("compositionstart", { bubbles: true }),
     );
 
     const textNode = getFirstTextNode(container);
-    textNode.data = "`";
-    setDomSelection(textNode, 1, 1);
+    const assertCaretTracksDom = async (text: string) => {
+      textNode.data = text;
+      setDomSelection(textNode, text.length, text.length);
 
-    container.dispatchEvent(
-      new InputEvent("beforeinput", {
-        bubbles: true,
-        inputType: "insertCompositionText",
-        data: "`",
-        isComposing: true,
-      }),
-    );
-    container.dispatchEvent(
-      new InputEvent("input", {
-        bubbles: true,
-        inputType: "insertCompositionText",
-        data: "`",
-        isComposing: true,
-      }),
-    );
+      contentRoot.dispatchEvent(
+        new CompositionEvent("compositionupdate", {
+          bubbles: true,
+          data: text,
+        }),
+      );
+      contentRoot.dispatchEvent(
+        new InputEvent("beforeinput", {
+          bubbles: true,
+          inputType: "insertCompositionText",
+          data: text,
+          isComposing: true,
+        }),
+      );
+      contentRoot.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          inputType: "insertCompositionText",
+          data: text,
+          isComposing: true,
+        }),
+      );
 
-    expect(caret?.style.display).toBe("none");
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
 
-    engine.destroy();
+      const expectedRect = getCollapsedRangeRect(textNode, text.length);
+      const actualRect = caret?.getBoundingClientRect();
+      expect(actualRect).not.toBeUndefined();
+      expect(actualRect?.left ?? 0).toBeCloseTo(expectedRect.left, 1);
+      expect(actualRect?.top ?? 0).toBeCloseTo(expectedRect.top, 1);
+      expect(caret?.style.display).not.toBe("none");
+    };
+
+    await assertCaretTracksDom("`");
+    await assertCaretTracksDom("``");
+    await assertCaretTracksDom("```");
+
+    harness.destroy();
   });
 
   it("keeps the logical caret at the end when a dead-key backtick commit re-arms composition on the left", () => {

@@ -346,6 +346,7 @@ export class CakeEditor {
   private handleBeforeInputBound = this.handleBeforeInput.bind(this);
   private handleInputBound = this.handleInput.bind(this);
   private handleCompositionStartBound = this.handleCompositionStart.bind(this);
+  private handleCompositionUpdateBound = this.handleCompositionUpdate.bind(this);
   private handleCompositionEndBound = this.handleCompositionEnd.bind(this);
   private handleSelectionChangeBound = this.handleSelectionChange.bind(this);
   private handleFocusInBound = this.handleFocusIn.bind(this);
@@ -1578,6 +1579,10 @@ export class CakeEditor {
       this.handleCompositionStartBound,
     );
     this.container.addEventListener(
+      "compositionupdate",
+      this.handleCompositionUpdateBound,
+    );
+    this.container.addEventListener(
       "compositionend",
       this.handleCompositionEndBound,
     );
@@ -1642,6 +1647,10 @@ export class CakeEditor {
     this.container.removeEventListener(
       "compositionstart",
       this.handleCompositionStartBound,
+    );
+    this.container.removeEventListener(
+      "compositionupdate",
+      this.handleCompositionUpdateBound,
     );
     this.container.removeEventListener(
       "compositionend",
@@ -2066,7 +2075,8 @@ export class CakeEditor {
     });
 
     if (this.isComposing) {
-      this.debugLog("selectionchange", "skip: isComposing");
+      this.debugLog("selectionchange", "skip model sync: isComposing");
+      this.scheduleOverlayUpdate();
       return;
     }
     if (
@@ -3090,8 +3100,15 @@ export class CakeEditor {
     }
     this.isComposing = true;
     this.clearCompositionCommit();
-    this.updateCaret(null);
-    this.syncSelectionRects([]);
+    this.scheduleOverlayUpdate();
+  }
+
+  private handleCompositionUpdate(event: CompositionEvent) {
+    if (!this.isEventTargetInContentRoot(event.target)) {
+      return;
+    }
+    this.isComposing = true;
+    this.scheduleOverlayUpdate();
   }
 
   private handleCompositionEnd(event: CompositionEvent) {
@@ -4540,9 +4557,6 @@ export class CakeEditor {
   }
 
   private scheduleOverlayUpdate() {
-    if (this.isComposing) {
-      return;
-    }
     if (this.overlayUpdateId !== null) {
       return;
     }
@@ -4553,9 +4567,6 @@ export class CakeEditor {
   }
 
   private flushOverlayUpdate() {
-    if (this.isComposing) {
-      return;
-    }
     if (this.overlayUpdateId !== null) {
       window.cancelAnimationFrame(this.overlayUpdateId);
       this.overlayUpdateId = null;
@@ -4641,9 +4652,6 @@ export class CakeEditor {
   }
 
   private updateSelectionOverlay() {
-    if (this.isComposing) {
-      return;
-    }
     if (!this.overlayRoot || !this.contentRoot) {
       return;
     }
@@ -4688,6 +4696,24 @@ export class CakeEditor {
       return;
     }
     this.contentRoot.classList.remove("cake-touch-mode");
+
+    if (this.isComposing) {
+      const domCaret = this.readLiveDomCaretOverlayPosition();
+      this.syncSelectionRects([]);
+      if (domCaret) {
+        this.lastFocusRect = {
+          top: domCaret.top,
+          left: domCaret.left,
+          height: domCaret.height,
+          width: 0,
+        };
+        this.updateCaret(domCaret);
+        this.markCaretActive();
+      } else {
+        this.updateCaret(null);
+      }
+      return;
+    }
 
     const lines = this.textModel.getLines();
     const geometry = getSelectionGeometry({
@@ -4763,6 +4789,65 @@ export class CakeEditor {
     this.caretElement.style.top = `${position.top}px`;
     this.caretElement.style.left = `${position.left}px`;
     this.caretElement.style.height = `${position.height}px`;
+  }
+
+  private readLiveDomCaretOverlayPosition(): {
+    top: number;
+    left: number;
+    height: number;
+  } | null {
+    if (!this.contentRoot) {
+      return null;
+    }
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) {
+      return null;
+    }
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    if (
+      !anchorNode ||
+      !focusNode ||
+      (!this.contentRoot.contains(anchorNode) &&
+        !this.contentRoot.contains(focusNode))
+    ) {
+      return null;
+    }
+
+    const range = selection.getRangeAt(0).cloneRange();
+    const rects = range.getClientRects();
+    const rect =
+      rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
+
+    let height = rect.height;
+    if (height === 0) {
+      const lineElement = this.getLineElementForDomNode(focusNode);
+      height = lineElement?.getBoundingClientRect().height ?? 0;
+    }
+    if (height === 0) {
+      return null;
+    }
+
+    const containerRect = this.container.getBoundingClientRect();
+    return {
+      top: rect.top - containerRect.top + this.container.scrollTop,
+      left: rect.left - containerRect.left + this.container.scrollLeft,
+      height,
+    };
+  }
+
+  private getLineElementForDomNode(node: Node): HTMLElement | null {
+    let current: Node | null = node;
+    while (current && current !== this.contentRoot) {
+      if (
+        current instanceof HTMLElement &&
+        current.hasAttribute("data-line-index")
+      ) {
+        return current;
+      }
+      current = current.parentNode;
+    }
+    return null;
   }
 
   private markCaretActive() {
