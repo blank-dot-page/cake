@@ -1752,6 +1752,82 @@ describe("CakeEditor (browser)", () => {
     h.destroy();
   });
 
+  it("pasting a heading clipboard payload after non-empty heading content strips the heading marker and appends the heading text", async () => {
+    const h = createTestHarness("# world");
+    h.engine.setSelection({
+      start: 5,
+      end: 5,
+      affinity: "forward",
+    });
+    await h.focus();
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# hello");
+    dataTransfer.setData(
+      "text/html",
+      '<div><h1 style="margin:0">hello</h1></div>',
+    );
+    dataTransfer.setData("text/plain", "# hello");
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(h.engine.getValue()).toBe("# worldhello");
+    expect(h.engine.getSelection()).toEqual({
+      start: 10,
+      end: 10,
+      affinity: "forward",
+    });
+    expect(h.engine.getTextSelection()).toEqual({
+      start: 10,
+      end: 10,
+    });
+    h.destroy();
+  });
+
+  it("pasting a newline-terminated heading clipboard payload after non-empty heading content still appends only the heading text", async () => {
+    const h = createTestHarness("# world");
+    h.engine.setSelection({
+      start: 5,
+      end: 5,
+      affinity: "forward",
+    });
+    await h.focus();
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# hello\n");
+    dataTransfer.setData(
+      "text/html",
+      '<div><h1 style="margin:0">hello</h1><div></div></div>',
+    );
+    dataTransfer.setData("text/plain", "# hello\n");
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(h.engine.getValue()).toBe("# worldhello");
+    expect(h.engine.getSelection()).toEqual({
+      start: 10,
+      end: 10,
+      affinity: "forward",
+    });
+    expect(h.engine.getTextSelection()).toEqual({
+      start: 10,
+      end: 10,
+    });
+    h.destroy();
+  });
+
   it("pasting a heading clipboard payload after literal heading content inside a heading does not jump the caret into later paragraphs", async () => {
     const h = createTestHarness("# # \n\nsome text here");
     h.engine.setSelection({
