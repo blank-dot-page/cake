@@ -1373,6 +1373,104 @@ describe("CakeEditor (browser)", () => {
     engine.destroy();
   });
 
+  it("copying a partial heading selection pastes into another heading and leaves the caret after the inserted text", async () => {
+    const container = createContainer();
+    let lastValue = "# hello world\n\n# hello";
+    const engine = new CakeEditor({
+      container,
+      value: lastValue,
+      onChange: (value) => {
+        lastValue = value;
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const contentRoot = container.querySelector(".cake-content");
+    const sourceLine = container.querySelector('[data-line-index="0"]');
+    const targetLine = container.querySelector('[data-line-index="2"]');
+    if (!contentRoot || !sourceLine || !targetLine) {
+      throw new Error("Missing rendered heading lines");
+    }
+
+    const findTextNodeContaining = (
+      root: ParentNode,
+      text: string,
+    ): Text | null => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node) {
+        if (node instanceof Text && node.data.includes(text)) {
+          return node;
+        }
+        node = walker.nextNode();
+      }
+      return null;
+    };
+
+    const sourceTextNode = findTextNodeContaining(sourceLine, "hello world");
+    if (!sourceTextNode) {
+      throw new Error("Missing source heading text node");
+    }
+
+    const selectedText = "world";
+    const selectionStart = sourceTextNode.data.indexOf(selectedText);
+    if (selectionStart === -1) {
+      throw new Error("Missing selected text in source heading");
+    }
+    setDomSelection(
+      sourceTextNode,
+      selectionStart,
+      selectionStart + selectedText.length,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const dataTransfer = new DataTransfer();
+    const copyEvent = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(copyEvent);
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(dataTransfer.getData("text/plain")).toBe("world");
+    expect(dataTransfer.getData(INTERNAL_MARKDOWN_CLIPBOARD_MIME)).toBe(
+      "world",
+    );
+
+    const targetTextNode = findTextNodeContaining(targetLine, "hello");
+    if (!targetTextNode) {
+      throw new Error("Missing target heading text node");
+    }
+    setDomSelection(
+      targetTextNode,
+      targetTextNode.data.length,
+      targetTextNode.data.length,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    contentRoot.dispatchEvent(pasteEvent);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(lastValue).toBe("# hello world\n\n# helloworld");
+    expect(engine.getSelection().start).toBe(engine.getSelection().end);
+    expect(engine.getTextSelection()).toEqual({ start: 23, end: 23 });
+
+    const selection = window.getSelection();
+    const updatedTargetTextNode = findTextNodeContaining(targetLine, "helloworld");
+    expect(updatedTargetTextNode).not.toBeNull();
+    expect(selection?.isCollapsed).toBe(true);
+
+    engine.destroy();
+  });
+
   it("pasting a copied bullet list item into a new bullet list item does not duplicate the marker", () => {
     const container = createContainer();
     let lastValue = "- item\n- ";
@@ -1650,6 +1748,82 @@ describe("CakeEditor (browser)", () => {
       start: 7,
       end: 7,
       affinity: "forward",
+    });
+    h.destroy();
+  });
+
+  it("pasting a heading clipboard payload after non-empty heading content strips the heading marker and appends the heading text", async () => {
+    const h = createTestHarness("# world");
+    h.engine.setSelection({
+      start: 5,
+      end: 5,
+      affinity: "forward",
+    });
+    await h.focus();
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# hello");
+    dataTransfer.setData(
+      "text/html",
+      '<div><h1 style="margin:0">hello</h1></div>',
+    );
+    dataTransfer.setData("text/plain", "# hello");
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(h.engine.getValue()).toBe("# worldhello");
+    expect(h.engine.getSelection()).toEqual({
+      start: 10,
+      end: 10,
+      affinity: "forward",
+    });
+    expect(h.engine.getTextSelection()).toEqual({
+      start: 10,
+      end: 10,
+    });
+    h.destroy();
+  });
+
+  it("pasting a newline-terminated heading clipboard payload after non-empty heading content still appends only the heading text", async () => {
+    const h = createTestHarness("# world");
+    h.engine.setSelection({
+      start: 5,
+      end: 5,
+      affinity: "forward",
+    });
+    await h.focus();
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData(INTERNAL_MARKDOWN_CLIPBOARD_MIME, "# hello\n");
+    dataTransfer.setData(
+      "text/html",
+      '<div><h1 style="margin:0">hello</h1><div></div></div>',
+    );
+    dataTransfer.setData("text/plain", "# hello\n");
+
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    h.contentRoot.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(h.engine.getValue()).toBe("# worldhello");
+    expect(h.engine.getSelection()).toEqual({
+      start: 10,
+      end: 10,
+      affinity: "forward",
+    });
+    expect(h.engine.getTextSelection()).toEqual({
+      start: 10,
+      end: 10,
     });
     h.destroy();
   });

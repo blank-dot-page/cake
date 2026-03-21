@@ -247,19 +247,6 @@ function getNormalizedHeadingPasteText(
     return null;
   }
 
-  const contentStart = lineStart + currentHeading[0].length;
-  const contentBeforeCursor = source.slice(contentStart, sourcePos);
-  const contentAfterCursor = source.slice(sourcePos, lineEnd);
-  const isEmptyHeadingPlaceholder =
-    contentBeforeCursor.trim() === "" && contentAfterCursor.trim() === "";
-  const isMarkerLikeHeadingPrefix =
-    /^(?:#{1,6}\s*)+$/.test(contentBeforeCursor) &&
-    contentAfterCursor.trim() === "";
-
-  if (!isEmptyHeadingPlaceholder && !isMarkerLikeHeadingPrefix) {
-    return null;
-  }
-
   return headingMatch[2];
 }
 

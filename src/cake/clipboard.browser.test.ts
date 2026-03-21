@@ -18,7 +18,9 @@ function selectionForText(params: {
   if (start === -1) {
     throw new Error(`Missing text in visible output: ${text}`);
   }
-  return { start, end: start + text.length };
+  const startCursor = state.map.sourceToCursor(start, "forward");
+  const endCursor = state.map.sourceToCursor(start + text.length, "backward");
+  return { start: startCursor.cursorOffset, end: endCursor.cursorOffset };
 }
 
 describe("clipboard selection serialization", () => {
@@ -70,6 +72,16 @@ describe("clipboard selection serialization", () => {
     expect(markdown).toBe("## Title");
   });
 
+  it("does not include heading markers for partial heading selections", () => {
+    const runtime = createTestRuntime();
+    const state = runtime.createState("# hello world");
+    const selection = selectionForText({ runtime, state, text: "world" });
+
+    const markdown = runtime.serializeSelection(state, selection);
+
+    expect(markdown).toBe("world");
+  });
+
   it("returns empty output for empty selections", () => {
     const runtime = createTestRuntime();
     const state = runtime.createState("Hello");
@@ -98,6 +110,16 @@ describe("clipboard selection serialization", () => {
 
     expect(html).toContain('<h1 style="margin:0">Heading 1</h1>');
     expect(html).toContain('<h2 style="margin:0">Heading 2</h2>');
+  });
+
+  it("serializes partial heading selections to plain html blocks", () => {
+    const runtime = createTestRuntime();
+    const state = runtime.createState("# hello world");
+    const selection = selectionForText({ runtime, state, text: "world" });
+
+    const html = runtime.serializeSelectionToHtml(state, selection);
+
+    expect(html).toBe("<div><div>world</div></div>");
   });
 
   it("serializes numbered lists to html", () => {

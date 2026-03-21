@@ -3443,6 +3443,23 @@ export function createRuntimeFromRegistry(registry: {
     const startLoc = textModel.resolveOffsetToLine(cursorStart);
     const endLoc = textModel.resolveOffsetToLine(cursorEnd);
 
+    function getSelectedWrapperBlock(params: {
+      line: (typeof lines)[number];
+      startInLine: number;
+      endInLine: number;
+    }): (Block & { type: "block-wrapper" }) | null {
+      const { line, startInLine, endInLine } = params;
+      if (!line || startInLine !== 0 || endInLine !== line.cursorLength) {
+        return null;
+      }
+      if (line.path.length <= 1) {
+        return null;
+      }
+      const wrapperPath = line.path.slice(0, -1);
+      const wrapper = getBlockAtPath(state.doc.blocks, wrapperPath);
+      return wrapper?.type === "block-wrapper" ? wrapper : null;
+    }
+
     const blocks: Block[] = [];
     for (
       let lineIndex = startLoc.lineIndex;
@@ -3470,19 +3487,19 @@ export function createRuntimeFromRegistry(registry: {
       const content = runsToInlines(normalizeRuns(selectedRuns));
       const paragraph: ParagraphBlock = { type: "paragraph", content };
 
-      // Check if this line is inside a block-wrapper (e.g., heading)
-      if (line.path.length > 1) {
-        const wrapperPath = line.path.slice(0, -1);
-        const wrapper = getBlockAtPath(state.doc.blocks, wrapperPath);
-        if (wrapper && wrapper.type === "block-wrapper") {
-          blocks.push({
-            type: "block-wrapper",
-            kind: wrapper.kind,
-            data: wrapper.data,
-            blocks: [paragraph],
-          });
-          continue;
-        }
+      const wrapper = getSelectedWrapperBlock({
+        line,
+        startInLine,
+        endInLine,
+      });
+      if (wrapper) {
+        blocks.push({
+          type: "block-wrapper",
+          kind: wrapper.kind,
+          data: wrapper.data,
+          blocks: [paragraph],
+        });
+        continue;
       }
 
       blocks.push(paragraph);
@@ -3555,6 +3572,23 @@ export function createRuntimeFromRegistry(registry: {
     const startLoc = textModel.resolveOffsetToLine(cursorStart);
     const endLoc = textModel.resolveOffsetToLine(cursorEnd);
 
+    function getSelectedWrapperBlock(params: {
+      line: (typeof lines)[number];
+      startInLine: number;
+      endInLine: number;
+    }): (Block & { type: "block-wrapper" }) | null {
+      const { line, startInLine, endInLine } = params;
+      if (!line || startInLine !== 0 || endInLine !== line.cursorLength) {
+        return null;
+      }
+      if (line.path.length <= 1) {
+        return null;
+      }
+      const wrapperPath = line.path.slice(0, -1);
+      const wrapper = getBlockAtPath(state.doc.blocks, wrapperPath);
+      return wrapper?.type === "block-wrapper" ? wrapper : null;
+    }
+
     let html = "";
     let activeGroup: SelectionHtmlGroup | null = null;
 
@@ -3593,14 +3627,11 @@ export function createRuntimeFromRegistry(registry: {
       const lineText = runs
         .map((r) => (r.type === "text" ? r.text : " "))
         .join("");
-      let wrapperBlock: Block | null = null;
-      if (line.path.length > 1) {
-        const wrapperPath = line.path.slice(0, -1);
-        const wrapper = getBlockAtPath(state.doc.blocks, wrapperPath);
-        if (wrapper && wrapper.type === "block-wrapper") {
-          wrapperBlock = wrapper;
-        }
-      }
+      const wrapperBlock = getSelectedWrapperBlock({
+        line,
+        startInLine,
+        endInLine,
+      });
 
       let lineResult: SerializeSelectionLineToHtmlResult | null = null;
       for (const serializeLineToHtml of serializeSelectionLineToHtmlFns) {
