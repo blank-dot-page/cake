@@ -151,6 +151,14 @@ export type InlineHtmlSerializer = (
   context: { escapeHtml: (text: string) => string },
 ) => string | null;
 
+export type SerializeBlockToHtml = (
+  block: Block,
+  context: {
+    escapeHtml: (text: string) => string;
+    serializeBlock: (block: Block) => SerializeBlockResult;
+  },
+) => string | null;
+
 export type SelectionHtmlGroup = {
   key: string;
   open: string;
@@ -259,6 +267,7 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
   const domInlineRenderers: DomInlineRenderer[] = [];
   const domBlockRenderers: DomBlockRenderer[] = [];
   const inlineHtmlSerializers: InlineHtmlSerializer[] = [];
+  const serializeBlockToHtmlFns: SerializeBlockToHtml[] = [];
   const serializeSelectionLineToHtmlFns: SerializeSelectionLineToHtml[] = [];
 
   const editor = {
@@ -384,6 +393,10 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
       inlineHtmlSerializers.push(fn);
       return () => removeFromArray(inlineHtmlSerializers, fn);
     },
+    registerSerializeBlockToHtml: (fn: SerializeBlockToHtml) => {
+      serializeBlockToHtmlFns.push(fn);
+      return () => removeFromArray(serializeBlockToHtmlFns, fn);
+    },
     registerSerializeSelectionLineToHtml: (fn: SerializeSelectionLineToHtml) => {
       serializeSelectionLineToHtmlFns.push(fn);
       return () => removeFromArray(serializeSelectionLineToHtmlFns, fn);
@@ -411,6 +424,7 @@ export function createRuntimeForTests(extensions: CakeExtension[]): Runtime {
     domInlineRenderers,
     domBlockRenderers,
     inlineHtmlSerializers,
+    serializeBlockToHtmlFns,
     serializeSelectionLineToHtmlFns,
   });
 
@@ -456,6 +470,7 @@ export function createRuntimeFromRegistry(registry: {
   domInlineRenderers: DomInlineRenderer[];
   domBlockRenderers: DomBlockRenderer[];
   inlineHtmlSerializers: InlineHtmlSerializer[];
+  serializeBlockToHtmlFns: SerializeBlockToHtml[];
   serializeSelectionLineToHtmlFns: SerializeSelectionLineToHtml[];
 }): Runtime {
   const {
@@ -472,6 +487,7 @@ export function createRuntimeFromRegistry(registry: {
     domInlineRenderers,
     domBlockRenderers,
     inlineHtmlSerializers,
+    serializeBlockToHtmlFns,
     serializeSelectionLineToHtmlFns,
   } = registry;
   const isInclusiveAtEnd = (kind: string): boolean =>
@@ -1754,8 +1770,7 @@ export function createRuntimeFromRegistry(registry: {
       }
 
       // Backspace at the start of a paragraph immediately after an atomic block
-      // swaps the paragraph above the atomic block (so the paragraph "moves up"
-      // and the atomic block "moves down").
+      // deletes the atomic block and keeps the paragraph in place.
       if (
         command.type === "delete-backward" &&
         startBlock.type === "paragraph" &&
@@ -1769,12 +1784,10 @@ export function createRuntimeFromRegistry(registry: {
           pathsEqual(prevLine.parentPath, startLine.parentPath) &&
           prevLine.indexInParent === startLine.indexInParent - 1
         ) {
-          const imageIndex = prevLine.indexInParent;
-          const paragraphIndex = startLine.indexInParent;
-          const nextParentBlocks = parentBlocks.slice();
-          const temp = nextParentBlocks[imageIndex];
-          nextParentBlocks[imageIndex] = nextParentBlocks[paragraphIndex];
-          nextParentBlocks[paragraphIndex] = temp!;
+          const blockAtomIndex = prevLine.indexInParent;
+          const nextParentBlocks = parentBlocks.filter(
+            (_, i) => i !== blockAtomIndex,
+          );
 
           const nextDoc: Doc = {
             ...doc,
@@ -1786,7 +1799,6 @@ export function createRuntimeFromRegistry(registry: {
           };
 
           const nextModel = getEditorTextModelForDoc(nextDoc);
-          const nextLines = nextModel.getStructuralLines();
           const lineStarts = nextModel.getLineOffsets();
           const nextLineIndex = Math.max(0, startLoc.lineIndex - 1);
           return {
@@ -3436,7 +3448,20 @@ export function createRuntimeFromRegistry(registry: {
       Math.min(docCursorLength, Math.max(normalized.start, normalized.end)),
     );
 
-    if (cursorStart === cursorEnd) {
+    const isStandaloneAtomicSelection = lines.some((line) => {
+      const block = line.block;
+      const lineStart = line.lineStartOffset;
+      const lineEnd =
+        lineStart + line.cursorLength + (line.hasNewline ? 1 : 0);
+      return (
+        block.type === "block-atom" &&
+        cursorStart === cursorEnd &&
+        cursorStart === lineStart &&
+        cursorEnd === lineEnd
+      );
+    });
+
+    if (cursorStart === cursorEnd && !isStandaloneAtomicSelection) {
       return "";
     }
 
@@ -3454,7 +3479,25 @@ export function createRuntimeFromRegistry(registry: {
         continue;
       }
       const block = line.block;
-      if (!block || block.type !== "paragraph") {
+      const lineStart = line.lineStartOffset;
+      const lineEnd =
+        lineStart + line.cursorLength + (line.hasNewline ? 1 : 0);
+      const selectsStandaloneAtomicLine =
+        block.type === "block-atom" &&
+        cursorStart === cursorEnd &&
+        cursorStart === lineStart &&
+        cursorEnd === lineEnd;
+      const lineSelected =
+        selectsStandaloneAtomicLine ||
+        (cursorStart < lineEnd && cursorEnd > lineStart);
+      if (!lineSelected) {
+        continue;
+      }
+      if (block.type === "block-atom") {
+        blocks.push(block);
+        continue;
+      }
+      if (block.type !== "paragraph") {
         continue;
       }
 
@@ -3548,7 +3591,20 @@ export function createRuntimeFromRegistry(registry: {
       Math.min(docCursorLength, Math.max(normalized.start, normalized.end)),
     );
 
-    if (cursorStart === cursorEnd) {
+    const isStandaloneAtomicSelection = lines.some((line) => {
+      const block = line.block;
+      const lineStart = line.lineStartOffset;
+      const lineEnd =
+        lineStart + line.cursorLength + (line.hasNewline ? 1 : 0);
+      return (
+        block.type === "block-atom" &&
+        cursorStart === cursorEnd &&
+        cursorStart === lineStart &&
+        cursorEnd === lineEnd
+      );
+    });
+
+    if (cursorStart === cursorEnd && !isStandaloneAtomicSelection) {
       return "";
     }
 
@@ -3576,7 +3632,40 @@ export function createRuntimeFromRegistry(registry: {
         continue;
       }
       const block = line.block;
-      if (!block || block.type !== "paragraph") {
+      const lineStart = line.lineStartOffset;
+      const lineEnd =
+        lineStart + line.cursorLength + (line.hasNewline ? 1 : 0);
+      const selectsStandaloneAtomicLine =
+        block.type === "block-atom" &&
+        cursorStart === cursorEnd &&
+        cursorStart === lineStart &&
+        cursorEnd === lineEnd;
+      const lineSelected =
+        selectsStandaloneAtomicLine ||
+        (cursorStart < lineEnd && cursorEnd > lineStart);
+      if (!lineSelected) {
+        continue;
+      }
+      if (block.type === "block-atom") {
+        closeGroup();
+        let blockHtml: string | null = null;
+        for (const serializeBlockToHtml of serializeBlockToHtmlFns) {
+          blockHtml = serializeBlockToHtml(block, {
+            escapeHtml,
+            serializeBlock,
+          });
+          if (blockHtml !== null) {
+            break;
+          }
+        }
+        if (blockHtml === null) {
+          const markdown = serializeBlock(block).source;
+          blockHtml = markdown ? `<div>${escapeHtml(markdown)}</div>` : "";
+        }
+        html += blockHtml;
+        continue;
+      }
+      if (block.type !== "paragraph") {
         continue;
       }
 

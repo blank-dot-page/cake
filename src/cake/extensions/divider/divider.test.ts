@@ -138,6 +138,86 @@ describe("divider extension", () => {
     });
   });
 
+  describe("selection serialization", () => {
+    test("serializes a selected divider line to markdown", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("text\n---\nmore");
+
+      const serialized = runtime.serializeSelection(state, {
+        start: 5,
+        end: 6,
+        affinity: "forward",
+      });
+
+      expect(serialized).toBe("---");
+    });
+
+    test("serializes mixed content with a divider to markdown", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("text\n---\nmore");
+
+      const serialized = runtime.serializeSelection(state, {
+        start: 0,
+        end: 100,
+        affinity: "forward",
+      });
+
+      expect(serialized).toBe("text\n---\nmore");
+    });
+
+    test("serializes a standalone divider selection to markdown", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("---");
+
+      const serialized = runtime.serializeSelection(state, {
+        start: 0,
+        end: 0,
+        affinity: "forward",
+      });
+
+      expect(serialized).toBe("---");
+    });
+
+    test("serializes a selected divider line to html", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("text\n---\nmore");
+
+      const html = runtime.serializeSelectionToHtml(state, {
+        start: 5,
+        end: 6,
+        affinity: "forward",
+      });
+
+      expect(html).toContain("<hr");
+    });
+
+    test("serializes mixed content with a divider to html", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("text\n---\nmore");
+
+      const html = runtime.serializeSelectionToHtml(state, {
+        start: 0,
+        end: 100,
+        affinity: "forward",
+      });
+
+      expect(html).toContain("<hr");
+    });
+
+    test("serializes a standalone divider selection to html", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("---");
+
+      const html = runtime.serializeSelectionToHtml(state, {
+        start: 0,
+        end: 0,
+        affinity: "forward",
+      });
+
+      expect(html).toContain("<hr");
+    });
+  });
+
   describe("cursor mapping", () => {
     test("divider block-atom has no cursor positions", () => {
       const runtime = createRuntimeForTests([dividerExtension]);

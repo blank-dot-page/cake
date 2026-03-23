@@ -210,7 +210,7 @@ function measureLineRows(params: {
       {
         startOffset: 0,
         endOffset: 0,
-        rect: { ...fallbackLineBox, width: 0 },
+        rect: fallbackLineBox,
       },
     ];
   }

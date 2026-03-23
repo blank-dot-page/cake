@@ -117,6 +117,16 @@ export const dividerExtension: CakeExtension = (editor) => {
   );
 
   disposers.push(
+    editor.registerSerializeBlockToHtml((block) => {
+      if (block.type !== "block-atom" || block.kind !== DIVIDER_KIND) {
+        return null;
+      }
+
+      return "<hr>";
+    }),
+  );
+
+  disposers.push(
     editor.registerOnEdit((command, state): EditResult | null => {
       if (command.type !== "insert" || command.text !== "-") {
         return null;

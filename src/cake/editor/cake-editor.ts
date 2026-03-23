@@ -18,6 +18,7 @@ import {
   type ExtensionContext,
   type InlineWrapperAffinity,
   type InlineHtmlSerializer,
+  type SerializeBlockToHtml,
   type SerializeSelectionLineToHtml,
   type EditResult,
 } from "../core/runtime";
@@ -234,6 +235,7 @@ export class CakeEditor {
   private domInlineRenderers: DomInlineRenderer[] = [];
   private domBlockRenderers: DomBlockRenderer[] = [];
   private inlineHtmlSerializers: InlineHtmlSerializer[] = [];
+  private serializeBlockToHtmlFns: SerializeBlockToHtml[] = [];
   private serializeSelectionLineToHtmlFns: SerializeSelectionLineToHtml[] = [];
   private uiComponents: CakeUIComponent[] = [];
   private extensionDisposers: Array<() => void> = [];
@@ -442,6 +444,7 @@ export class CakeEditor {
       domInlineRenderers: this.domInlineRenderers,
       domBlockRenderers: this.domBlockRenderers,
       inlineHtmlSerializers: this.inlineHtmlSerializers,
+      serializeBlockToHtmlFns: this.serializeBlockToHtmlFns,
       serializeSelectionLineToHtmlFns: this.serializeSelectionLineToHtmlFns,
     });
 
@@ -635,6 +638,11 @@ export class CakeEditor {
   registerInlineHtmlSerializer(fn: InlineHtmlSerializer) {
     this.inlineHtmlSerializers.push(fn);
     return () => removeFromArray(this.inlineHtmlSerializers, fn);
+  }
+
+  registerSerializeBlockToHtml(fn: SerializeBlockToHtml) {
+    this.serializeBlockToHtmlFns.push(fn);
+    return () => removeFromArray(this.serializeBlockToHtmlFns, fn);
   }
 
   registerSerializeSelectionLineToHtml(fn: SerializeSelectionLineToHtml) {
@@ -3406,42 +3414,34 @@ export class CakeEditor {
     const current = lines[lineIndex] ?? null;
     const next = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
 
-    // v1 behavior:
-    // - Backspace at start of a line immediately after an atomic block swaps the text line above the atomic.
-    // - If the caret is on the atomic line start (browser/measurement edge cases), apply the swap with the next line.
-    let swapA: number | null = null;
-    let swapB: number | null = null;
+    // Delete the neighboring atomic line when backspacing from the start of the
+    // following text line, or when the caret lands on the atomic line itself.
+    let deleteLineIndex: number | null = null;
     if (prev?.isAtomic) {
-      swapA = lineIndex - 1;
-      swapB = lineIndex;
+      deleteLineIndex = lineIndex - 1;
     } else if (current?.isAtomic && next && !next.isAtomic) {
-      swapA = lineIndex;
-      swapB = lineIndex + 1;
+      deleteLineIndex = lineIndex;
     } else {
       return false;
     }
 
     const sourceLines = this.state.source.split("\n");
     if (
-      swapA < 0 ||
-      swapB < 0 ||
-      swapA >= sourceLines.length ||
-      swapB >= sourceLines.length
+      deleteLineIndex < 0 ||
+      deleteLineIndex >= sourceLines.length
     ) {
       return false;
     }
-    const aSource = sourceLines[swapA];
-    const bSource = sourceLines[swapB];
-    if (aSource === undefined || bSource === undefined) {
+    const deletedLine = sourceLines[deleteLineIndex];
+    if (deletedLine === undefined) {
       return false;
     }
-    sourceLines[swapA] = bSource;
-    sourceLines[swapB] = aSource;
+    sourceLines.splice(deleteLineIndex, 1);
     const newSource = sourceLines.join("\n");
 
     const nextState = this.runtime.createState(newSource);
     let lineStartSource = 0;
-    for (let index = 0; index < swapA; index += 1) {
+    for (let index = 0; index < deleteLineIndex; index += 1) {
       lineStartSource += (sourceLines[index]?.length ?? 0) + 1;
     }
     const cursorPos = nextState.map.sourceToCursor(

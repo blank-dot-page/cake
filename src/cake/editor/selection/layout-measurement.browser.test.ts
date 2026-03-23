@@ -25,6 +25,18 @@ function createLineInfo(text: string, lineIndex: number): LineInfo {
   };
 }
 
+function createAtomicLineInfo(lineIndex: number): LineInfo {
+  return {
+    lineIndex,
+    lineStartOffset: 0,
+    text: "",
+    cursorLength: 0,
+    hasNewline: false,
+    cursorToCodeUnit: [0],
+    isAtomic: true,
+  };
+}
+
 function measureActualRowBoundaries(
   textNode: Text,
 ): { startOffset: number; endOffset: number; top: number }[] {
@@ -169,6 +181,47 @@ describe("Layout measurement with variable-width fonts", () => {
         Math.abs(measured.endOffset - actual.endOffset),
       ).toBeLessThanOrEqual(1);
     }
+  });
+
+  it("uses the full line box width for zero-length atomic rows", () => {
+    container = document.createElement("div");
+    container.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 240px;
+      height: 48px;
+    `;
+    document.body.appendChild(container);
+
+    const lineDiv = document.createElement("div");
+    lineDiv.setAttribute("data-line-index", "0");
+    lineDiv.style.cssText = `
+      display: block;
+      width: 100%;
+      height: 24px;
+    `;
+
+    const divider = document.createElement("hr");
+    divider.style.cssText = `
+      margin: 0;
+      width: 100%;
+    `;
+    lineDiv.appendChild(divider);
+    container.appendChild(lineDiv);
+
+    const layout = measureLayoutModelFromDom({
+      lines: [createAtomicLineInfo(0)],
+      root: container,
+      container,
+    });
+
+    expect(layout).not.toBeNull();
+    expect(layout!.lines[0]?.rows).toHaveLength(1);
+    expect(layout!.lines[0]?.rows[0]?.rect.width).toBeGreaterThan(0);
+    expect(layout!.lines[0]?.rows[0]?.rect.width).toBe(
+      layout!.lines[0]?.lineBox.width,
+    );
   });
 
   it("measures row boundaries correctly for variable-width font", () => {
