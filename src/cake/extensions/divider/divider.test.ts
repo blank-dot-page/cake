@@ -261,11 +261,24 @@ describe("divider extension", () => {
   });
 
   describe("onEdit", () => {
-    test("typing a third dash autoformats a divider", () => {
+    function applyDividerShortcut(source: string, sourceOffset: number) {
       const runtime = createRuntimeForTests([dividerExtension]);
-      const state = runtime.createState("--", { start: 2, end: 2 });
+      const initialCursor = runtime
+        .createState(source)
+        .map.sourceToCursor(sourceOffset, "forward");
+      const state = runtime.createState(source, {
+        start: initialCursor.cursorOffset,
+        end: initialCursor.cursorOffset,
+        affinity: initialCursor.affinity,
+      });
 
       const nextState = runtime.applyEdit({ type: "insert", text: "-" }, state);
+
+      return { runtime, nextState };
+    }
+
+    test("typing a third dash autoformats a divider", () => {
+      const { nextState } = applyDividerShortcut("--", 2);
 
       expect(nextState.source).toBe("---\n");
       expect(nextState.selection).toEqual({
@@ -275,18 +288,26 @@ describe("divider extension", () => {
       });
     });
 
-    test("autoformat places the cursor on the next line", () => {
-      const runtime = createRuntimeForTests([dividerExtension]);
-      const state = runtime.createState("hello\n--", { start: 7, end: 7 });
+    test("typing the third dash in an empty document creates a trailing line and places the caret there", () => {
+      const { runtime, nextState } = applyDividerShortcut("--", 2);
 
-      const nextState = runtime.applyEdit({ type: "insert", text: "-" }, state);
-
-      expect(nextState.source).toBe("hello\n---");
+      expect(nextState.source).toBe("---\n");
+      const followingLineStart = "---\n".length;
+      const expectedCaret = nextState.map.sourceToCursor(
+        followingLineStart,
+        "forward",
+      );
       expect(nextState.selection).toEqual({
-        start: 6,
-        end: 6,
-        affinity: "forward",
+        start: expectedCaret.cursorOffset,
+        end: expectedCaret.cursorOffset,
+        affinity: expectedCaret.affinity,
       });
+
+      const afterTyping = runtime.applyEdit(
+        { type: "insert", text: "more" },
+        nextState,
+      );
+      expect(afterTyping.source).toBe("---\nmore");
     });
 
     test("typing a second dash does not autoformat", () => {
@@ -307,30 +328,48 @@ describe("divider extension", () => {
       expect(nextState.source).toBe("a---");
     });
 
-    test("autoformat works in the middle of a document", () => {
-      const runtime = createRuntimeForTests([dividerExtension]);
-      const state = runtime.createState("hello\n--\nworld", {
-        start: 7,
-        end: 7,
-      });
-
-      const nextState = runtime.applyEdit({ type: "insert", text: "-" }, state);
+    test("typing the third dash in the middle of a document moves the caret to the existing next line", () => {
+      const { runtime, nextState } = applyDividerShortcut("hello\n--\nworld", 8);
 
       expect(nextState.source).toBe("hello\n---\nworld");
+      const followingLineStart = "hello\n---\n".length;
+      const expectedCaret = nextState.map.sourceToCursor(
+        followingLineStart,
+        "forward",
+      );
       expect(nextState.selection).toEqual({
-        start: 6,
-        end: 6,
-        affinity: "forward",
+        start: expectedCaret.cursorOffset,
+        end: expectedCaret.cursorOffset,
+        affinity: expectedCaret.affinity,
       });
+
+      const afterTyping = runtime.applyEdit(
+        { type: "insert", text: "next " },
+        nextState,
+      );
+      expect(afterTyping.source).toBe("hello\n---\nnext world");
     });
 
-    test("autoformat works in an otherwise empty document", () => {
-      const runtime = createRuntimeForTests([dividerExtension]);
-      const state = runtime.createState("--", { start: 2, end: 2 });
+    test("typing the third dash at the end of a document creates a new trailing line and places the caret there", () => {
+      const { runtime, nextState } = applyDividerShortcut("hello\n--", 8);
 
-      const nextState = runtime.applyEdit({ type: "insert", text: "-" }, state);
+      expect(nextState.source).toBe("hello\n---\n");
+      const followingLineStart = "hello\n---\n".length;
+      const expectedCaret = nextState.map.sourceToCursor(
+        followingLineStart,
+        "forward",
+      );
+      expect(nextState.selection).toEqual({
+        start: expectedCaret.cursorOffset,
+        end: expectedCaret.cursorOffset,
+        affinity: expectedCaret.affinity,
+      });
 
-      expect(nextState.source).toBe("---\n");
+      const afterTyping = runtime.applyEdit(
+        { type: "insert", text: "tail" },
+        nextState,
+      );
+      expect(afterTyping.source).toBe("hello\n---\ntail");
     });
   });
 

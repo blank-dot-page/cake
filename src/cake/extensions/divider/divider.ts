@@ -39,10 +39,12 @@ function handleDividerAutoformat(
   const lineReplacement = lineEnd === source.length ? "---\n" : "---";
   const nextSource =
     source.slice(0, lineStart) + lineReplacement + source.slice(lineEnd);
+  const nextSourceCursor =
+    lineStart + lineReplacement.length + (lineEnd === source.length ? 0 : 1);
 
   return {
     nextSource,
-    nextSourceCursor: lineStart + lineReplacement.length,
+    nextSourceCursor,
   };
 }
 
@@ -107,9 +109,15 @@ export const dividerExtension: CakeExtension = (editor) => {
       context.incrementLineIndex();
 
       element.setAttribute("contenteditable", "false");
+      element.style.lineHeight = "inherit";
+      element.style.minHeight = "1lh";
+      element.style.display = "flex";
+      element.style.alignItems = "center";
 
       const divider = document.createElement("hr");
       divider.className = "cake-divider";
+      divider.style.width = "100%";
+      divider.style.margin = "0";
       element.appendChild(divider);
 
       return element;
