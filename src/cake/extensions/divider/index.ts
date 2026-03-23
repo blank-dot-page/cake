@@ -1,0 +1,1 @@
+export { dividerExtension } from "./divider";

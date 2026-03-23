@@ -3,6 +3,7 @@ import { combinedEmphasisExtension } from "./combined-emphasis/combined-emphasis
 import { linkExtension } from "./link/link";
 export type { OnRequestLinkInput, LinkExtensionOptions } from "./link/link";
 import { blockquoteExtension } from "./blockquote/blockquote";
+import { dividerExtension } from "./divider/divider";
 import { italicExtension } from "./italic/italic";
 import { headingExtension } from "./heading/heading";
 import { imageExtension } from "./image/image";
@@ -18,6 +19,7 @@ export {
   combinedEmphasisExtension,
   linkExtension,
   blockquoteExtension,
+  dividerExtension,
   italicExtension,
   headingExtension,
   imageExtension,
@@ -32,6 +34,7 @@ export {
 export const bundledExtensionsWithoutImage = [
   structuralReparsePolicyExtension,
   blockquoteExtension,
+  dividerExtension,
   headingExtension,
   plainTextListExtension,
   combinedEmphasisExtension,
