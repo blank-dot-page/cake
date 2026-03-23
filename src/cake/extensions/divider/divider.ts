@@ -80,7 +80,7 @@ export const dividerExtension: CakeExtension = (editor) => {
       }
 
       const builder = new CursorSourceBuilder();
-      builder.appendSourceOnly("---");
+      builder.appendCursorAtom("---");
       return builder.build();
     }),
   );
@@ -169,7 +169,7 @@ export const dividerExtension: CakeExtension = (editor) => {
         selection: {
           start: caretCursor.cursorOffset,
           end: caretCursor.cursorOffset,
-          affinity: caretCursor.affinity,
+          affinity: "forward",
         },
       };
     }),

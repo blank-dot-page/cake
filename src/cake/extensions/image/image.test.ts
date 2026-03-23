@@ -147,22 +147,22 @@ describe("image extension", () => {
   });
 
   describe("cursor mapping", () => {
-    test("image block-atom has no cursor positions", () => {
+    test("image block-atom occupies one cursor position", () => {
       const runtime = createRuntimeForTests([imageExtension]);
       const state = runtime.createState("![alt](url)");
-      expect(state.map.cursorLength).toBe(0);
+      expect(state.map.cursorLength).toBe(1);
     });
 
-    test("uploading image has no cursor positions", () => {
+    test("uploading image occupies one cursor position", () => {
       const runtime = createRuntimeForTests([imageExtension]);
       const state = runtime.createState("![uploading:abc]()");
-      expect(state.map.cursorLength).toBe(0);
+      expect(state.map.cursorLength).toBe(1);
     });
 
-    test("multiple images have newline cursor position between them", () => {
+    test("multiple images expose both atom positions and the newline between them", () => {
       const runtime = createRuntimeForTests([imageExtension]);
       const state = runtime.createState("![a](url1)\n![b](url2)");
-      expect(state.map.cursorLength).toBe(1);
+      expect(state.map.cursorLength).toBe(3);
     });
   });
 

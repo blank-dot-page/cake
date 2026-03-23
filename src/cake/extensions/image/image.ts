@@ -96,7 +96,7 @@ export const imageExtension: CakeExtension = (editor) => {
       }
 
       const builder = new CursorSourceBuilder();
-      builder.appendSourceOnly(source);
+      builder.appendCursorAtom(source);
       return builder.build();
     }),
   );

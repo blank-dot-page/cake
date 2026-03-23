@@ -91,12 +91,13 @@ describe("EditorTextModel", () => {
 
     expect(lines).toHaveLength(3);
     expect(lines[1]?.isAtomic).toBe(true);
+    expect(lines[1]?.cursorLength).toBe(1);
     expect(model.getVisibleText()).toBe("A\n\nB");
     expect(model.getTextForCursorRange(0, model.getCursorLength())).toBe(
       "A\n\nB",
     );
     expect(model.visibleOffsetToCursorOffset(2)).toBe(2);
-    expect(model.visibleOffsetToCursorOffset(3)).toBe(3);
+    expect(model.visibleOffsetToCursorOffset(3)).toBe(4);
   });
 
   it("preserves selection affinity for collapsed multiline text windows", () => {

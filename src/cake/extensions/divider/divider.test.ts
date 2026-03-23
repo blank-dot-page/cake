@@ -171,7 +171,7 @@ describe("divider extension", () => {
 
       const serialized = runtime.serializeSelection(state, {
         start: 0,
-        end: 0,
+        end: 1,
         affinity: "forward",
       });
 
@@ -210,7 +210,7 @@ describe("divider extension", () => {
 
       const html = runtime.serializeSelectionToHtml(state, {
         start: 0,
-        end: 0,
+        end: 1,
         affinity: "forward",
       });
 
@@ -219,32 +219,32 @@ describe("divider extension", () => {
   });
 
   describe("cursor mapping", () => {
-    test("divider block-atom has no cursor positions", () => {
+    test("divider block-atom occupies one cursor position", () => {
       const runtime = createRuntimeForTests([dividerExtension]);
       const state = runtime.createState("---");
 
-      expect(state.map.cursorLength).toBe(0);
+      expect(state.map.cursorLength).toBe(1);
     });
 
-    test("text then divider only exposes text and newline cursor positions", () => {
+    test("text then divider exposes the text, divider, and newline cursor positions", () => {
       const runtime = createRuntimeForTests([dividerExtension]);
       const state = runtime.createState("text\n---");
 
-      expect(state.map.cursorLength).toBe(5);
+      expect(state.map.cursorLength).toBe(6);
     });
 
-    test("divider then text only exposes newline and text cursor positions", () => {
+    test("divider then text exposes the divider, newline, and text cursor positions", () => {
       const runtime = createRuntimeForTests([dividerExtension]);
       const state = runtime.createState("---\ntext");
 
-      expect(state.map.cursorLength).toBe(5);
+      expect(state.map.cursorLength).toBe(6);
     });
 
     test("text around divider has the expected total cursor positions", () => {
       const runtime = createRuntimeForTests([dividerExtension]);
       const state = runtime.createState("a\n---\nb");
 
-      expect(state.map.cursorLength).toBe(4);
+      expect(state.map.cursorLength).toBe(5);
     });
   });
 
@@ -282,8 +282,8 @@ describe("divider extension", () => {
 
       expect(nextState.source).toBe("---\n");
       expect(nextState.selection).toEqual({
-        start: 1,
-        end: 1,
+        start: 2,
+        end: 2,
         affinity: "forward",
       });
     });
@@ -308,6 +308,17 @@ describe("divider extension", () => {
         nextState,
       );
       expect(afterTyping.source).toBe("---\nmore");
+    });
+
+    test("typing multiple characters after divider autoformat preserves their order", () => {
+      const { runtime, nextState } = applyDividerShortcut("--", 2);
+
+      let state = nextState;
+      for (const char of "hello") {
+        state = runtime.applyEdit({ type: "insert", text: char }, state);
+      }
+
+      expect(state.source).toBe("---\nhello");
     });
 
     test("typing a second dash does not autoformat", () => {
@@ -402,8 +413,8 @@ describe("divider extension", () => {
 
       expect(nextState.source).toBe("---\n");
       expect(nextState.selection).toEqual({
-        start: 1,
-        end: 1,
+        start: 2,
+        end: 2,
         affinity: "forward",
       });
     });

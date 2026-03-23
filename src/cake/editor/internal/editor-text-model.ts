@@ -175,8 +175,12 @@ function buildLines(doc: Doc): StructuralLineInfo[] {
   const flattenedLines = flattenDocToLines(doc);
   let lineStartOffset = 0;
   return flattenedLines.map((line, lineIndex) => {
-    const cursorToCodeUnit = buildCursorToCodeUnit(line.text);
-    const cursorLength = Math.max(0, cursorToCodeUnit.length - 1);
+    const cursorToCodeUnit = line.isAtomic
+      ? [0, 0]
+      : buildCursorToCodeUnit(line.text);
+    const cursorLength = line.isAtomic
+      ? 1
+      : Math.max(0, cursorToCodeUnit.length - 1);
     const hasNewline = lineIndex < flattenedLines.length - 1;
     const builtLine: StructuralLineInfo = {
       lineIndex,

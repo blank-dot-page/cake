@@ -3302,13 +3302,6 @@ export class CakeEditor {
   }
 
   private applyEdit(command: ApplyEditCommand) {
-    // Special handling for backspace at start of line after atomic block
-    if (command.type === "delete-backward") {
-      const handled = this.handleBackspaceAfterAtomicBlock();
-      if (handled) {
-        return;
-      }
-    }
     if (
       command.type === "delete-backward" ||
       command.type === "delete-forward"
@@ -3391,73 +3384,6 @@ export class CakeEditor {
     this.flushOverlayUpdate();
     this.scheduleScrollCaretIntoView();
     this.selectedAtomicLineIndex = null;
-    return true;
-  }
-
-  private handleBackspaceAfterAtomicBlock(): boolean {
-    const selection = this.state.selection;
-    // Only for collapsed selection
-    if (selection.start !== selection.end) {
-      return false;
-    }
-
-    const lines = this.textModel.getLines();
-    const lineOffsets = this.textModel.getLineOffsets();
-    const lineIndex = lineOffsets.findIndex(
-      (offset) => offset === selection.start,
-    );
-    if (lineIndex === -1) {
-      return false;
-    }
-
-    const prev = lineIndex > 0 ? lines[lineIndex - 1] : null;
-    const current = lines[lineIndex] ?? null;
-    const next = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
-
-    // Delete the neighboring atomic line when backspacing from the start of the
-    // following text line, or when the caret lands on the atomic line itself.
-    let deleteLineIndex: number | null = null;
-    if (prev?.isAtomic) {
-      deleteLineIndex = lineIndex - 1;
-    } else if (current?.isAtomic && next && !next.isAtomic) {
-      deleteLineIndex = lineIndex;
-    } else {
-      return false;
-    }
-
-    const sourceLines = this.state.source.split("\n");
-    if (
-      deleteLineIndex < 0 ||
-      deleteLineIndex >= sourceLines.length
-    ) {
-      return false;
-    }
-    const deletedLine = sourceLines[deleteLineIndex];
-    if (deletedLine === undefined) {
-      return false;
-    }
-    sourceLines.splice(deleteLineIndex, 1);
-    const newSource = sourceLines.join("\n");
-
-    const nextState = this.runtime.createState(newSource);
-    let lineStartSource = 0;
-    for (let index = 0; index < deleteLineIndex; index += 1) {
-      lineStartSource += (sourceLines[index]?.length ?? 0) + 1;
-    }
-    const cursorPos = nextState.map.sourceToCursor(
-      lineStartSource,
-      "forward",
-    ).cursorOffset;
-
-    this.recordHistory("delete-backward");
-    this.state = {
-      ...nextState,
-      selection: { start: cursorPos, end: cursorPos, affinity: "forward" },
-    };
-    this.render();
-    this.notifyChange();
-    this.flushOverlayUpdate();
-    this.scheduleScrollCaretIntoView();
     return true;
   }
 

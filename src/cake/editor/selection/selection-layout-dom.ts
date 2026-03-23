@@ -928,6 +928,13 @@ export function hitTestFromLayout(params: {
     };
   }
 
+  if (lineInfo.isAtomic) {
+    return {
+      cursorOffset: lineStartOffset + row.endOffset,
+      pastRowEnd: false,
+    };
+  }
+
   // Binary search the insertion point for relativeX among monotonic caret Xs.
   let low = row.startOffset;
   let high = row.endOffset;

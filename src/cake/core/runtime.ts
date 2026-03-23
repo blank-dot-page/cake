@@ -1536,6 +1536,30 @@ export function createRuntimeFromRegistry(registry: {
       };
     }
 
+    if (
+      command.type === "delete-backward" &&
+      cursorStart === cursorEnd
+    ) {
+      const caretLoc = textModel.resolveOffsetToLine(cursorStart);
+      const caretLine = lines[caretLoc.lineIndex];
+      if (
+        caretLine &&
+        caretLine.block.type === "paragraph" &&
+        caretLine.cursorLength === 0 &&
+        caretLoc.offsetInLine === 0 &&
+        caretLoc.lineIndex > 0
+      ) {
+        const previousLine = lines[caretLoc.lineIndex - 1];
+        if (previousLine?.block.type === "block-atom") {
+          return {
+            doc,
+            nextCursor: cursorStart,
+            nextAffinity: "forward",
+          };
+        }
+      }
+    }
+
     const replaceText =
       command.type === "insert"
         ? command.text
@@ -1706,7 +1730,12 @@ export function createRuntimeFromRegistry(registry: {
     // their line start/end boundaries. We still need to support basic editing
     // semantics around them (Enter to create a new paragraph after, Backspace
     // to delete/move across).
-    if (cursorStart === cursorEnd) {
+    const collapsedOnSingleLine =
+      cursorStart === cursorEnd &&
+      startLoc.lineIndex === endLoc.lineIndex &&
+      pathsEqual(startLine.path, endLine.path);
+
+    if (collapsedOnSingleLine) {
       // Enter at an atomic block inserts a new empty paragraph after it.
       if (
         command.type === "insert-line-break" &&
@@ -1769,45 +1798,6 @@ export function createRuntimeFromRegistry(registry: {
         };
       }
 
-      // Backspace at the start of a paragraph immediately after an atomic block
-      // deletes the atomic block and keeps the paragraph in place.
-      if (
-        command.type === "delete-backward" &&
-        startBlock.type === "paragraph" &&
-        startLoc.offsetInLine === 0 &&
-        startLoc.lineIndex > 0
-      ) {
-        const prevLine = lines[startLoc.lineIndex - 1];
-        if (
-          prevLine &&
-          prevLine.block.type === "block-atom" &&
-          pathsEqual(prevLine.parentPath, startLine.parentPath) &&
-          prevLine.indexInParent === startLine.indexInParent - 1
-        ) {
-          const blockAtomIndex = prevLine.indexInParent;
-          const nextParentBlocks = parentBlocks.filter(
-            (_, i) => i !== blockAtomIndex,
-          );
-
-          const nextDoc: Doc = {
-            ...doc,
-            blocks: updateBlocksAtPath(
-              doc.blocks,
-              parentPath,
-              () => nextParentBlocks,
-            ),
-          };
-
-          const nextModel = getEditorTextModelForDoc(nextDoc);
-          const lineStarts = nextModel.getLineOffsets();
-          const nextLineIndex = Math.max(0, startLoc.lineIndex - 1);
-          return {
-            doc: nextDoc,
-            nextCursor: lineStarts[nextLineIndex] ?? 0,
-            nextAffinity: "forward",
-          };
-        }
-      }
     }
 
     if (startBlock.type !== "paragraph" || endBlock.type !== "paragraph") {
