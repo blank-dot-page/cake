@@ -2,6 +2,21 @@ import { describe, expect, test } from "vitest";
 import { createRuntimeForTests } from "../../core/runtime";
 import { dividerExtension } from "./divider";
 
+function sourceOffsetForSelectionStart(state: {
+  selection: { start: number; affinity?: "backward" | "forward" };
+  map: {
+    cursorToSource(
+      cursorOffset: number,
+      affinity: "backward" | "forward",
+    ): number;
+  };
+}): number {
+  return state.map.cursorToSource(
+    state.selection.start,
+    state.selection.affinity ?? "forward",
+  );
+}
+
 describe("divider extension", () => {
   describe("parseBlock", () => {
     test("parses three dashes as a divider", () => {
@@ -382,9 +397,109 @@ describe("divider extension", () => {
       );
       expect(afterTyping.source).toBe("hello\n---\ntail");
     });
+
+    test("typing text, pressing enter, and completing a divider creates a paragraph, divider, and trailing paragraph", () => {
+      const { nextState } = applyDividerShortcut("hello world\n--", 14);
+
+      expect(nextState.source).toBe("hello world\n---\n");
+      expect(nextState.doc.blocks).toHaveLength(3);
+      expect(nextState.doc.blocks[0]).toMatchObject({
+        type: "paragraph",
+        content: [{ type: "text", text: "hello world" }],
+      });
+      expect(nextState.doc.blocks[1]).toMatchObject({
+        type: "block-atom",
+        kind: "divider",
+      });
+      expect(nextState.doc.blocks[2]).toMatchObject({
+        type: "paragraph",
+        content: [],
+      });
+      expect(sourceOffsetForSelectionStart(nextState)).toBe(
+        nextState.source.length,
+      );
+    });
   });
 
   describe("block-atom runtime behavior", () => {
+    test("delete-forward at the end of text above a divider deletes the divider", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("hello\n---\nworld", {
+        start: 5,
+        end: 5,
+      });
+
+      const nextState = runtime.applyEdit({ type: "delete-forward" }, state);
+
+      expect(nextState.source).toBe("hello\nworld");
+      expect(nextState.doc.blocks).toHaveLength(2);
+      expect(nextState.doc.blocks[0]).toMatchObject({
+        type: "paragraph",
+        content: [{ type: "text", text: "hello" }],
+      });
+      expect(nextState.doc.blocks[1]).toMatchObject({
+        type: "paragraph",
+        content: [{ type: "text", text: "world" }],
+      });
+      expect(sourceOffsetForSelectionStart(nextState)).toBe(5);
+    });
+
+    test("delete-forward on a divider deletes it", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("---\ntext", {
+        start: 0,
+        end: 0,
+      });
+
+      const nextState = runtime.applyEdit({ type: "delete-forward" }, state);
+
+      expect(nextState.source).toBe("text");
+      expect(nextState.selection).toEqual({
+        start: 0,
+        end: 0,
+        affinity: "forward",
+      });
+    });
+
+    test("backspace at the start of text after a divider merges the text into a paragraph", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("alpha\n---\nomega", {
+        start: 8,
+        end: 8,
+      });
+
+      const nextState = runtime.applyEdit({ type: "delete-backward" }, state);
+
+      expect(nextState.source).toBe("alpha\n---omega");
+      expect(nextState.doc.blocks).toHaveLength(2);
+      expect(nextState.doc.blocks[0]).toMatchObject({
+        type: "paragraph",
+        content: [{ type: "text", text: "alpha" }],
+      });
+      expect(nextState.doc.blocks[1]).toMatchObject({
+        type: "paragraph",
+        content: [{ type: "text", text: "---omega" }],
+      });
+      expect(sourceOffsetForSelectionStart(nextState)).toBe("alpha\n---".length);
+    });
+
+    test("backspace on the empty paragraph after a divider is a no-op", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("---\n", {
+        start: 2,
+        end: 2,
+      });
+
+      const nextState = runtime.applyEdit({ type: "delete-backward" }, state);
+
+      expect(nextState.source).toBe("---\n");
+      expect(nextState.selection).toEqual({
+        start: 2,
+        end: 2,
+        affinity: "forward",
+      });
+    });
+
     test("backspace on a divider deletes it", () => {
       const runtime = createRuntimeForTests([dividerExtension]);
       const state = runtime.createState("---\ntext", {

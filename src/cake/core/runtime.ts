@@ -1729,7 +1729,7 @@ export function createRuntimeFromRegistry(registry: {
     // These blocks have no editable text content, but the caret can land on
     // their line start/end boundaries. We still need to support basic editing
     // semantics around them (Enter to create a new paragraph after, Backspace
-    // to delete/move across).
+    // / Delete to delete/move across).
     const collapsedOnSingleLine =
       cursorStart === cursorEnd &&
       startLoc.lineIndex === endLoc.lineIndex &&
@@ -1768,9 +1768,10 @@ export function createRuntimeFromRegistry(registry: {
         };
       }
 
-      // Backspace on an atomic block deletes the block.
+      // Backspace/Delete on an atomic block deletes the block.
       if (
-        command.type === "delete-backward" &&
+        (command.type === "delete-backward" ||
+          command.type === "delete-forward") &&
         startBlock.type === "block-atom"
       ) {
         const nextParentBlocks = parentBlocks.filter(
@@ -1798,6 +1799,45 @@ export function createRuntimeFromRegistry(registry: {
         };
       }
 
+    }
+
+    // Delete at the end of a paragraph above an atomic block should delete the
+    // block in front of the caret, not the serialized newline before it.
+    if (
+      command.type === "delete-forward" &&
+      cursorStart === cursorEnd &&
+      startBlock.type === "paragraph" &&
+      endBlock.type === "block-atom" &&
+      startLoc.lineIndex !== endLoc.lineIndex &&
+      startLoc.offsetInLine === startLine.cursorLength &&
+      endLoc.offsetInLine === 0
+    ) {
+      const nextParentBlocks = parentBlocks.filter((_, i) => i !== endIndex);
+      const ensured =
+        nextParentBlocks.length > 0
+          ? nextParentBlocks
+          : ([{ type: "paragraph", content: [] }] satisfies Block[]);
+      const nextDoc: Doc = {
+        ...doc,
+        blocks: updateBlocksAtPath(doc.blocks, parentPath, () => ensured),
+      };
+      const nextModel = getEditorTextModelForDoc(nextDoc);
+      const nextLines = nextModel.getStructuralLines();
+      const lineStarts = nextModel.getLineOffsets();
+      const nextLineIndex = nextLines.findIndex((line) =>
+        pathsEqual(line.path, startLine.path),
+      );
+      const nextLine = nextLineIndex >= 0 ? nextLines[nextLineIndex] : null;
+      const nextCursor =
+        nextLineIndex >= 0
+          ? (lineStarts[nextLineIndex] ?? 0) +
+            Math.min(startLoc.offsetInLine, nextLine?.cursorLength ?? 0)
+          : Math.max(0, Math.min(nextModel.getCursorLength(), cursorStart));
+      return {
+        doc: nextDoc,
+        nextCursor,
+        nextAffinity: "forward",
+      };
     }
 
     if (startBlock.type !== "paragraph" || endBlock.type !== "paragraph") {

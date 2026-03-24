@@ -2,6 +2,30 @@ import { afterEach, describe, expect, test } from "vitest";
 import { createTestHarness, type TestHarness } from "../../test/harness";
 import { hitTestFromLayout } from "../../editor/selection/selection-layout-dom";
 
+function getCollapsedSelectionRect(): DOMRect {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || !selection.anchorNode) {
+    throw new Error("Missing selection");
+  }
+  const range = selection.getRangeAt(0);
+  const rects = range.getClientRects();
+  const rect =
+    rects.length > 0 ? rects[rects.length - 1]! : range.getBoundingClientRect();
+  if (rect.top !== 0 || rect.left !== 0 || rect.width !== 0 || rect.height !== 0) {
+    return rect;
+  }
+
+  const anchorElement =
+    selection.anchorNode instanceof Element
+      ? selection.anchorNode
+      : selection.anchorNode.parentElement;
+  const line = anchorElement?.closest("[data-line-index]");
+  if (!(line instanceof HTMLElement)) {
+    return rect;
+  }
+  return line.getBoundingClientRect();
+}
+
 describe("divider extension backspace behavior", () => {
   let harness: TestHarness | null = null;
   const extraHarnesses: TestHarness[] = [];
@@ -88,6 +112,39 @@ describe("divider extension backspace behavior", () => {
       end: 0,
       affinity: "forward",
     });
+  });
+
+  test("typing three dashes renders an hr inside a non-editable divider block", async () => {
+    harness = createTestHarness("");
+
+    await harness.focus();
+    await harness.typeText("---");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const dividerBlock = harness.container.querySelector(
+      '[data-block-atom="divider"][contenteditable="false"]',
+    );
+    expect(dividerBlock).not.toBeNull();
+    expect(dividerBlock?.querySelector("hr")).not.toBeNull();
+  });
+
+  test("typing three dashes places the DOM selection below the divider", async () => {
+    harness = createTestHarness("");
+
+    await harness.focus();
+    await harness.typeText("---");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const divider = harness.container.querySelector(
+      '[data-block-atom="divider"] hr',
+    );
+    if (!(divider instanceof HTMLHRElement)) {
+      throw new Error("Missing divider hr");
+    }
+
+    const selectionRect = getCollapsedSelectionRect();
+    const dividerRect = divider.getBoundingClientRect();
+    expect(selectionRect.top).toBeGreaterThan(dividerRect.bottom - 1);
   });
 
   test("selection overlay over a divider line matches a normal text line height", async () => {
