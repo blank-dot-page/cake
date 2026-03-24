@@ -2386,6 +2386,7 @@ export class CakeEditor {
         const atomicBlockSelection = atomicResult.selection;
         this.pendingClickHit = null;
         event.preventDefault();
+        this.suppressSelectionChange = true;
         this.state = this.runtime.updateSelection(
           this.state,
           atomicBlockSelection,
@@ -2395,7 +2396,9 @@ export class CakeEditor {
         this.notifySelectionChange();
         this.scheduleOverlayUpdate();
         this.selectedAtomicLineIndex = atomicResult.lineIndex;
-        this.suppressSelectionChange = false;
+        setTimeout(() => {
+          this.suppressSelectionChange = false;
+        }, 0);
         return;
       }
 
@@ -3593,12 +3596,23 @@ export class CakeEditor {
   private moveSelectionOutOfSelectedAtomicLine(
     direction: "up" | "down",
   ): Selection | null {
-    if (this.selectedAtomicLineIndex === null) {
+    const lines = this.textModel.getLines();
+    const lineIndex =
+      this.selectedAtomicLineIndex ??
+      (() => {
+        const normalized = normalizeSelection(
+          this.state.selection,
+          this.state.map.cursorLength,
+        );
+        if (normalized.start !== normalized.end) {
+          return null;
+        }
+        const resolved = this.textModel.resolveOffsetToLine(normalized.start);
+        return lines[resolved.lineIndex]?.isAtomic ? resolved.lineIndex : null;
+      })();
+    if (lineIndex === null) {
       return null;
     }
-
-    const lines = this.textModel.getLines();
-    const lineIndex = this.selectedAtomicLineIndex;
 
     if (direction === "up") {
       for (let index = lineIndex - 1; index >= 0; index -= 1) {
@@ -3609,7 +3623,7 @@ export class CakeEditor {
         const lineEnd = line.lineStartOffset + line.cursorLength;
         return { start: lineEnd, end: lineEnd, affinity: "backward" };
       }
-      return { start: 0, end: 0, affinity: "backward" };
+      return null;
     }
 
     for (let index = lineIndex + 1; index < lines.length; index += 1) {

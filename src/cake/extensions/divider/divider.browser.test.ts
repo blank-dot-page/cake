@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { commands } from "vitest/browser";
+import { commands, userEvent } from "vitest/browser";
 import { createTestHarness, type TestHarness } from "../../test/harness";
 import { hitTestFromLayout } from "../../editor/selection/selection-layout-dom";
 
@@ -306,7 +306,7 @@ describe("divider extension browser behavior", () => {
     });
   });
 
-  test("backspace on the empty line after a leading divider deletes the divider", async () => {
+  test("backspace on the empty line after a leading divider moves the caret before the divider", async () => {
     harness = createTestHarness("");
 
     await harness.focus();
@@ -317,11 +317,11 @@ describe("divider extension browser behavior", () => {
 
     await pressKeyboardBackspace(harness);
 
-    expect(harness.engine.getValue()).toBe("");
+    expect(harness.engine.getValue()).toBe("---");
     expect(harness.engine.getSelection()).toEqual({
       start: 0,
       end: 0,
-      affinity: "forward",
+      affinity: "backward",
     });
   });
 
@@ -445,6 +445,71 @@ describe("divider extension browser behavior", () => {
     expectRenderedDividerSelectionRect(harness, 1, referenceRect.height);
   });
 
+  test("real browser click on a divider hr then ArrowDown moves the caret to the line below", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "above\n---\nbelow",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    await clickDividerHrWithRealPointer(harness, 1);
+    expectRenderedDividerSelectionRect(harness, 1, referenceRect.height);
+
+    await userEvent.keyboard("{ArrowDown}");
+    await waitForOverlay();
+
+    const belowLine = harness.engine.getLines()[2];
+    expect(belowLine).toBeDefined();
+    expect(harness.selection).toEqual({
+      start: belowLine!.lineStartOffset,
+      end: belowLine!.lineStartOffset,
+      affinity: "forward",
+    });
+    expectCaretOnLine(harness, 2);
+  });
+
+  test("real browser click on a divider hr then ArrowUp moves the caret to the line above", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "above\n---\nbelow",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    await clickDividerHrWithRealPointer(harness, 1);
+    expectRenderedDividerSelectionRect(harness, 1, referenceRect.height);
+
+    await userEvent.keyboard("{ArrowUp}");
+    await waitForOverlay();
+
+    const aboveLine = harness.engine.getLines()[0];
+    expect(aboveLine).toBeDefined();
+    const aboveLineEnd = aboveLine!.lineStartOffset + aboveLine!.cursorLength;
+    expect(harness.selection).toEqual({
+      start: aboveLineEnd,
+      end: aboveLineEnd,
+      affinity: "backward",
+    });
+    expectCaretOnLine(harness, 0);
+  });
+
+  test("ArrowUp on a selected leading divider is a no-op", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "---\nbelow",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    await clickDividerHrWithRealPointer(harness, 0);
+    expectRenderedDividerSelectionRect(harness, 0, referenceRect.height);
+    const selectionBeforeArrowUp = harness.engine.getSelection();
+
+    await userEvent.keyboard("{ArrowUp}");
+    await waitForOverlay();
+
+    expect(harness.selection).toEqual(selectionBeforeArrowUp);
+    expectRenderedDividerSelectionRect(harness, 0, referenceRect.height);
+  });
+
   test("clicking a divider renders a full-width selection rect aligned to the padded content box", async () => {
     const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
     harness = createTestHarness({
@@ -549,6 +614,27 @@ describe("divider extension browser behavior", () => {
       end: belowLine!.lineStartOffset,
       affinity: "forward",
     });
+  });
+
+  test("real browser click on a divider hr then Backspace removes the divider from the DOM", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "above\n---\nbelow",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    await clickDividerHrWithRealPointer(harness, 1);
+    expectRenderedDividerSelectionRect(harness, 1, referenceRect.height);
+
+    await userEvent.keyboard("{Backspace}");
+    await waitForOverlay();
+
+    expect(harness.engine.getValue()).toBe("above\nbelow");
+    expect(
+      harness.container.querySelector('[data-block-atom="divider"]'),
+    ).toBeNull();
+    expect(harness.container.textContent).toContain("above");
+    expect(harness.container.textContent).toContain("below");
   });
 
   test("clicking a leading divider then pressing backspace deletes it and keeps the paragraph at the top", async () => {

@@ -1163,7 +1163,75 @@ export function createRuntimeFromRegistry(registry: {
     return structuralReparsePolicies.some((policy) => policy(command));
   }
 
+  function handleDeleteBackwardOnEmptyParagraphAfterAtomicBlock(
+    state: RuntimeState,
+  ): RuntimeState | null {
+    const selection = normalizeSelection(state.selection);
+    if (selection.start !== selection.end) {
+      return null;
+    }
+
+    const textModel = getEditorTextModelForDoc(state.doc);
+    const lines = textModel.getStructuralLines();
+    const cursor = Math.max(
+      0,
+      Math.min(textModel.getCursorLength(), selection.start),
+    );
+    const caretLoc = textModel.resolveOffsetToLine(cursor);
+    const caretLine = lines[caretLoc.lineIndex];
+    const previousLine = lines[caretLoc.lineIndex - 1];
+
+    if (
+      !caretLine ||
+      !previousLine ||
+      caretLine.block.type !== "paragraph" ||
+      caretLine.cursorLength !== 0 ||
+      caretLoc.offsetInLine !== 0 ||
+      previousLine.block.type !== "block-atom" ||
+      previousLine.block.kind !== "divider" ||
+      !pathsEqual(previousLine.parentPath, caretLine.parentPath) ||
+      previousLine.indexInParent !== caretLine.indexInParent - 1
+    ) {
+      return null;
+    }
+
+    const nextDoc: Doc = {
+      ...state.doc,
+      blocks: updateBlocksAtPath(state.doc.blocks, caretLine.parentPath, (blocks) =>
+        blocks.filter((_, index) => index !== caretLine.indexInParent),
+      ),
+    };
+    const nextModel = getEditorTextModelForDoc(nextDoc);
+    const nextLines = nextModel.getStructuralLines();
+    const nextLineIndex = nextLines.findIndex((line) =>
+      pathsEqual(line.path, previousLine.path),
+    );
+    if (nextLineIndex === -1) {
+      return null;
+    }
+
+    const lineStarts = nextModel.getLineOffsets();
+    const atomicLineStart = lineStarts[nextLineIndex] ?? 0;
+    const nextCursor = atomicLineStart === 0 ? 0 : atomicLineStart - 1;
+    const nextAffinity: Affinity =
+      atomicLineStart === 0 ? "backward" : "forward";
+
+    return createStateFromDoc(nextDoc, {
+      start: nextCursor,
+      end: nextCursor,
+      affinity: nextAffinity,
+    });
+  }
+
   function applyEdit(command: EditCommand, state: RuntimeState): RuntimeState {
+    if (command.type === "delete-backward") {
+      const blockAtomBackspace =
+        handleDeleteBackwardOnEmptyParagraphAfterAtomicBlock(state);
+      if (blockAtomBackspace) {
+        return blockAtomBackspace;
+      }
+    }
+
     // Extensions can either:
     // - fully handle the edit by returning {source, selection}, or
     // - delegate by returning another EditCommand, which will be applied by the
