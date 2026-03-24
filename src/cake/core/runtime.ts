@@ -1023,16 +1023,24 @@ export function createRuntimeFromRegistry(registry: {
       return previous.source;
     }
 
-    const oldStart = sourceOffsetForBlockStart(previous, prefix);
+    const replacingTrailingBlocks = suffix === 0;
+    const oldStart =
+      replacingTrailingBlocks && prefix > 0 && prefix < previousSegments.length
+        ? sourceOffsetForBlockStart(previous, prefix) - 1
+        : sourceOffsetForBlockStart(previous, prefix);
     const oldEnd = sourceOffsetForBlockStart(
       previous,
       previousSegments.length - suffix,
     );
-    const middle = serializeSegmentRange(
+    const serializedMiddle = serializeSegmentRange(
       segments,
       prefix,
       segments.length - suffix,
     );
+    const middle =
+      replacingTrailingBlocks && prefix > 0 && prefix < segments.length
+        ? `\n${serializedMiddle}`
+        : serializedMiddle;
 
     return (
       previous.source.slice(0, oldStart) +
@@ -1188,7 +1196,6 @@ export function createRuntimeFromRegistry(registry: {
       caretLine.cursorLength !== 0 ||
       caretLoc.offsetInLine !== 0 ||
       previousLine.block.type !== "block-atom" ||
-      previousLine.block.kind !== "divider" ||
       !pathsEqual(previousLine.parentPath, caretLine.parentPath) ||
       previousLine.indexInParent !== caretLine.indexInParent - 1
     ) {

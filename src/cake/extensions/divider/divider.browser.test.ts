@@ -624,6 +624,30 @@ describe("divider extension browser behavior", () => {
     expectCaretOnLine(harness, 2);
   });
 
+  test("ArrowDown from text above a trailing divider selects the divider", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "hello\n---",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    const helloLine = harness.engine.getLines()[0];
+    expect(helloLine).toBeDefined();
+    const helloLineEnd = helloLine!.lineStartOffset + helloLine!.cursorLength;
+    harness.engine.setSelection({
+      start: helloLineEnd,
+      end: helloLineEnd,
+      affinity: "forward",
+    });
+    await waitForOverlay();
+
+    await userEvent.keyboard("{ArrowDown}");
+    await waitForOverlay();
+
+    expect(harness.selection).toEqual(getLineSelection(harness, 1));
+    expectRenderedDividerSelectionRect(harness, 1, referenceRect.height);
+  });
+
   test("real browser click on a divider hr then ArrowUp moves the caret to the line above", async () => {
     const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
     harness = createTestHarness({
@@ -725,6 +749,30 @@ describe("divider extension browser behavior", () => {
       end: belowLine!.lineStartOffset,
       affinity: "forward",
     });
+  });
+
+  test("ArrowDown from a selected trailing divider inserts a new empty paragraph after it", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "hello\n---",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    await clickDividerHrWithRealPointer(harness, 1);
+    expectRenderedDividerSelectionRect(harness, 1, referenceRect.height);
+
+    await userEvent.keyboard("{ArrowDown}");
+    await waitForOverlay();
+
+    expect(harness.engine.getValue()).toBe("hello\n---\n");
+    const newLine = harness.engine.getLines()[2];
+    expect(newLine).toBeDefined();
+    expect(harness.selection).toEqual({
+      start: newLine!.lineStartOffset,
+      end: newLine!.lineStartOffset,
+      affinity: "forward",
+    });
+    expectCaretOnLine(harness, 2);
   });
 
   test("ArrowUp from a selected divider collapses the selection onto the line above", async () => {
@@ -833,6 +881,38 @@ describe("divider extension browser behavior", () => {
     });
   });
 
+  test("backspacing onto the only divider matches click selection and the next backspace deletes it", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    await harness.focus();
+    await harness.typeText("---");
+    await waitForOverlay();
+
+    expect(harness.engine.getValue()).toBe("---\n");
+
+    await pressKeyboardBackspace(harness);
+    expect(harness.engine.getValue()).toBe("---");
+
+    await pressKeyboardBackspace(harness);
+
+    expect(harness.engine.getValue()).toBe("---");
+    expect(harness.selection).toEqual(getLineSelection(harness, 0));
+    expectRenderedDividerSelectionRect(harness, 0, referenceRect.height);
+
+    await pressKeyboardBackspace(harness);
+
+    expect(harness.engine.getValue()).toBe("");
+    expect(harness.selection).toEqual({
+      start: 0,
+      end: 0,
+      affinity: "forward",
+    });
+  });
+
   test("pressing Enter on a selected trailing divider keeps the divider and moves the caret to a new empty line", async () => {
     const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
     harness = createTestHarness({
@@ -870,6 +950,61 @@ describe("divider extension browser behavior", () => {
     expectRenderedDividerSelectionRect(harness, 0, referenceRect.height);
 
     await harness.pressEnter();
+    await waitForOverlay();
+
+    expect(harness.engine.getValue()).toBe("---\n");
+    const newLine = harness.engine.getLines()[1];
+    expect(newLine).toBeDefined();
+    expect(harness.selection).toEqual({
+      start: newLine!.lineStartOffset,
+      end: newLine!.lineStartOffset,
+      affinity: "forward",
+    });
+    expectCaretOnLine(harness, 1);
+  });
+
+  test("real browser click on the only divider then Enter inserts a new empty paragraph", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "---",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    await clickDividerHrWithRealPointer(harness, 0);
+    expectRenderedDividerSelectionRect(harness, 0, referenceRect.height);
+
+    await userEvent.keyboard("{Enter}");
+    await waitForOverlay();
+
+    expect(harness.engine.getValue()).toBe("---\n");
+    const newLine = harness.engine.getLines()[1];
+    expect(newLine).toBeDefined();
+    expect(harness.selection).toEqual({
+      start: newLine!.lineStartOffset,
+      end: newLine!.lineStartOffset,
+      affinity: "forward",
+    });
+    expectCaretOnLine(harness, 1);
+  });
+
+  test("pressing Enter on the only divider selected via backspace inserts a new empty paragraph", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    await harness.focus();
+    await harness.typeText("---");
+    await waitForOverlay();
+
+    await pressKeyboardBackspace(harness);
+    await pressKeyboardBackspace(harness);
+
+    expect(harness.selection).toEqual(getLineSelection(harness, 0));
+    expectRenderedDividerSelectionRect(harness, 0, referenceRect.height);
+
+    await userEvent.keyboard("{Enter}");
     await waitForOverlay();
 
     expect(harness.engine.getValue()).toBe("---\n");

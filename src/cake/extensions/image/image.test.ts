@@ -201,7 +201,26 @@ describe("image extension", () => {
       });
     });
 
-    test("backspace on an empty paragraph after an image does not delete the image", () => {
+    test("enter at the trailing cursor of a trailing image inserts a paragraph after it", () => {
+      const runtime = createRuntimeForTests([imageExtension]);
+      const initialState = runtime.createState("text\n![alt](url)");
+      const state = runtime.createState("text\n![alt](url)", {
+        start: initialState.map.cursorLength,
+        end: initialState.map.cursorLength,
+        affinity: "forward",
+      });
+
+      const nextState = runtime.applyEdit({ type: "insert-line-break" }, state);
+
+      expect(nextState.source).toBe("text\n![alt](url)\n");
+      expect(nextState.selection).toEqual({
+        start: 7,
+        end: 7,
+        affinity: "forward",
+      });
+    });
+
+    test("backspace on an empty paragraph after an image moves selection onto the image", () => {
       const runtime = createRuntimeForTests([imageExtension]);
       const state = runtime.createState("![alt](url)\n", {
         start: 2,
@@ -210,11 +229,11 @@ describe("image extension", () => {
 
       const nextState = runtime.applyEdit({ type: "delete-backward" }, state);
 
-      expect(nextState.source).toBe("![alt](url)\n");
+      expect(nextState.source).toBe("![alt](url)");
       expect(nextState.selection).toEqual({
-        start: 2,
-        end: 2,
-        affinity: "forward",
+        start: 0,
+        end: 0,
+        affinity: "backward",
       });
     });
   });
