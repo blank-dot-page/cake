@@ -1,10 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { htmlToMarkdownForPaste } from "./clipboard";
+import {
+  htmlToMarkdownForPaste,
+  INTERNAL_MARKDOWN_CLIPBOARD_MIME,
+} from "./clipboard";
 import { createRuntimeForTests } from "./core/runtime";
 import { bundledExtensions } from "./extensions";
+import { createTestHarness } from "./test/harness";
 
 function createTestRuntime() {
   return createRuntimeForTests(bundledExtensions);
+}
+
+function dispatchClipboardEvent(
+  target: EventTarget,
+  type: "copy" | "paste",
+  clipboardData: DataTransfer,
+): ClipboardEvent {
+  const event = new ClipboardEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clipboardData,
+  });
+  target.dispatchEvent(event);
+  return event;
 }
 
 function selectionForText(params: {
@@ -128,6 +146,54 @@ describe("clipboard selection serialization", () => {
     const html = runtime.serializeSelectionToHtml(state, selection);
 
     expect(html).toBe("<div><div>- alpha</div><div>- beta</div></div>");
+  });
+
+  it("copies and pastes a selection containing a divider without losing the block-atom source", async () => {
+    const runtime = createTestRuntime();
+    const source = "alpha\n---\nomega";
+    const state = runtime.createState(source);
+    const selection = { start: 0, end: 100 };
+
+    const markdown = runtime.serializeSelection(state, selection);
+
+    expect(markdown).toContain("---");
+    expect(markdown).toBe(source);
+
+    const sourceHarness = createTestHarness(source);
+    await sourceHarness.focus();
+    sourceHarness.engine.selectAll();
+
+    const copyData = new DataTransfer();
+    const copyEvent = dispatchClipboardEvent(
+      sourceHarness.contentRoot,
+      "copy",
+      copyData,
+    );
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(copyData.getData(INTERNAL_MARKDOWN_CLIPBOARD_MIME)).toContain("---");
+
+    const destinationHarness = createTestHarness("");
+    await destinationHarness.focus();
+
+    const pasteData = new DataTransfer();
+    pasteData.setData(
+      INTERNAL_MARKDOWN_CLIPBOARD_MIME,
+      copyData.getData(INTERNAL_MARKDOWN_CLIPBOARD_MIME),
+    );
+    pasteData.setData("text/plain", copyData.getData("text/plain"));
+    pasteData.setData("text/html", copyData.getData("text/html"));
+    const pasteEvent = dispatchClipboardEvent(
+      destinationHarness.contentRoot,
+      "paste",
+      pasteData,
+    );
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(destinationHarness.engine.getValue()).toBe(source);
+
+    sourceHarness.destroy();
+    destinationHarness.destroy();
   });
 });
 

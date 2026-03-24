@@ -166,6 +166,59 @@ describe("image extension", () => {
     });
   });
 
+  describe("block-atom runtime behavior", () => {
+    test("backspace on an image deletes it", () => {
+      const runtime = createRuntimeForTests([imageExtension]);
+      const state = runtime.createState("![alt](url)\ntext", {
+        start: 1,
+        end: 1,
+      });
+
+      const nextState = runtime.applyEdit({ type: "delete-backward" }, state);
+
+      expect(nextState.source).toBe("text");
+      expect(nextState.selection).toEqual({
+        start: 0,
+        end: 0,
+        affinity: "forward",
+      });
+    });
+
+    test("enter on an image inserts a paragraph after it", () => {
+      const runtime = createRuntimeForTests([imageExtension]);
+      const state = runtime.createState("![alt](url)", {
+        start: 0,
+        end: 0,
+      });
+
+      const nextState = runtime.applyEdit({ type: "insert-line-break" }, state);
+
+      expect(nextState.source).toBe("![alt](url)\n");
+      expect(nextState.selection).toEqual({
+        start: 2,
+        end: 2,
+        affinity: "forward",
+      });
+    });
+
+    test("backspace on an empty paragraph after an image does not delete the image", () => {
+      const runtime = createRuntimeForTests([imageExtension]);
+      const state = runtime.createState("![alt](url)\n", {
+        start: 2,
+        end: 2,
+      });
+
+      const nextState = runtime.applyEdit({ type: "delete-backward" }, state);
+
+      expect(nextState.source).toBe("![alt](url)\n");
+      expect(nextState.selection).toEqual({
+        start: 2,
+        end: 2,
+        affinity: "forward",
+      });
+    });
+  });
+
   describe("normalizeBlock", () => {
     test("normalizes images produced by parsing", () => {
       const runtime = createRuntimeForTests([imageExtension]);

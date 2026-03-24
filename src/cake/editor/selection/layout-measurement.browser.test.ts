@@ -30,7 +30,7 @@ function createAtomicLineInfo(lineIndex: number): LineInfo {
     lineIndex,
     lineStartOffset: 0,
     text: "",
-    cursorLength: 0,
+    cursorLength: 1,
     hasNewline: false,
     cursorToCodeUnit: [0],
     isAtomic: true,
