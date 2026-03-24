@@ -1,6 +1,17 @@
 import { afterEach, describe, expect, test } from "vitest";
+import { commands } from "vitest/browser";
 import { createTestHarness, type TestHarness } from "../../test/harness";
 import { hitTestFromLayout } from "../../editor/selection/selection-layout-dom";
+
+declare module "vitest/browser" {
+  interface BrowserCommands {
+    clickAtCoordinates: (
+      x: number,
+      y: number,
+      debug?: boolean,
+    ) => Promise<void>;
+  }
+}
 
 const PADDED_EDITOR_CSS = `
   .cake-content {
@@ -139,6 +150,28 @@ async function clickDividerAt(
   // Intentionally avoid pre-focusing the editor here. The user-facing bug is
   // about what a plain mouse click on the divider actually renders.
   dispatchMouseClickOnElement(divider, clientX, clientY);
+  await waitForOverlay();
+}
+
+function getDividerHr(harness: TestHarness, lineIndex: number): HTMLHRElement {
+  const dividerLine = harness.getLine(lineIndex);
+  const divider = dividerLine.querySelector("hr");
+  if (!(divider instanceof HTMLHRElement)) {
+    throw new Error(`Missing divider hr on line ${lineIndex}`);
+  }
+  return divider;
+}
+
+async function clickDividerHrWithRealPointer(
+  harness: TestHarness,
+  lineIndex: number,
+) {
+  const divider = getDividerHr(harness, lineIndex);
+  const dividerRect = divider.getBoundingClientRect();
+  await commands.clickAtCoordinates(
+    dividerRect.left + dividerRect.width / 2,
+    dividerRect.top + dividerRect.height / 2,
+  );
   await waitForOverlay();
 }
 
@@ -398,6 +431,18 @@ describe("divider extension browser behavior", () => {
 
     expect(dividerSelectionRect).toBeDefined();
     expect(nextLineSelectionRect).toBeUndefined();
+  });
+
+  test("real browser click on a divider hr renders the divider selection rect instead of a collapsed caret", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "above\n---\nbelow",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    await clickDividerHrWithRealPointer(harness, 1);
+
+    expectRenderedDividerSelectionRect(harness, 1, referenceRect.height);
   });
 
   test("clicking a divider renders a full-width selection rect aligned to the padded content box", async () => {

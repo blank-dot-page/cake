@@ -65,6 +65,18 @@ export function getSelectionGeometry(params: {
     if (!lineInfo || !lineElement) {
       return { selectionRects: [], caretRect: null, focusRect: null };
     }
+    if (lineInfo.isAtomic) {
+      const atomicSelectionRect = toLayoutRect({
+        rect: lineElement.getBoundingClientRect(),
+        containerRect,
+        scroll,
+      });
+      return {
+        selectionRects: [atomicSelectionRect],
+        caretRect: null,
+        focusRect: atomicSelectionRect,
+      };
+    }
     const caret = getCaretRect({
       lineElement,
       lineInfo,
