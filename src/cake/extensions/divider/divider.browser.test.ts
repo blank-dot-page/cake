@@ -26,6 +26,100 @@ function getCollapsedSelectionRect(): DOMRect {
   return line.getBoundingClientRect();
 }
 
+function getLineSelection(
+  harness: TestHarness,
+  lineIndex: number,
+): { start: number; end: number; affinity: "forward" } {
+  const line = harness.engine.getLines()[lineIndex];
+  if (!line) {
+    throw new Error(`Missing line ${lineIndex}`);
+  }
+
+  const start = line.lineStartOffset;
+  const end = start + line.cursorLength + (line.hasNewline ? 1 : 0);
+  return { start, end, affinity: "forward" };
+}
+
+function getSelectionRectForLine(
+  harness: TestHarness,
+  lineIndex: number,
+): { top: number; left: number; width: number; height: number } | undefined {
+  const lineTop = harness.getLineRect(lineIndex).top;
+  return harness
+    .getSelectionRects()
+    .find((rect) => Math.abs(rect.top - lineTop) <= 1);
+}
+
+function dispatchMouseClickAt(
+  harness: TestHarness,
+  clientX: number,
+  clientY: number,
+) {
+  const target = document.elementFromPoint(clientX, clientY) ?? harness.container;
+  harness.contentRoot.focus();
+
+  target.dispatchEvent(
+    new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      clientY,
+      button: 0,
+      buttons: 1,
+    }),
+  );
+  target.dispatchEvent(
+    new MouseEvent("mouseup", {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      clientY,
+      button: 0,
+      buttons: 0,
+    }),
+  );
+  target.dispatchEvent(
+    new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      clientY,
+      button: 0,
+      buttons: 0,
+      detail: 1,
+    }),
+  );
+}
+
+async function clickDividerAt(
+  harness: TestHarness,
+  clientX: number,
+  clientY: number,
+) {
+  dispatchMouseClickAt(harness, clientX, clientY);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+
+async function pressKeyboardBackspace(harness: TestHarness) {
+  harness.contentRoot.focus();
+  harness.contentRoot.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Backspace",
+      code: "Backspace",
+    }),
+  );
+  harness.contentRoot.dispatchEvent(
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+
 describe("divider extension backspace behavior", () => {
   let harness: TestHarness | null = null;
   const extraHarnesses: TestHarness[] = [];
@@ -56,7 +150,27 @@ describe("divider extension backspace behavior", () => {
     });
   });
 
-  test("backspacing the last character on the empty line after a divider leaves the divider intact", async () => {
+  test("backspace on the empty line after a divider moves the caret before the divider", async () => {
+    harness = createTestHarness("hello\n---\n");
+    const emptyLineStart = harness.engine.getLines()[2]?.lineStartOffset;
+    expect(emptyLineStart).toBeDefined();
+    harness.engine.setSelection({
+      start: emptyLineStart!,
+      end: emptyLineStart!,
+      affinity: "forward",
+    });
+
+    await pressKeyboardBackspace(harness);
+
+    expect(harness.engine.getValue()).toBe("hello\n---");
+    expect(harness.engine.getSelection()).toEqual({
+      start: 5,
+      end: 5,
+      affinity: "forward",
+    });
+  });
+
+  test("backspace on the empty line after a leading divider deletes the divider", async () => {
     harness = createTestHarness("");
 
     await harness.focus();
@@ -65,33 +179,12 @@ describe("divider extension backspace behavior", () => {
 
     expect(harness.engine.getValue()).toBe("---\n");
 
-    await harness.typeText("hello");
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await pressKeyboardBackspace(harness);
 
-    expect(harness.engine.getValue()).toBe("---\nhello");
-
-    for (let index = 0; index < 5; index += 1) {
-      await harness.pressBackspace();
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(harness.engine.getValue()).toBe("---\n");
-
-    const emptyLineStart = harness.engine.getLines()[1]?.lineStartOffset;
-    expect(emptyLineStart).toBeDefined();
+    expect(harness.engine.getValue()).toBe("");
     expect(harness.engine.getSelection()).toEqual({
-      start: emptyLineStart!,
-      end: emptyLineStart!,
-      affinity: "forward",
-    });
-
-    await harness.pressBackspace();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(harness.engine.getValue()).toBe("---\n");
-    expect(harness.engine.getSelection()).toEqual({
-      start: emptyLineStart!,
-      end: emptyLineStart!,
+      start: 0,
+      end: 0,
       affinity: "forward",
     });
   });
@@ -207,5 +300,159 @@ describe("divider extension backspace behavior", () => {
 
     expect(dividerSelectionRect).toBeDefined();
     expect(nextLineSelectionRect).toBeUndefined();
+  });
+
+  test("clicking the center of a divider selects it with a full-width selection rect", async () => {
+    harness = createTestHarness("above\n---\nbelow");
+
+    const dividerLineRect = harness.getLineRect(1);
+    await clickDividerAt(
+      harness,
+      dividerLineRect.left + dividerLineRect.width / 2,
+      dividerLineRect.top + dividerLineRect.height / 2,
+    );
+
+    expect(harness.selection).toEqual(getLineSelection(harness, 1));
+
+    const selectionRect = getSelectionRectForLine(harness, 1);
+    expect(selectionRect).toBeDefined();
+    expect(selectionRect!.width).toBeGreaterThan(0);
+    expect(selectionRect!.height).toBeGreaterThan(0);
+    expect(Math.abs(selectionRect!.width - dividerLineRect.width)).toBeLessThanOrEqual(
+      1,
+    );
+  });
+
+  test("clicking the left edge of a divider selects it", async () => {
+    harness = createTestHarness("above\n---\nbelow");
+
+    const dividerLineRect = harness.getLineRect(1);
+    await clickDividerAt(
+      harness,
+      dividerLineRect.left + 1,
+      dividerLineRect.top + dividerLineRect.height / 2,
+    );
+
+    expect(harness.selection).toEqual(getLineSelection(harness, 1));
+  });
+
+  test("clicking the right edge of a divider selects it", async () => {
+    harness = createTestHarness("above\n---\nbelow");
+
+    const dividerLineRect = harness.getLineRect(1);
+    await clickDividerAt(
+      harness,
+      dividerLineRect.right - 1,
+      dividerLineRect.top + dividerLineRect.height / 2,
+    );
+
+    expect(harness.selection).toEqual(getLineSelection(harness, 1));
+  });
+
+  test("ArrowDown from a selected divider collapses the selection onto the line below", async () => {
+    harness = createTestHarness("above\n---\nbelow");
+
+    const dividerLineRect = harness.getLineRect(1);
+    await clickDividerAt(
+      harness,
+      dividerLineRect.left + dividerLineRect.width / 2,
+      dividerLineRect.top + dividerLineRect.height / 2,
+    );
+
+    await harness.pressKey("ArrowDown");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const belowLine = harness.engine.getLines()[2];
+    expect(belowLine).toBeDefined();
+    expect(harness.selection).toEqual({
+      start: belowLine!.lineStartOffset,
+      end: belowLine!.lineStartOffset,
+      affinity: "forward",
+    });
+  });
+
+  test("ArrowUp from a selected divider collapses the selection onto the line above", async () => {
+    harness = createTestHarness("above\n---\nbelow");
+
+    const dividerLineRect = harness.getLineRect(1);
+    await clickDividerAt(
+      harness,
+      dividerLineRect.left + dividerLineRect.width / 2,
+      dividerLineRect.top + dividerLineRect.height / 2,
+    );
+
+    await harness.pressKey("ArrowUp");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const aboveLine = harness.engine.getLines()[0];
+    expect(aboveLine).toBeDefined();
+    const aboveLineEnd = aboveLine!.lineStartOffset + aboveLine!.cursorLength;
+    expect(harness.selection).toEqual({
+      start: aboveLineEnd,
+      end: aboveLineEnd,
+      affinity: "backward",
+    });
+  });
+
+  test("clicking a divider then pressing backspace deletes it between paragraphs", async () => {
+    harness = createTestHarness("above\n---\nbelow");
+
+    const dividerLineRect = harness.getLineRect(1);
+    await clickDividerAt(
+      harness,
+      dividerLineRect.left + dividerLineRect.width / 2,
+      dividerLineRect.top + dividerLineRect.height / 2,
+    );
+
+    await pressKeyboardBackspace(harness);
+
+    expect(harness.engine.getValue()).toBe("above\nbelow");
+    const belowLine = harness.engine.getLines()[1];
+    expect(belowLine).toBeDefined();
+    expect(harness.selection).toEqual({
+      start: belowLine!.lineStartOffset,
+      end: belowLine!.lineStartOffset,
+      affinity: "forward",
+    });
+  });
+
+  test("clicking a leading divider then pressing backspace deletes it and keeps the paragraph at the top", async () => {
+    harness = createTestHarness("---\nbelow");
+
+    const dividerLineRect = harness.getLineRect(0);
+    await clickDividerAt(
+      harness,
+      dividerLineRect.left + dividerLineRect.width / 2,
+      dividerLineRect.top + dividerLineRect.height / 2,
+    );
+
+    await pressKeyboardBackspace(harness);
+
+    expect(harness.engine.getValue()).toBe("below");
+    expect(harness.selection).toEqual({
+      start: 0,
+      end: 0,
+      affinity: "forward",
+    });
+  });
+
+  test("clicking the only divider then pressing backspace leaves an empty document", async () => {
+    harness = createTestHarness("---");
+
+    const dividerLineRect = harness.getLineRect(0);
+    await clickDividerAt(
+      harness,
+      dividerLineRect.left + dividerLineRect.width / 2,
+      dividerLineRect.top + dividerLineRect.height / 2,
+    );
+
+    await pressKeyboardBackspace(harness);
+
+    expect(harness.engine.getValue()).toBe("");
+    expect(harness.selection).toEqual({
+      start: 0,
+      end: 0,
+      affinity: "forward",
+    });
   });
 });

@@ -483,19 +483,42 @@ describe("divider extension", () => {
       expect(sourceOffsetForSelectionStart(nextState)).toBe("alpha\n---".length);
     });
 
-    test("backspace on the empty paragraph after a divider is a no-op", () => {
+    test("backspace on the empty paragraph after a divider moves the caret before the divider", () => {
       const runtime = createRuntimeForTests([dividerExtension]);
-      const state = runtime.createState("---\n", {
-        start: 2,
-        end: 2,
+      const caret = runtime.createState("hello\n---\n").map.sourceToCursor(
+        "hello\n---\n".length,
+        "forward",
+      );
+      const state = runtime.createState("hello\n---\n", {
+        start: caret.cursorOffset,
+        end: caret.cursorOffset,
+        affinity: caret.affinity,
       });
 
       const nextState = runtime.applyEdit({ type: "delete-backward" }, state);
 
-      expect(nextState.source).toBe("---\n");
+      expect(nextState.source).toBe("hello\n---");
+      expect(sourceOffsetForSelectionStart(nextState)).toBe("hello".length);
+    });
+
+    test("backspace on the empty paragraph after a leading divider deletes the divider", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const caret = runtime.createState("---\n").map.sourceToCursor(
+        "---\n".length,
+        "forward",
+      );
+      const state = runtime.createState("---\n", {
+        start: caret.cursorOffset,
+        end: caret.cursorOffset,
+        affinity: caret.affinity,
+      });
+
+      const nextState = runtime.applyEdit({ type: "delete-backward" }, state);
+
+      expect(nextState.source).toBe("");
       expect(nextState.selection).toEqual({
-        start: 2,
-        end: 2,
+        start: 0,
+        end: 0,
         affinity: "forward",
       });
     });

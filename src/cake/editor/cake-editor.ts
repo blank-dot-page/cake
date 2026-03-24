@@ -2725,6 +2725,15 @@ export class CakeEditor {
         this.applySelectionUpdate(selection, "keyboard");
         return;
       }
+      if (!extendSelection) {
+        const selection = this.moveSelectionOutOfSelectedAtomicLine("up");
+        if (selection) {
+          event.preventDefault();
+          this.verticalNavGoalX = null;
+          this.applySelectionUpdate(selection, "keyboard");
+          return;
+        }
+      }
       if (extendSelection) {
         const selection = this.extendFullLineSelectionByLine("up");
         if (selection) {
@@ -2754,6 +2763,15 @@ export class CakeEditor {
         event.preventDefault();
         this.applySelectionUpdate(selection, "keyboard");
         return;
+      }
+      if (!extendSelection) {
+        const selection = this.moveSelectionOutOfSelectedAtomicLine("down");
+        if (selection) {
+          event.preventDefault();
+          this.verticalNavGoalX = null;
+          this.applySelectionUpdate(selection, "keyboard");
+          return;
+        }
       }
       if (extendSelection) {
         const selection = this.extendFullLineSelectionByLine("down");
@@ -3570,6 +3588,44 @@ export class CakeEditor {
     }
 
     return Math.max(0, Math.min(nextPos, cursorLength));
+  }
+
+  private moveSelectionOutOfSelectedAtomicLine(
+    direction: "up" | "down",
+  ): Selection | null {
+    if (this.selectedAtomicLineIndex === null) {
+      return null;
+    }
+
+    const lines = this.textModel.getLines();
+    const lineIndex = this.selectedAtomicLineIndex;
+
+    if (direction === "up") {
+      for (let index = lineIndex - 1; index >= 0; index -= 1) {
+        const line = lines[index];
+        if (!line || line.isAtomic) {
+          continue;
+        }
+        const lineEnd = line.lineStartOffset + line.cursorLength;
+        return { start: lineEnd, end: lineEnd, affinity: "backward" };
+      }
+      return { start: 0, end: 0, affinity: "backward" };
+    }
+
+    for (let index = lineIndex + 1; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (!line || line.isAtomic) {
+        continue;
+      }
+      return {
+        start: line.lineStartOffset,
+        end: line.lineStartOffset,
+        affinity: "forward",
+      };
+    }
+
+    const docEnd = this.state.map.cursorLength;
+    return { start: docEnd, end: docEnd, affinity: "forward" };
   }
 
   private moveSelectionVertically(direction: "up" | "down"): Selection | null {
