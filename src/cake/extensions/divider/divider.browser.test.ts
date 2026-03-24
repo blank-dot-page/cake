@@ -10,6 +10,9 @@ declare module "vitest/browser" {
       y: number,
       debug?: boolean,
     ) => Promise<void>;
+    mouseDownAtCoordinates: (x: number, y: number) => Promise<void>;
+    mouseMoveToCoordinates: (x: number, y: number) => Promise<void>;
+    mouseUp: () => Promise<void>;
   }
 }
 
@@ -69,6 +72,17 @@ function getRenderedSelectionRectForLine(
     .find((rect) => Math.abs(rect.top - lineTop) <= 1);
 }
 
+function getSelectionRectInfoForLine(
+  harness: TestHarness,
+  lineIndex: number,
+) {
+  const containerRect = harness.container.getBoundingClientRect();
+  const lineTop = harness.getLineRect(lineIndex).top - containerRect.top;
+  return harness
+    .getSelectionRects()
+    .find((rect) => Math.abs(rect.top - lineTop) <= 1);
+}
+
 function getContentBoxRect(harness: TestHarness): {
   left: number;
   top: number;
@@ -92,6 +106,19 @@ function getContentBoxRect(harness: TestHarness): {
 
 async function waitForOverlay() {
   await new Promise((resolve) => setTimeout(resolve, 50));
+}
+
+async function waitForCondition(
+  predicate: () => boolean,
+  timeoutMs = 500,
+) {
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 16));
+  }
 }
 
 function dispatchMouseClickOnElement(
@@ -175,6 +202,19 @@ async function clickDividerHrWithRealPointer(
   await waitForOverlay();
 }
 
+function getTextRect(
+  harness: TestHarness,
+  lineIndex: number,
+  startOffset: number,
+  endOffset: number,
+): DOMRect {
+  const textNode = harness.getTextNode(lineIndex);
+  const range = document.createRange();
+  range.setStart(textNode, startOffset);
+  range.setEnd(textNode, endOffset);
+  return range.getBoundingClientRect();
+}
+
 async function getReferenceTextLineSelectionRect(
   extraHarnesses: TestHarness[],
 ): Promise<DOMRect> {
@@ -192,6 +232,26 @@ async function getReferenceTextLineSelectionRect(
     throw new Error("Missing reference text selection rect");
   }
   return rect;
+}
+
+function expectRenderedDividerSelectionRectInRange(
+  harness: TestHarness,
+  lineIndex: number,
+  referenceLineHeight: number,
+) {
+  const containerRect = harness.container.getBoundingClientRect();
+  const lineRect = harness.getLineRect(lineIndex);
+  const contentBox = getContentBoxRect(harness);
+  const lineLeft = lineRect.left - containerRect.left;
+  const selectionRect = getSelectionRectInfoForLine(harness, lineIndex);
+
+  expect(selectionRect).toBeDefined();
+  expect(selectionRect!.width).toBeGreaterThan(10);
+  expect(Math.abs(selectionRect!.left - lineLeft)).toBeLessThanOrEqual(1);
+  expect(Math.abs(selectionRect!.width - contentBox.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(selectionRect!.height - referenceLineHeight)).toBeLessThanOrEqual(
+    1,
+  );
 }
 
 function expectRenderedDividerSelectionRect(
@@ -431,6 +491,102 @@ describe("divider extension browser behavior", () => {
 
     expect(dividerSelectionRect).toBeDefined();
     expect(nextLineSelectionRect).toBeUndefined();
+  });
+
+  test("real browser drag from text above into the divider highlights it before reaching text below", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "hello\n---\nworld",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    const helloRect = getTextRect(harness, 0, 0, 5);
+    const dividerRect = harness.getLineRect(1);
+    const worldRect = getTextRect(harness, 2, 0, 5);
+    const dragX = helloRect.left + 1;
+
+    await commands.mouseDownAtCoordinates(dragX, helloRect.top + helloRect.height / 2);
+
+    try {
+      await commands.mouseMoveToCoordinates(
+        dragX,
+        dividerRect.top + dividerRect.height / 2,
+      );
+      await waitForCondition(
+        () => getSelectionRectInfoForLine(harness, 1) !== undefined,
+      );
+
+      expectRenderedDividerSelectionRectInRange(
+        harness,
+        1,
+        referenceRect.height,
+      );
+      expect(getSelectionRectInfoForLine(harness, 2)).toBeUndefined();
+
+      await commands.mouseMoveToCoordinates(
+        dragX,
+        worldRect.top + worldRect.height / 2,
+      );
+      await waitForCondition(
+        () => getSelectionRectInfoForLine(harness, 1) !== undefined,
+      );
+
+      expectRenderedDividerSelectionRectInRange(
+        harness,
+        1,
+        referenceRect.height,
+      );
+    } finally {
+      await commands.mouseUp();
+    }
+  });
+
+  test("real browser drag from text below into the divider highlights it before reaching text above", async () => {
+    const referenceRect = await getReferenceTextLineSelectionRect(extraHarnesses);
+    harness = createTestHarness({
+      value: "hello\n---\nworld",
+      css: PADDED_EDITOR_CSS,
+    });
+
+    const helloRect = getTextRect(harness, 0, 0, 5);
+    const dividerRect = harness.getLineRect(1);
+    const worldRect = getTextRect(harness, 2, 0, 5);
+    const dragX = worldRect.left + 1;
+
+    await commands.mouseDownAtCoordinates(dragX, worldRect.top + worldRect.height / 2);
+
+    try {
+      await commands.mouseMoveToCoordinates(
+        dragX,
+        dividerRect.top + dividerRect.height / 2,
+      );
+      await waitForCondition(
+        () => getSelectionRectInfoForLine(harness, 1) !== undefined,
+      );
+
+      expectRenderedDividerSelectionRectInRange(
+        harness,
+        1,
+        referenceRect.height,
+      );
+      expect(getSelectionRectInfoForLine(harness, 0)).toBeUndefined();
+
+      await commands.mouseMoveToCoordinates(
+        dragX,
+        helloRect.top + helloRect.height / 2,
+      );
+      await waitForCondition(
+        () => getSelectionRectInfoForLine(harness, 1) !== undefined,
+      );
+
+      expectRenderedDividerSelectionRectInRange(
+        harness,
+        1,
+        referenceRect.height,
+      );
+    } finally {
+      await commands.mouseUp();
+    }
   });
 
   test("real browser click on a divider hr renders the divider selection rect instead of a collapsed caret", async () => {

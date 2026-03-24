@@ -391,6 +391,12 @@ export class CakeEditor {
     anchorOffset: number;
   } | null = null;
 
+  private pointerSelectionState: {
+    pointerId: number;
+    anchorOffset: number;
+  } | null = null;
+  private isPointerSelectingAcrossAtomicLine = false;
+
   // Track if user is creating selection via drag (for single-click handling)
   // We track the starting position and only consider it "moved" if the mouse
   // moved more than a threshold distance (to avoid false positives from
@@ -5010,6 +5016,55 @@ export class CakeEditor {
     return { cursorOffset: hit.cursorOffset, affinity };
   }
 
+  private selectionTouchesAtomicLine(startOffset: number, endOffset: number) {
+    if (startOffset === endOffset) {
+      return false;
+    }
+
+    const normalizedStart = Math.min(startOffset, endOffset);
+    const normalizedEnd = Math.max(startOffset, endOffset);
+    const startLineIndex =
+      this.textModel.resolveOffsetToLine(normalizedStart).lineIndex;
+    const endLineIndex =
+      this.textModel.resolveOffsetToLine(normalizedEnd).lineIndex;
+    const lines = this.textModel.getLines();
+
+    for (let index = startLineIndex; index <= endLineIndex; index += 1) {
+      if (lines[index]?.isAtomic) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private getAtomicDragTargetOffset(
+    anchorOffset: number,
+    hitCursorOffset: number,
+  ) {
+    const hitLine =
+      this.textModel.getLines()[
+        this.textModel.resolveOffsetToLine(hitCursorOffset).lineIndex
+      ];
+
+    if (!hitLine?.isAtomic) {
+      return hitCursorOffset;
+    }
+
+    const lineStart = hitLine.lineStartOffset;
+    const lineEnd = lineStart + hitLine.cursorLength;
+    const lineAfter = lineEnd + (hitLine.hasNewline ? 1 : 0);
+
+    if (anchorOffset <= lineStart) {
+      return lineEnd;
+    }
+    if (anchorOffset >= lineAfter) {
+      return lineStart;
+    }
+
+    return hitCursorOffset;
+  }
+
   private handlePointerDown(event: PointerEvent) {
     if (!this.isEventTargetInContentRoot(event.target)) {
       return;
@@ -5029,6 +5084,8 @@ export class CakeEditor {
     this.hasMovedSincePointerDown = false;
     this.pointerDownPosition = { x: event.clientX, y: event.clientY };
     this.pendingClickHit = null;
+    this.pointerSelectionState = null;
+    this.isPointerSelectingAcrossAtomicLine = false;
 
     if (this.readOnly) {
       return;
@@ -5133,6 +5190,10 @@ export class CakeEditor {
           // Clicking outside selection - collapse to clicked position
           this.suppressSelectionChange = true;
           this.pendingClickHit = hit;
+          this.pointerSelectionState = {
+            pointerId: event.pointerId,
+            anchorOffset: hit.cursorOffset,
+          };
           const newSelection: Selection = {
             start: hit.cursorOffset,
             end: hit.cursorOffset,
@@ -5150,6 +5211,10 @@ export class CakeEditor {
         // Collapsed selection - apply immediately
         this.suppressSelectionChange = true;
         this.pendingClickHit = hit;
+        this.pointerSelectionState = {
+          pointerId: event.pointerId,
+          anchorOffset: hit.cursorOffset,
+        };
         const newSelection: Selection = {
           start: hit.cursorOffset,
           end: hit.cursorOffset,
@@ -5309,6 +5374,44 @@ export class CakeEditor {
       return;
     }
 
+    if (
+      this.pointerSelectionState &&
+      event.pointerId === this.pointerSelectionState.pointerId
+    ) {
+      const hit = this.hitTestFromClientPoint(event.clientX, event.clientY);
+      const targetOffset = hit
+        ? this.getAtomicDragTargetOffset(
+            this.pointerSelectionState.anchorOffset,
+            hit.cursorOffset,
+          )
+        : null;
+      if (
+        hit &&
+        targetOffset !== null &&
+        (this.isPointerSelectingAcrossAtomicLine ||
+          this.selectionTouchesAtomicLine(
+            this.pointerSelectionState.anchorOffset,
+            targetOffset,
+          ))
+      ) {
+        this.isPointerSelectingAcrossAtomicLine = true;
+        this.suppressSelectionChange = true;
+        this.applySelectionUpdate(
+          {
+            start: this.pointerSelectionState.anchorOffset,
+            end: targetOffset,
+            affinity:
+              targetOffset < this.pointerSelectionState.anchorOffset
+                ? "backward"
+                : "forward",
+          },
+          "dom",
+          { scrollIntoView: false },
+        );
+        return;
+      }
+    }
+
     if (!this.dragState || !this.dragState.isDragging) {
       return;
     }
@@ -5324,6 +5427,7 @@ export class CakeEditor {
 
   private handlePointerUp(event: PointerEvent) {
     this.blockTrustedTextDrag = false;
+    this.pointerSelectionState = null;
     // Don't clear pendingClickHit here - let the click handler do it.
     // The click event fires after pointerup, and we need to keep
     // suppressSelectionChange=true until click completes.
@@ -5356,12 +5460,16 @@ export class CakeEditor {
     }
 
     if (!this.dragState || !this.dragState.isDragging) {
-      if (this.hasMovedSincePointerDown) {
+      const wasPointerSelectingAcrossAtomicLine =
+        this.isPointerSelectingAcrossAtomicLine;
+      this.isPointerSelectingAcrossAtomicLine = false;
+      if (this.hasMovedSincePointerDown && !wasPointerSelectingAcrossAtomicLine) {
         queueMicrotask(() => {
           this.syncSelectionFromDom();
           this.flushOverlayUpdate();
         });
       }
+      this.suppressSelectionChange = false;
       return;
     }
     if (event.pointerId !== this.dragState.pointerId) {
