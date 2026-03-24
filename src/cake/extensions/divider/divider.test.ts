@@ -556,5 +556,62 @@ describe("divider extension", () => {
         affinity: "forward",
       });
     });
+
+    test("enter on a selected trailing divider keeps the divider and inserts a paragraph after it", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("text\n---", {
+        start: 5,
+        end: 6,
+        affinity: "forward",
+      });
+
+      const nextState = runtime.applyEdit({ type: "insert-line-break" }, state);
+
+      expect(nextState.source).toBe("text\n---\n");
+      expect(nextState.selection).toEqual({
+        start: nextState.selection.start,
+        end: nextState.selection.start,
+        affinity: "forward",
+      });
+      expect(sourceOffsetForSelectionStart(nextState)).toBe("text\n---\n".length);
+    });
+
+    test("enter on a selected leading divider keeps the divider and inserts a paragraph after it", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("---", {
+        start: 0,
+        end: 1,
+        affinity: "forward",
+      });
+
+      const nextState = runtime.applyEdit({ type: "insert-line-break" }, state);
+
+      expect(nextState.source).toBe("---\n");
+      expect(nextState.selection).toEqual({
+        start: nextState.selection.start,
+        end: nextState.selection.start,
+        affinity: "forward",
+      });
+      expect(sourceOffsetForSelectionStart(nextState)).toBe("---\n".length);
+    });
+
+    test("enter on a selected middle divider keeps the divider and inserts a paragraph after it", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("above\n---\nbelow", {
+        start: 6,
+        end: 8,
+        affinity: "forward",
+      });
+
+      const nextState = runtime.applyEdit({ type: "insert-line-break" }, state);
+
+      expect(nextState.source).toBe("above\n---\n\nbelow");
+      expect(nextState.selection).toEqual({
+        start: nextState.selection.start,
+        end: nextState.selection.start,
+        affinity: "forward",
+      });
+      expect(sourceOffsetForSelectionStart(nextState)).toBe("above\n---\n".length);
+    });
   });
 });

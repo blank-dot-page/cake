@@ -1710,6 +1710,27 @@ export function createRuntimeFromRegistry(registry: {
       return null;
     }
 
+    const insertParagraphAfterAtomicBlock = () => {
+      const nextParentBlocks = [
+        ...parentBlocks.slice(0, startIndex + 1),
+        { type: "paragraph", content: [] } satisfies Block,
+        ...parentBlocks.slice(startIndex + 1),
+      ];
+      const nextDoc: Doc = {
+        ...doc,
+        blocks: updateBlocksAtPath(doc.blocks, parentPath, () => nextParentBlocks),
+      };
+      const nextModel = getEditorTextModelForDoc(nextDoc);
+      const nextLines = nextModel.getStructuralLines();
+      const lineStarts = nextModel.getLineOffsets();
+      const nextLineIndex = Math.min(nextLines.length - 1, startLoc.lineIndex + 1);
+      return {
+        doc: nextDoc,
+        nextCursor: lineStarts[nextLineIndex] ?? 0,
+        nextAffinity: "forward" as const,
+      };
+    };
+
     const getNearestWrapperAtPath = (
       rootBlocks: Block[],
       leafPath: number[],
@@ -1734,38 +1755,22 @@ export function createRuntimeFromRegistry(registry: {
       cursorStart === cursorEnd &&
       startLoc.lineIndex === endLoc.lineIndex &&
       pathsEqual(startLine.path, endLine.path);
+    const selectsEntireAtomicLine =
+      startBlock.type === "block-atom" &&
+      effectiveRange.start === startLine.lineStartOffset &&
+      effectiveRange.end ===
+        startLine.lineStartOffset +
+          startLine.cursorLength +
+          (startLine.hasNewline ? 1 : 0);
+
+    if (command.type === "insert-line-break" && selectsEntireAtomicLine) {
+      return insertParagraphAfterAtomicBlock();
+    }
 
     if (collapsedOnSingleLine) {
       // Enter at an atomic block inserts a new empty paragraph after it.
-      if (
-        command.type === "insert-line-break" &&
-        startBlock.type === "block-atom"
-      ) {
-        const nextParentBlocks = [
-          ...parentBlocks.slice(0, startIndex + 1),
-          { type: "paragraph", content: [] } satisfies Block,
-          ...parentBlocks.slice(startIndex + 1),
-        ];
-        const nextDoc: Doc = {
-          ...doc,
-          blocks: updateBlocksAtPath(
-            doc.blocks,
-            parentPath,
-            () => nextParentBlocks,
-          ),
-        };
-        const nextModel = getEditorTextModelForDoc(nextDoc);
-        const nextLines = nextModel.getStructuralLines();
-        const lineStarts = nextModel.getLineOffsets();
-        const nextLineIndex = Math.min(
-          nextLines.length - 1,
-          startLoc.lineIndex + 1,
-        );
-        return {
-          doc: nextDoc,
-          nextCursor: lineStarts[nextLineIndex] ?? 0,
-          nextAffinity: "forward",
-        };
+      if (command.type === "insert-line-break" && startBlock.type === "block-atom") {
+        return insertParagraphAfterAtomicBlock();
       }
 
       // Backspace/Delete on an atomic block deletes the block.

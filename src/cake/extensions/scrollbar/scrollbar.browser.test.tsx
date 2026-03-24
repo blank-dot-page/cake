@@ -1,7 +1,7 @@
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
-import { render } from "vitest-browser-react";
+import { cleanup, render } from "vitest-browser-react";
 import { CakeEditor, type CakeEditorRef } from "../../react/index";
 import { bundledExtensions } from "../../extensions";
 import { scrollbarExtension } from "./index";
@@ -11,7 +11,7 @@ const originalConsoleError = console.error;
 
 async function renderScrollbarEditor(markdown: string, height = 200) {
   const ref = createRef<CakeEditorRef>();
-  const renderResult = render(
+  await render(
     <div style={{ height, overflow: "hidden" }}>
       <CakeEditor
         ref={ref}
@@ -24,7 +24,7 @@ async function renderScrollbarEditor(markdown: string, height = 200) {
     </div>,
   );
   await new Promise((resolve) => requestAnimationFrame(resolve));
-  return { ref, renderResult };
+  return { ref };
 }
 
 function generateLongContent(lines: number): string {
@@ -69,7 +69,8 @@ describe("cake scrollbar extension", () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await cleanup();
     vi.restoreAllMocks();
   });
 
