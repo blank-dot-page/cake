@@ -2,11 +2,9 @@ import {
   type CakeExtension,
   type EditResult,
   type ParseBlockResult,
-  type RuntimeState,
   type SerializeBlockResult,
 } from "../../core/runtime";
 import { CursorSourceBuilder } from "../../core/mapping/cursor-source-map";
-import { getEditorTextModelForDoc } from "../../editor/internal/editor-text-model";
 import type { Block } from "../../core/types";
 
 const DIVIDER_KIND = "divider";
@@ -47,86 +45,6 @@ function handleDividerAutoformat(
   return {
     nextSource,
     nextSourceCursor,
-  };
-}
-
-function findPreviousLineStartInSource(
-  source: string,
-  lineStart: number,
-): number | null {
-  if (lineStart <= 0) {
-    return null;
-  }
-
-  const previousLineEnd = lineStart - 1;
-  if (source[previousLineEnd] !== "\n") {
-    return null;
-  }
-
-  return findLineStartInSource(source, previousLineEnd);
-}
-
-function handleBackspaceOnEmptyLineAfterDivider(
-  state: RuntimeState,
-): EditResult | null {
-  const { source, selection, runtime } = state;
-  if (selection.start !== selection.end) {
-    return null;
-  }
-
-  const textModel = getEditorTextModelForDoc(state.doc);
-  const caret = Math.max(
-    0,
-    Math.min(textModel.getCursorLength(), selection.start),
-  );
-  const caretLoc = textModel.resolveOffsetToLine(caret);
-  const lines = textModel.getStructuralLines();
-  const caretLine = lines[caretLoc.lineIndex];
-  const previousLine = lines[caretLoc.lineIndex - 1];
-
-  if (
-    !caretLine ||
-    !previousLine ||
-    caretLine.block.type !== "paragraph" ||
-    caretLine.cursorLength !== 0 ||
-    caretLoc.offsetInLine !== 0 ||
-    previousLine.block.type !== "block-atom" ||
-    previousLine.block.kind !== DIVIDER_KIND
-  ) {
-    return null;
-  }
-
-  const sourcePos = state.map.cursorToSource(
-    caret,
-    selection.affinity ?? "forward",
-  );
-  const lineStart = findLineStartInSource(source, sourcePos);
-  const dividerLineStart = findPreviousLineStartInSource(source, lineStart);
-  if (dividerLineStart === null) {
-    return null;
-  }
-
-  if (dividerLineStart === 0) {
-    return {
-      source: source.slice(lineStart),
-      selection: { start: 0, end: 0, affinity: "forward" },
-    };
-  }
-
-  const nextSource = source.slice(0, lineStart - 1) + source.slice(lineStart);
-  const caretSourceOffset = dividerLineStart - 1;
-  const nextCaret = runtime.createState(nextSource).map.sourceToCursor(
-    caretSourceOffset,
-    "forward",
-  );
-
-  return {
-    source: nextSource,
-    selection: {
-      start: nextCaret.cursorOffset,
-      end: nextCaret.cursorOffset,
-      affinity: nextCaret.affinity,
-    },
   };
 }
 
@@ -218,10 +136,6 @@ export const dividerExtension: CakeExtension = (editor) => {
 
   disposers.push(
     editor.registerOnEdit((command, state): EditResult | null => {
-      if (command.type === "delete-backward") {
-        return handleBackspaceOnEmptyLineAfterDivider(state);
-      }
-
       if (command.type !== "insert" || command.text !== "-") {
         return null;
       }

@@ -1023,16 +1023,24 @@ export function createRuntimeFromRegistry(registry: {
       return previous.source;
     }
 
-    const oldStart = sourceOffsetForBlockStart(previous, prefix);
+    const replacingTrailingBlocks = suffix === 0;
+    const oldStart =
+      replacingTrailingBlocks && prefix > 0 && prefix < previousSegments.length
+        ? sourceOffsetForBlockStart(previous, prefix) - 1
+        : sourceOffsetForBlockStart(previous, prefix);
     const oldEnd = sourceOffsetForBlockStart(
       previous,
       previousSegments.length - suffix,
     );
-    const middle = serializeSegmentRange(
+    const serializedMiddle = serializeSegmentRange(
       segments,
       prefix,
       segments.length - suffix,
     );
+    const middle =
+      replacingTrailingBlocks && prefix > 0 && prefix < segments.length
+        ? `\n${serializedMiddle}`
+        : serializedMiddle;
 
     return (
       previous.source.slice(0, oldStart) +
@@ -1163,7 +1171,74 @@ export function createRuntimeFromRegistry(registry: {
     return structuralReparsePolicies.some((policy) => policy(command));
   }
 
+  function handleDeleteBackwardOnEmptyParagraphAfterAtomicBlock(
+    state: RuntimeState,
+  ): RuntimeState | null {
+    const selection = normalizeSelection(state.selection);
+    if (selection.start !== selection.end) {
+      return null;
+    }
+
+    const textModel = getEditorTextModelForDoc(state.doc);
+    const lines = textModel.getStructuralLines();
+    const cursor = Math.max(
+      0,
+      Math.min(textModel.getCursorLength(), selection.start),
+    );
+    const caretLoc = textModel.resolveOffsetToLine(cursor);
+    const caretLine = lines[caretLoc.lineIndex];
+    const previousLine = lines[caretLoc.lineIndex - 1];
+
+    if (
+      !caretLine ||
+      !previousLine ||
+      caretLine.block.type !== "paragraph" ||
+      caretLine.cursorLength !== 0 ||
+      caretLoc.offsetInLine !== 0 ||
+      previousLine.block.type !== "block-atom" ||
+      !pathsEqual(previousLine.parentPath, caretLine.parentPath) ||
+      previousLine.indexInParent !== caretLine.indexInParent - 1
+    ) {
+      return null;
+    }
+
+    const nextDoc: Doc = {
+      ...state.doc,
+      blocks: updateBlocksAtPath(state.doc.blocks, caretLine.parentPath, (blocks) =>
+        blocks.filter((_, index) => index !== caretLine.indexInParent),
+      ),
+    };
+    const nextModel = getEditorTextModelForDoc(nextDoc);
+    const nextLines = nextModel.getStructuralLines();
+    const nextLineIndex = nextLines.findIndex((line) =>
+      pathsEqual(line.path, previousLine.path),
+    );
+    if (nextLineIndex === -1) {
+      return null;
+    }
+
+    const lineStarts = nextModel.getLineOffsets();
+    const atomicLineStart = lineStarts[nextLineIndex] ?? 0;
+    const nextCursor = atomicLineStart === 0 ? 0 : atomicLineStart - 1;
+    const nextAffinity: Affinity =
+      atomicLineStart === 0 ? "backward" : "forward";
+
+    return createStateFromDoc(nextDoc, {
+      start: nextCursor,
+      end: nextCursor,
+      affinity: nextAffinity,
+    });
+  }
+
   function applyEdit(command: EditCommand, state: RuntimeState): RuntimeState {
+    if (command.type === "delete-backward") {
+      const blockAtomBackspace =
+        handleDeleteBackwardOnEmptyParagraphAfterAtomicBlock(state);
+      if (blockAtomBackspace) {
+        return blockAtomBackspace;
+      }
+    }
+
     // Extensions can either:
     // - fully handle the edit by returning {source, selection}, or
     // - delegate by returning another EditCommand, which will be applied by the
@@ -1710,6 +1785,27 @@ export function createRuntimeFromRegistry(registry: {
       return null;
     }
 
+    const insertParagraphAfterAtomicBlock = () => {
+      const nextParentBlocks = [
+        ...parentBlocks.slice(0, startIndex + 1),
+        { type: "paragraph", content: [] } satisfies Block,
+        ...parentBlocks.slice(startIndex + 1),
+      ];
+      const nextDoc: Doc = {
+        ...doc,
+        blocks: updateBlocksAtPath(doc.blocks, parentPath, () => nextParentBlocks),
+      };
+      const nextModel = getEditorTextModelForDoc(nextDoc);
+      const nextLines = nextModel.getStructuralLines();
+      const lineStarts = nextModel.getLineOffsets();
+      const nextLineIndex = Math.min(nextLines.length - 1, startLoc.lineIndex + 1);
+      return {
+        doc: nextDoc,
+        nextCursor: lineStarts[nextLineIndex] ?? 0,
+        nextAffinity: "forward" as const,
+      };
+    };
+
     const getNearestWrapperAtPath = (
       rootBlocks: Block[],
       leafPath: number[],
@@ -1734,38 +1830,22 @@ export function createRuntimeFromRegistry(registry: {
       cursorStart === cursorEnd &&
       startLoc.lineIndex === endLoc.lineIndex &&
       pathsEqual(startLine.path, endLine.path);
+    const selectsEntireAtomicLine =
+      startBlock.type === "block-atom" &&
+      effectiveRange.start === startLine.lineStartOffset &&
+      effectiveRange.end ===
+        startLine.lineStartOffset +
+          startLine.cursorLength +
+          (startLine.hasNewline ? 1 : 0);
+
+    if (command.type === "insert-line-break" && selectsEntireAtomicLine) {
+      return insertParagraphAfterAtomicBlock();
+    }
 
     if (collapsedOnSingleLine) {
       // Enter at an atomic block inserts a new empty paragraph after it.
-      if (
-        command.type === "insert-line-break" &&
-        startBlock.type === "block-atom"
-      ) {
-        const nextParentBlocks = [
-          ...parentBlocks.slice(0, startIndex + 1),
-          { type: "paragraph", content: [] } satisfies Block,
-          ...parentBlocks.slice(startIndex + 1),
-        ];
-        const nextDoc: Doc = {
-          ...doc,
-          blocks: updateBlocksAtPath(
-            doc.blocks,
-            parentPath,
-            () => nextParentBlocks,
-          ),
-        };
-        const nextModel = getEditorTextModelForDoc(nextDoc);
-        const nextLines = nextModel.getStructuralLines();
-        const lineStarts = nextModel.getLineOffsets();
-        const nextLineIndex = Math.min(
-          nextLines.length - 1,
-          startLoc.lineIndex + 1,
-        );
-        return {
-          doc: nextDoc,
-          nextCursor: lineStarts[nextLineIndex] ?? 0,
-          nextAffinity: "forward",
-        };
+      if (command.type === "insert-line-break" && startBlock.type === "block-atom") {
+        return insertParagraphAfterAtomicBlock();
       }
 
       // Backspace/Delete on an atomic block deletes the block.

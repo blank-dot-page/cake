@@ -1,5 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import { userEvent } from "vitest/browser";
 import { CakeEditor } from "../../editor/cake-editor";
+import { createTestHarness, type TestHarness } from "../../test/harness";
 import { bundledExtensions } from "../index";
 
 describe("image extension DOM rendering", () => {
@@ -140,5 +142,51 @@ describe("image extension DOM rendering", () => {
     expect(skeleton).not.toBeNull();
     expect(skeleton.style.width).toBe("300px");
     expect(skeleton.style.height).toBe("200px");
+  });
+});
+
+async function waitForOverlay() {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+
+describe("image extension block-atom keyboard behavior", () => {
+  let harness: TestHarness | null = null;
+
+  afterEach(() => {
+    harness?.destroy();
+    harness = null;
+  });
+
+  test("ArrowDown from text above a trailing image selects the image", async () => {
+    harness = createTestHarness({
+      value: "above\n![img](url)",
+      extensions: bundledExtensions,
+    });
+
+    await harness.focus();
+    const aboveLine = harness.engine.getLines()[0];
+    expect(aboveLine).toBeDefined();
+    const aboveLineEnd = aboveLine!.lineStartOffset + aboveLine!.cursorLength;
+    harness.engine.setSelection({
+      start: aboveLineEnd,
+      end: aboveLineEnd,
+      affinity: "forward",
+    });
+    await waitForOverlay();
+
+    await userEvent.keyboard("{ArrowDown}");
+    await waitForOverlay();
+
+    const imageLine = harness.engine.getLines()[1];
+    expect(imageLine).toBeDefined();
+    expect(harness.selection).toEqual({
+      start: imageLine!.lineStartOffset,
+      end:
+        imageLine!.lineStartOffset +
+        imageLine!.cursorLength +
+        (imageLine!.hasNewline ? 1 : 0),
+      affinity: "forward",
+    });
+    expect(harness.getRenderedSelectionRects()).toHaveLength(1);
   });
 });

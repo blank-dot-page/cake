@@ -501,7 +501,7 @@ describe("divider extension", () => {
       expect(sourceOffsetForSelectionStart(nextState)).toBe("hello".length);
     });
 
-    test("backspace on the empty paragraph after a leading divider deletes the divider", () => {
+    test("backspace on the empty paragraph after a leading divider moves the caret before the divider", () => {
       const runtime = createRuntimeForTests([dividerExtension]);
       const caret = runtime.createState("---\n").map.sourceToCursor(
         "---\n".length,
@@ -515,12 +515,8 @@ describe("divider extension", () => {
 
       const nextState = runtime.applyEdit({ type: "delete-backward" }, state);
 
-      expect(nextState.source).toBe("");
-      expect(nextState.selection).toEqual({
-        start: 0,
-        end: 0,
-        affinity: "forward",
-      });
+      expect(nextState.source).toBe("---");
+      expect(sourceOffsetForSelectionStart(nextState)).toBe(0);
     });
 
     test("backspace on a divider deletes it", () => {
@@ -533,6 +529,24 @@ describe("divider extension", () => {
       const nextState = runtime.applyEdit({ type: "delete-backward" }, state);
 
       expect(nextState.source).toBe("text");
+      expect(nextState.selection).toEqual({
+        start: 0,
+        end: 0,
+        affinity: "forward",
+      });
+    });
+
+    test("backspace on the only divider leaves an empty document", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("---", {
+        start: 1,
+        end: 1,
+        affinity: "forward",
+      });
+
+      const nextState = runtime.applyEdit({ type: "delete-backward" }, state);
+
+      expect(nextState.source).toBe("");
       expect(nextState.selection).toEqual({
         start: 0,
         end: 0,
@@ -555,6 +569,63 @@ describe("divider extension", () => {
         end: 2,
         affinity: "forward",
       });
+    });
+
+    test("enter on a selected trailing divider keeps the divider and inserts a paragraph after it", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("text\n---", {
+        start: 5,
+        end: 6,
+        affinity: "forward",
+      });
+
+      const nextState = runtime.applyEdit({ type: "insert-line-break" }, state);
+
+      expect(nextState.source).toBe("text\n---\n");
+      expect(nextState.selection).toEqual({
+        start: nextState.selection.start,
+        end: nextState.selection.start,
+        affinity: "forward",
+      });
+      expect(sourceOffsetForSelectionStart(nextState)).toBe("text\n---\n".length);
+    });
+
+    test("enter on a selected leading divider keeps the divider and inserts a paragraph after it", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("---", {
+        start: 0,
+        end: 1,
+        affinity: "forward",
+      });
+
+      const nextState = runtime.applyEdit({ type: "insert-line-break" }, state);
+
+      expect(nextState.source).toBe("---\n");
+      expect(nextState.selection).toEqual({
+        start: nextState.selection.start,
+        end: nextState.selection.start,
+        affinity: "forward",
+      });
+      expect(sourceOffsetForSelectionStart(nextState)).toBe("---\n".length);
+    });
+
+    test("enter on a selected middle divider keeps the divider and inserts a paragraph after it", () => {
+      const runtime = createRuntimeForTests([dividerExtension]);
+      const state = runtime.createState("above\n---\nbelow", {
+        start: 6,
+        end: 8,
+        affinity: "forward",
+      });
+
+      const nextState = runtime.applyEdit({ type: "insert-line-break" }, state);
+
+      expect(nextState.source).toBe("above\n---\n\nbelow");
+      expect(nextState.selection).toEqual({
+        start: nextState.selection.start,
+        end: nextState.selection.start,
+        affinity: "forward",
+      });
+      expect(sourceOffsetForSelectionStart(nextState)).toBe("above\n---\n".length);
     });
   });
 });

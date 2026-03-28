@@ -42,7 +42,9 @@ export interface TestHarness {
   getTextNode(lineIndex?: number): Text;
   getCharRect(offset: number, lineIndex?: number): DOMRect;
   getSelectionRects(): SelectionRectInfo[];
+  getRenderedSelectionRects(): DOMRect[];
   getCaretRect(): CaretInfo | null;
+  getRenderedCaretRect(): DOMRect | null;
   getVisualRows(lineIndex?: number): VisualRowInfo[];
 
   // Actions
@@ -105,7 +107,13 @@ export function createTestHarness(
 
   let styleElement: HTMLStyleElement | null = null;
   const caretStyles = `
+    .cake-selection-rect {
+      position: absolute !important;
+      background: rgba(71, 135, 238, 0.2) !important;
+      box-sizing: border-box !important;
+    }
     .cake-caret {
+      position: absolute !important;
       width: 3px !important;
       animation: none !important;
       background-color: #000 !important;
@@ -345,6 +353,13 @@ export function createTestHarness(
     });
   }
 
+  function getRenderedSelectionRects(): DOMRect[] {
+    const rects = container.querySelectorAll(".cake-selection-rect");
+    return Array.from(rects).map((rect) =>
+      (rect as HTMLElement).getBoundingClientRect(),
+    );
+  }
+
   function getCaretRect(): CaretInfo | null {
     const caret = container.querySelector(".cake-caret") as HTMLElement | null;
     if (!caret) {
@@ -358,6 +373,14 @@ export function createTestHarness(
       left: parseFloat(caret.style.left),
       height: caret.offsetHeight,
     };
+  }
+
+  function getRenderedCaretRect(): DOMRect | null {
+    const caret = container.querySelector(".cake-caret") as HTMLElement | null;
+    if (!caret || caret.style.display === "none") {
+      return null;
+    }
+    return caret.getBoundingClientRect();
   }
 
   function getVisualRows(lineIndex = 0): VisualRowInfo[] {
@@ -617,7 +640,9 @@ export function createTestHarness(
     getTextNode,
     getCharRect,
     getSelectionRects,
+    getRenderedSelectionRects,
     getCaretRect,
+    getRenderedCaretRect,
     getVisualRows,
     clickLeftOf: (offset, lineIndex) =>
       clickAtPosition(offset, "left", lineIndex),

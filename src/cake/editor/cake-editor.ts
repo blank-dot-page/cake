@@ -391,6 +391,12 @@ export class CakeEditor {
     anchorOffset: number;
   } | null = null;
 
+  private pointerSelectionState: {
+    pointerId: number;
+    anchorOffset: number;
+  } | null = null;
+  private isPointerSelectingAcrossAtomicLine = false;
+
   // Track if user is creating selection via drag (for single-click handling)
   // We track the starting position and only consider it "moved" if the mouse
   // moved more than a threshold distance (to avoid false positives from
@@ -2207,10 +2213,12 @@ export class CakeEditor {
       this.state.selection,
     );
 
-    this.selectedAtomicLineIndex = null;
     this.state = this.runtime.updateSelection(this.state, adjustedSelection, {
       kind: "dom",
     });
+    this.selectedAtomicLineIndex = this.getExplicitAtomicLineIndex(
+      this.state.selection,
+    );
     this.notifySelectionChange();
     this.scheduleOverlayUpdate();
     this.scheduleScrollCaretIntoView();
@@ -2235,10 +2243,16 @@ export class CakeEditor {
     if (!selection) {
       return;
     }
-    this.selectedAtomicLineIndex = null;
-    this.state = this.runtime.updateSelection(this.state, selection, {
+    const adjustedSelection = this.adjustSelectionForAtomicBlocks(
+      selection,
+      this.state.selection,
+    );
+    this.state = this.runtime.updateSelection(this.state, adjustedSelection, {
       kind: "dom",
     });
+    this.selectedAtomicLineIndex = this.getExplicitAtomicLineIndex(
+      this.state.selection,
+    );
     this.notifySelectionChange();
     this.lastAppliedSelection = this.state.selection;
     this.scheduleOverlayUpdate();
@@ -2252,6 +2266,18 @@ export class CakeEditor {
     // Only adjust collapsed selections (cursor navigation)
     if (selection.start !== selection.end) {
       return selection;
+    }
+    if (
+      selection.start === previous.start &&
+      selection.end === previous.end &&
+      selection.affinity === previous.affinity
+    ) {
+      return selection;
+    }
+
+    const explicitAtomicLineIndex = this.getPersistedAtomicLineIndex();
+    if (explicitAtomicLineIndex !== null) {
+      return this.getAtomicLineSelection(explicitAtomicLineIndex) ?? selection;
     }
 
     const lines = this.textModel.getLines();
@@ -2383,19 +2409,14 @@ export class CakeEditor {
       // Check if clicking on an atomic block (like an image)
       const atomicResult = this.getAtomicBlockSelectionFromClick(event);
       if (atomicResult) {
-        const atomicBlockSelection = atomicResult.selection;
         this.pendingClickHit = null;
         event.preventDefault();
-        this.state = this.runtime.updateSelection(
-          this.state,
-          atomicBlockSelection,
-          { kind: "dom" },
-        );
-        this.applySelection(this.state.selection);
-        this.notifySelectionChange();
-        this.scheduleOverlayUpdate();
-        this.selectedAtomicLineIndex = atomicResult.lineIndex;
-        this.suppressSelectionChange = false;
+        this.suppressSelectionChange = true;
+        this.focus();
+        this.applyAtomicLineSelection(atomicResult.lineIndex, "dom", {
+          scrollIntoView: false,
+        });
+        this.suppressSelectionChangeForTick();
         return;
       }
 
@@ -2628,6 +2649,29 @@ export class CakeEditor {
       return;
     }
 
+    if (
+      !cmdOrCtrl &&
+      !extendSelection &&
+      this.getSelectedAtomicLineIndex() !== null &&
+      (event.key === "Enter" ||
+        event.key === "Backspace" ||
+        event.key === "Delete")
+    ) {
+      event.preventDefault();
+      this.keydownHandledBeforeInput = true;
+      if (event.key === "Enter") {
+        this.applyEdit({ type: "insert-line-break" });
+      } else if (event.key === "Backspace") {
+        this.applyEdit({ type: "delete-backward" });
+      } else {
+        this.applyEdit({ type: "delete-forward" });
+      }
+      queueMicrotask(() => {
+        this.keydownHandledBeforeInput = false;
+      });
+      return;
+    }
+
     if (event.key === "ArrowLeft") {
       this.verticalNavGoalX = null;
       if (isLineModifier) {
@@ -2750,6 +2794,12 @@ export class CakeEditor {
           this.applySelectionUpdate(selection, "keyboard");
           return;
         }
+        const atomicLineIndex = this.getAdjacentTerminalAtomicLineIndex("up");
+        if (atomicLineIndex !== null) {
+          event.preventDefault();
+          this.applyAtomicLineSelection(atomicLineIndex, "keyboard");
+          return;
+        }
       }
       return;
     }
@@ -2772,6 +2822,11 @@ export class CakeEditor {
           this.applySelectionUpdate(selection, "keyboard");
           return;
         }
+        if (this.isSelectedAtomicLineAtDocumentEnd()) {
+          event.preventDefault();
+          this.applyEdit({ type: "insert-line-break" });
+          return;
+        }
       }
       if (extendSelection) {
         const selection = this.extendFullLineSelectionByLine("down");
@@ -2787,6 +2842,12 @@ export class CakeEditor {
         if (selection) {
           event.preventDefault();
           this.applySelectionUpdate(selection, "keyboard");
+          return;
+        }
+        const atomicLineIndex = this.getAdjacentTerminalAtomicLineIndex("down");
+        if (atomicLineIndex !== null) {
+          event.preventDefault();
+          this.applyAtomicLineSelection(atomicLineIndex, "keyboard");
           return;
         }
       }
@@ -2881,6 +2942,11 @@ export class CakeEditor {
     if (!this.isEventTargetInContentRoot(event.target)) {
       return;
     }
+
+    // Real browser copy can arrive before selectionchange updates engine state.
+    // Sync from the live DOM selection so clipboard serialization matches what
+    // the user currently has selected, including atomic block selections.
+    this.syncSelectionFromDom();
 
     const clipboardData = event.clipboardData;
     if (!clipboardData) {
@@ -3320,6 +3386,13 @@ export class CakeEditor {
   }
 
   private applyEdit(command: ApplyEditCommand) {
+    if (command.type === "delete-backward") {
+      const selected = this.selectAtomicBlockAtBackwardCaret();
+      if (selected) {
+        return;
+      }
+    }
+
     if (
       command.type === "delete-backward" ||
       command.type === "delete-forward"
@@ -3353,12 +3426,147 @@ export class CakeEditor {
     this.scheduleScrollCaretIntoView();
   }
 
-  private handleDeleteAtomicBlockSelection(): boolean {
-    if (this.selectedAtomicLineIndex === null) {
+  private getAtomicLineSelection(lineIndex: number): Selection | null {
+    const line = this.textModel.getLines()[lineIndex];
+    if (!line?.isAtomic) {
+      return null;
+    }
+
+    const start = line.lineStartOffset;
+    return {
+      start,
+      end: start + line.cursorLength + (line.hasNewline ? 1 : 0),
+      affinity: "forward",
+    };
+  }
+
+  private getExplicitAtomicLineIndex(
+    selection: Selection = this.state.selection,
+  ): number | null {
+    const normalized = normalizeSelection(
+      selection,
+      this.state.map.cursorLength,
+    );
+    if (normalized.start === normalized.end) {
+      return null;
+    }
+
+    const startLoc = this.textModel.resolveOffsetToLine(normalized.start);
+    const endLoc = this.textModel.resolveOffsetToLine(normalized.end);
+    if (startLoc.lineIndex !== endLoc.lineIndex) {
+      return null;
+    }
+
+    const expectedSelection = this.getAtomicLineSelection(startLoc.lineIndex);
+    if (!expectedSelection) {
+      return null;
+    }
+
+    return normalized.start === expectedSelection.start &&
+      normalized.end === expectedSelection.end
+      ? startLoc.lineIndex
+      : null;
+  }
+
+  private getPersistedAtomicLineIndex(): number | null {
+    if (this.selectedAtomicLineIndex !== null) {
+      const line = this.textModel.getLines()[this.selectedAtomicLineIndex];
+      if (line?.isAtomic) {
+        return this.selectedAtomicLineIndex;
+      }
+    }
+    return this.getExplicitAtomicLineIndex();
+  }
+
+  private getCollapsedAtomicCaretLineIndex(
+    selection: Selection = this.state.selection,
+  ): number | null {
+    const normalized = normalizeSelection(
+      selection,
+      this.state.map.cursorLength,
+    );
+    if (normalized.start !== normalized.end) {
+      return null;
+    }
+
+    const resolved = this.textModel.resolveOffsetToLine(normalized.start);
+    const line = this.textModel.getLines()[resolved.lineIndex];
+    return line?.isAtomic ? resolved.lineIndex : null;
+  }
+
+  private getSelectedAtomicLineIndex(): number | null {
+    return (
+      this.getPersistedAtomicLineIndex() ??
+      this.getCollapsedAtomicCaretLineIndex()
+    );
+  }
+
+  private getBackwardAtomicCaretLineIndex(): number | null {
+    const normalized = normalizeSelection(
+      this.state.selection,
+      this.state.map.cursorLength,
+    );
+    if (normalized.start !== normalized.end) {
+      return null;
+    }
+    if ((normalized.affinity ?? "forward") !== "backward") {
+      return null;
+    }
+
+    const resolved = this.textModel.resolveOffsetToLine(normalized.start);
+    const line = this.textModel.getLines()[resolved.lineIndex];
+    if (!line?.isAtomic || resolved.offsetInLine !== 0) {
+      return null;
+    }
+
+    return resolved.lineIndex;
+  }
+
+  private applyAtomicLineSelection(
+    lineIndex: number,
+    kind: "dom" | "keyboard" | "programmatic" = "programmatic",
+    options?: { scrollIntoView?: boolean },
+  ) {
+    const selection = this.getAtomicLineSelection(lineIndex);
+    if (!selection) {
+      return;
+    }
+
+    this.selectedAtomicLineIndex = lineIndex;
+    this.state = this.runtime.updateSelection(this.state, selection, { kind });
+    if (!this.isComposing) {
+      this.applySelection(this.state.selection);
+    }
+    this.notifySelectionChange();
+    this.flushOverlayUpdate();
+    if (options?.scrollIntoView ?? true) {
+      this.scheduleScrollCaretIntoView();
+    }
+    if (kind === "dom") {
+      queueMicrotask(() => {
+        if (!this.hasFocus()) {
+          this.focus();
+        }
+      });
+    }
+  }
+
+  private selectAtomicBlockAtBackwardCaret(): boolean {
+    const lineIndex = this.getBackwardAtomicCaretLineIndex();
+    if (lineIndex === null) {
       return false;
     }
 
-    const lineIndex = this.selectedAtomicLineIndex;
+    this.applyAtomicLineSelection(lineIndex, "keyboard");
+    return true;
+  }
+
+  private handleDeleteAtomicBlockSelection(): boolean {
+    const lineIndex = this.getSelectedAtomicLineIndex();
+    if (lineIndex === null) {
+      return false;
+    }
+
     const lines = this.textModel.getLines();
     const lineOffsets = this.textModel.getLineOffsets();
     const lineInfo = lines[lineIndex];
@@ -3435,8 +3643,10 @@ export class CakeEditor {
     if (kind !== "keyboard") {
       this.verticalNavGoalX = null;
     }
-    this.selectedAtomicLineIndex = null;
     this.state = this.runtime.updateSelection(this.state, selection, { kind });
+    this.selectedAtomicLineIndex = this.getExplicitAtomicLineIndex(
+      this.state.selection,
+    );
     if (!this.isComposing) {
       this.applySelection(this.state.selection);
     }
@@ -3590,15 +3800,56 @@ export class CakeEditor {
     return Math.max(0, Math.min(nextPos, cursorLength));
   }
 
-  private moveSelectionOutOfSelectedAtomicLine(
+  private getAdjacentTerminalAtomicLineIndex(
     direction: "up" | "down",
-  ): Selection | null {
-    if (this.selectedAtomicLineIndex === null) {
+  ): number | null {
+    const normalized = normalizeSelection(
+      this.state.selection,
+      this.state.map.cursorLength,
+    );
+    if (normalized.start !== normalized.end) {
       return null;
     }
 
+    const resolved = this.textModel.resolveOffsetToLine(normalized.start);
     const lines = this.textModel.getLines();
-    const lineIndex = this.selectedAtomicLineIndex;
+    const delta = direction === "down" ? 1 : -1;
+    let index = resolved.lineIndex + delta;
+    let firstAtomicLineIndex: number | null = null;
+
+    while (index >= 0 && index < lines.length) {
+      const line = lines[index];
+      if (!line) {
+        break;
+      }
+      if (!line.isAtomic) {
+        return null;
+      }
+      if (firstAtomicLineIndex === null) {
+        firstAtomicLineIndex = index;
+      }
+      index += delta;
+    }
+
+    return firstAtomicLineIndex;
+  }
+
+  private isSelectedAtomicLineAtDocumentEnd(): boolean {
+    const lineIndex = this.getSelectedAtomicLineIndex();
+    if (lineIndex === null) {
+      return false;
+    }
+    return lineIndex === this.textModel.getLines().length - 1;
+  }
+
+  private moveSelectionOutOfSelectedAtomicLine(
+    direction: "up" | "down",
+  ): Selection | null {
+    const lines = this.textModel.getLines();
+    const lineIndex = this.getSelectedAtomicLineIndex();
+    if (lineIndex === null) {
+      return null;
+    }
 
     if (direction === "up") {
       for (let index = lineIndex - 1; index >= 0; index -= 1) {
@@ -3609,7 +3860,7 @@ export class CakeEditor {
         const lineEnd = line.lineStartOffset + line.cursorLength;
         return { start: lineEnd, end: lineEnd, affinity: "backward" };
       }
-      return { start: 0, end: 0, affinity: "backward" };
+      return null;
     }
 
     for (let index = lineIndex + 1; index < lines.length; index += 1) {
@@ -3623,9 +3874,7 @@ export class CakeEditor {
         affinity: "forward",
       };
     }
-
-    const docEnd = this.state.map.cursorLength;
-    return { start: docEnd, end: docEnd, affinity: "forward" };
+    return null;
   }
 
   private moveSelectionVertically(direction: "up" | "down"): Selection | null {
@@ -4996,6 +5245,55 @@ export class CakeEditor {
     return { cursorOffset: hit.cursorOffset, affinity };
   }
 
+  private selectionTouchesAtomicLine(startOffset: number, endOffset: number) {
+    if (startOffset === endOffset) {
+      return false;
+    }
+
+    const normalizedStart = Math.min(startOffset, endOffset);
+    const normalizedEnd = Math.max(startOffset, endOffset);
+    const startLineIndex =
+      this.textModel.resolveOffsetToLine(normalizedStart).lineIndex;
+    const endLineIndex =
+      this.textModel.resolveOffsetToLine(normalizedEnd).lineIndex;
+    const lines = this.textModel.getLines();
+
+    for (let index = startLineIndex; index <= endLineIndex; index += 1) {
+      if (lines[index]?.isAtomic) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private getAtomicDragTargetOffset(
+    anchorOffset: number,
+    hitCursorOffset: number,
+  ) {
+    const hitLine =
+      this.textModel.getLines()[
+        this.textModel.resolveOffsetToLine(hitCursorOffset).lineIndex
+      ];
+
+    if (!hitLine?.isAtomic) {
+      return hitCursorOffset;
+    }
+
+    const lineStart = hitLine.lineStartOffset;
+    const lineEnd = lineStart + hitLine.cursorLength;
+    const lineAfter = lineEnd + (hitLine.hasNewline ? 1 : 0);
+
+    if (anchorOffset <= lineStart) {
+      return lineEnd;
+    }
+    if (anchorOffset >= lineAfter) {
+      return lineStart;
+    }
+
+    return hitCursorOffset;
+  }
+
   private handlePointerDown(event: PointerEvent) {
     if (!this.isEventTargetInContentRoot(event.target)) {
       return;
@@ -5015,6 +5313,8 @@ export class CakeEditor {
     this.hasMovedSincePointerDown = false;
     this.pointerDownPosition = { x: event.clientX, y: event.clientY };
     this.pendingClickHit = null;
+    this.pointerSelectionState = null;
+    this.isPointerSelectingAcrossAtomicLine = false;
 
     if (this.readOnly) {
       return;
@@ -5055,26 +5355,16 @@ export class CakeEditor {
         const lines = this.textModel.getLines();
         const lineInfo = lines[lineIndex];
         if (lineInfo?.isAtomic) {
-          const lineOffsets = this.textModel.getLineOffsets();
-          const lineStart = lineOffsets[lineIndex] ?? 0;
-          const lineEnd =
-            lineStart + lineInfo.cursorLength + (lineInfo.hasNewline ? 1 : 0);
-          const atomicSelection: Selection = {
-            start: lineStart,
-            end: lineEnd,
-            affinity: "forward",
-          };
-
           event.preventDefault();
           event.stopPropagation();
 
           this.pendingClickHit = null;
           this.suppressSelectionChange = true;
-          this.state = { ...this.state, selection: atomicSelection };
-          this.applySelection(atomicSelection);
-          this.notifySelectionChange();
-          this.flushOverlayUpdate();
-          this.selectedAtomicLineIndex = lineIndex;
+          this.focus();
+          this.applyAtomicLineSelection(lineIndex, "dom", {
+            scrollIntoView: false,
+          });
+          this.suppressSelectionChangeForTick();
 
           this.dragState = {
             isDragging: true,
@@ -5119,6 +5409,10 @@ export class CakeEditor {
           // Clicking outside selection - collapse to clicked position
           this.suppressSelectionChange = true;
           this.pendingClickHit = hit;
+          this.pointerSelectionState = {
+            pointerId: event.pointerId,
+            anchorOffset: hit.cursorOffset,
+          };
           const newSelection: Selection = {
             start: hit.cursorOffset,
             end: hit.cursorOffset,
@@ -5136,6 +5430,10 @@ export class CakeEditor {
         // Collapsed selection - apply immediately
         this.suppressSelectionChange = true;
         this.pendingClickHit = hit;
+        this.pointerSelectionState = {
+          pointerId: event.pointerId,
+          anchorOffset: hit.cursorOffset,
+        };
         const newSelection: Selection = {
           start: hit.cursorOffset,
           end: hit.cursorOffset,
@@ -5295,6 +5593,44 @@ export class CakeEditor {
       return;
     }
 
+    if (
+      this.pointerSelectionState &&
+      event.pointerId === this.pointerSelectionState.pointerId
+    ) {
+      const hit = this.hitTestFromClientPoint(event.clientX, event.clientY);
+      const targetOffset = hit
+        ? this.getAtomicDragTargetOffset(
+            this.pointerSelectionState.anchorOffset,
+            hit.cursorOffset,
+          )
+        : null;
+      if (
+        hit &&
+        targetOffset !== null &&
+        (this.isPointerSelectingAcrossAtomicLine ||
+          this.selectionTouchesAtomicLine(
+            this.pointerSelectionState.anchorOffset,
+            targetOffset,
+          ))
+      ) {
+        this.isPointerSelectingAcrossAtomicLine = true;
+        this.suppressSelectionChange = true;
+        this.applySelectionUpdate(
+          {
+            start: this.pointerSelectionState.anchorOffset,
+            end: targetOffset,
+            affinity:
+              targetOffset < this.pointerSelectionState.anchorOffset
+                ? "backward"
+                : "forward",
+          },
+          "dom",
+          { scrollIntoView: false },
+        );
+        return;
+      }
+    }
+
     if (!this.dragState || !this.dragState.isDragging) {
       return;
     }
@@ -5310,6 +5646,7 @@ export class CakeEditor {
 
   private handlePointerUp(event: PointerEvent) {
     this.blockTrustedTextDrag = false;
+    this.pointerSelectionState = null;
     // Don't clear pendingClickHit here - let the click handler do it.
     // The click event fires after pointerup, and we need to keep
     // suppressSelectionChange=true until click completes.
@@ -5342,12 +5679,16 @@ export class CakeEditor {
     }
 
     if (!this.dragState || !this.dragState.isDragging) {
-      if (this.hasMovedSincePointerDown) {
+      const wasPointerSelectingAcrossAtomicLine =
+        this.isPointerSelectingAcrossAtomicLine;
+      this.isPointerSelectingAcrossAtomicLine = false;
+      if (this.hasMovedSincePointerDown && !wasPointerSelectingAcrossAtomicLine) {
         queueMicrotask(() => {
           this.syncSelectionFromDom();
           this.flushOverlayUpdate();
         });
       }
+      this.suppressSelectionChange = false;
       return;
     }
     if (event.pointerId !== this.dragState.pointerId) {

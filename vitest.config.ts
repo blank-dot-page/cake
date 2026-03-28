@@ -3,15 +3,27 @@ import { playwright } from "@vitest/browser-playwright";
 import type { BrowserCommand } from "vitest/node";
 import react from "@vitejs/plugin-react";
 
+async function resolveIframeCoordinates(
+  ctx: Parameters<BrowserCommand<[number, number]>>[0],
+  x: number,
+  y: number,
+) {
+  const iframeElement = ctx.iframe.locator(":root");
+  const iframeBox = await iframeElement.boundingBox();
+  return {
+    iframeElement,
+    iframeBox,
+    x: iframeBox ? x + iframeBox.x : x,
+    y: iframeBox ? y + iframeBox.y : y,
+  };
+}
+
 const clickAtCoordinates: BrowserCommand<
   [x: number, y: number, debug?: boolean]
 > = async (ctx, x, y, debug) => {
   const page = ctx.page;
-  // Get iframe element and its bounding box
-  const iframeElement = ctx.iframe.locator(":root");
-  const iframeBox = await iframeElement.boundingBox();
-  const iframeX = iframeBox ? x + iframeBox.x : x;
-  const iframeY = iframeBox ? y + iframeBox.y : y;
+  const { iframeElement, iframeBox, x: iframeX, y: iframeY } =
+    await resolveIframeCoordinates(ctx, x, y);
 
   console.log(
     `clickAtCoordinates: input(${x}, ${y}) -> iframeBox(${JSON.stringify(iframeBox)}) -> adjusted(${iframeX}, ${iframeY})`,
@@ -45,17 +57,39 @@ const clickAtCoordinates: BrowserCommand<
   await page.mouse.click(iframeX, iframeY);
 };
 
+const mouseDownAtCoordinates: BrowserCommand<[x: number, y: number]> = async (
+  ctx,
+  x,
+  y,
+) => {
+  const page = ctx.page;
+  const coords = await resolveIframeCoordinates(ctx, x, y);
+  await page.mouse.move(coords.x, coords.y);
+  await page.mouse.down();
+};
+
+const mouseMoveToCoordinates: BrowserCommand<[x: number, y: number]> = async (
+  ctx,
+  x,
+  y,
+) => {
+  const page = ctx.page;
+  const coords = await resolveIframeCoordinates(ctx, x, y);
+  await page.mouse.move(coords.x, coords.y);
+};
+
+const mouseUp: BrowserCommand<[]> = async (ctx) => {
+  await ctx.page.mouse.up();
+};
+
 const tapAtCoordinates: BrowserCommand<[x: number, y: number]> = async (
   ctx,
   x,
   y,
 ) => {
   const page = ctx.page;
-  const iframeElement = ctx.iframe.locator(":root");
-  const iframeBox = await iframeElement.boundingBox();
-  const iframeX = iframeBox ? x + iframeBox.x : x;
-  const iframeY = iframeBox ? y + iframeBox.y : y;
-  await page.touchscreen.tap(iframeX, iframeY);
+  const coords = await resolveIframeCoordinates(ctx, x, y);
+  await page.touchscreen.tap(coords.x, coords.y);
 };
 
 export default defineConfig({
@@ -100,6 +134,9 @@ export default defineConfig({
             screenshotDirectory: ".vitest-screenshots",
             commands: {
               clickAtCoordinates,
+              mouseDownAtCoordinates,
+              mouseMoveToCoordinates,
+              mouseUp,
               tapAtCoordinates,
             },
           },
@@ -127,6 +164,9 @@ export default defineConfig({
             screenshotDirectory: ".vitest-screenshots",
             commands: {
               clickAtCoordinates,
+              mouseDownAtCoordinates,
+              mouseMoveToCoordinates,
+              mouseUp,
               tapAtCoordinates,
             },
           },
