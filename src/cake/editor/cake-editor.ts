@@ -2943,6 +2943,11 @@ export class CakeEditor {
       return;
     }
 
+    // Real browser copy can arrive before selectionchange updates engine state.
+    // Sync from the live DOM selection so clipboard serialization matches what
+    // the user currently has selected, including atomic block selections.
+    this.syncSelectionFromDom();
+
     const clipboardData = event.clipboardData;
     if (!clipboardData) {
       return;

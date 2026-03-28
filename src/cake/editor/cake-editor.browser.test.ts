@@ -5,6 +5,7 @@ import { CakeEditor } from "./cake-editor";
 import { createTestHarness, type TestHarness } from "../test/harness";
 import { linkExtension } from "../extensions/link/link";
 import { plainTextListExtension } from "../extensions/list/list";
+import { dividerExtension } from "../extensions/divider";
 import type { CakeExtension } from "../core/runtime";
 
 const isMac =
@@ -1371,6 +1372,40 @@ describe("CakeEditor (browser)", () => {
     expect(pasteEvent.defaultPrevented).toBe(true);
     expect(lastValue).toBe("- alpha beta\ndestinationbeta");
     engine.destroy();
+  });
+
+  it("copy uses the live divider selection even if the model selection has not settled yet", async () => {
+    const harness = createTestHarness({
+      value: "hello\n---\nworld",
+      extensions: [dividerExtension],
+    });
+
+    const divider = harness.container.querySelector(
+      '[data-block-extension="divider"] hr',
+    );
+    if (!(divider instanceof HTMLHRElement)) {
+      throw new Error("Missing divider hr");
+    }
+
+    await userEvent.click(divider);
+
+    const target = document.activeElement;
+    if (!(target instanceof HTMLElement)) {
+      throw new Error("Missing active element");
+    }
+
+    const dataTransfer = new DataTransfer();
+    const copyEvent = new ClipboardEvent("copy", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: dataTransfer,
+    });
+    target.dispatchEvent(copyEvent);
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(dataTransfer.getData("text/plain")).toBe("---");
+
+    harness.engine.destroy();
   });
 
   it("pasting a copied bullet list item into a new bullet list item does not duplicate the marker", () => {
